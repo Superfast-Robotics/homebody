@@ -10,6 +10,7 @@ from .config import (
     BlindFinish,
     Camera,
     Collision,
+    Curobo,
     Grasp,
     Navigate,
     Physics,
@@ -70,6 +71,7 @@ class Settings:
     topdown: Topdown = field(default_factory=Topdown)
     recording: Recording = field(default_factory=Recording)
     blind_finish: BlindFinish = field(default_factory=BlindFinish)
+    curobo: Curobo = field(default_factory=Curobo)
 
     def __post_init__(self):
         for group in fields(self):

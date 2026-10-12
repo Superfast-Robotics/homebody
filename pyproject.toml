@@ -23,6 +23,7 @@ exploration = [
   "far-unitree-sdk==0.1.5", "cyclonedds==0.10.2",
   "unitree-sdk2py @ git+https://github.com/unitreerobotics/unitree_sdk2_python.git@65691c8a8bc53b98d3976dba4dbf9d5d20b2e7f5",
 ]
+planning = ["pyzmq>=26", "msgpack>=1.0", "msgpack-numpy>=0.4.8"]
 
 [project.scripts]
 homebody = "homebody.__main__:main"

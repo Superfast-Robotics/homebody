@@ -12,6 +12,9 @@ from homebody.helpers.kinematics import camera_mount
 from homebody.session.config import DEFAULT_SCENE
 
 SPAWN_HEIGHT = 0.76
+# Wrist cameras above the wrist yaw link, looking along the hand (+x of the link).
+WRIST_CAMERA_POS = (0.02, 0.0, 0.06)
+WRIST_CAMERA_FOVY = 70.0
 
 
 def numbers(values):
@@ -53,6 +56,10 @@ def load(root: Path, settings, scene: Path | None = DEFAULT_SCENE):
     fovy = math.degrees(2 * math.atan(math.tan(math.radians(c.horizontal_fov) / 2) * c.height / c.width))
     ET.SubElement(torso, "camera", name="ego", pos=numbers(camera[:3, 3]),
                   quat=numbers(quat), fovy=str(fovy))
+    for side in ("left", "right"):
+        wrist = next(b for b in xml.iter("body") if b.get("name") == f"{side}_wrist_yaw_link")
+        ET.SubElement(wrist, "camera", name=f"{side}_wrist", pos=numbers(WRIST_CAMERA_POS),
+                      xyaxes="0 -1 0 0 0 1", fovy=str(WRIST_CAMERA_FOVY))
     model = mujoco.MjModel.from_xml_string(ET.tostring(xml, encoding="unicode"))
     data = mujoco.MjData(model)
     from holosoma_inference.g1_control.config import amo_profile

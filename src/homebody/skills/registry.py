@@ -1,10 +1,13 @@
 """The registered skills by name. Naming a module `skills/<name>.py` in SKILLS registers it."""
+import os
 from collections.abc import Mapping
 from importlib import import_module
 
 from .contract import declared
 
-SKILLS = ("navigate", "pick", "place")
+# HOMEBODY_SKILLS (comma-separated module names) swaps the set for one run, e.g. "navigate,vla".
+SKILLS = tuple(name.strip() for name in os.environ.get("HOMEBODY_SKILLS", "navigate,pick,place").split(",")
+               if name.strip())
 
 
 class Prompts(Mapping):

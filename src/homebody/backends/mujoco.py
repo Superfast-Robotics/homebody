@@ -275,6 +275,15 @@ class MujocoBackend:
         renderer.disable_segmentation_rendering()
         return rgb, depth, segmentation
 
+    def wrist_views(self):
+        """RGB from the left and right wrist cameras, on the ego image size (not part of Robot)."""
+        renderer = self._render_context()
+        views = {}
+        for side in ("left", "right"):
+            renderer.update_scene(self.data, camera=f"{side}_wrist")
+            views[side] = renderer.render().copy()
+        return views
+
     def set_evaluation_sink(self, callback):
         self._evaluation_sink = callback
         if callback is not None:

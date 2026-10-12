@@ -66,6 +66,10 @@ class ObservedBackend:
     def measure(self):
         return self.__backend.measure()
 
+    def wrist_views(self):
+        """The wrist cameras' RGB, for skills whose policy takes them (not part of Robot)."""
+        return self.__backend.wrist_views()
+
     def base_velocity(self, epoch, forward, lateral, yaw_rate):
         self.__backend.base_velocity(epoch, forward, lateral, yaw_rate)
 

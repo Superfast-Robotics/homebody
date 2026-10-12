@@ -143,6 +143,17 @@ class Agent:
 
 
 @dataclass(frozen=True)
+class Curobo:
+    """The cuRobo planning server a skill may call (helpers/curobo.py): collision-free arm paths
+    against the head camera's depth. The first request builds the server's planners, hence the
+    long `timeout`."""
+    endpoint: str = "tcp://127.0.0.1:5560"
+    timeout: float = 300.0
+    max_candidates: int = 48
+    max_rows: int = 40
+
+
+@dataclass(frozen=True)
 class SharedMotion:
     arm_timeout: float = 15.0
     palm_tolerance: float = 0.015

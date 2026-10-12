@@ -90,11 +90,13 @@ def move_joints(ctx, epoch, side, target, exclude_labels=()):
     step_to(ctx, epoch, side, target, live_check(ctx, side, exclude_labels))
 
 
-def move_path(ctx, epoch, side, path, tracked_target=None):
-    """Stream one shaped trajectory without stopping at its interior samples."""
+def move_path(ctx, epoch, side, path, tracked_target=None, planned=False):
+    """Stream one shaped trajectory without stopping at its interior samples. A PLANNED path (an
+    external collision-aware planner's, against the same depth) is followed without the live
+    depth check, which would second-guess it with a different collision model."""
     rows = retime_path(np.vstack((within_limits(ctx, side, ctx.measure(epoch).arm_joints(side)), path)),
                        ctx.settings.physics.arm_rate, ctx.settings.servo.tick)
-    follow_rows(ctx, epoch, side, rows[1:], live_check(ctx, side), tracked_target)
+    follow_rows(ctx, epoch, side, rows[1:], None if planned else live_check(ctx, side), tracked_target)
 
 
 STALL_SECONDS, STALL_PROGRESS_M = 1.0, 0.003
