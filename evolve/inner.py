@@ -41,6 +41,7 @@ CODE = re.compile(r"```(?:python)?\n(.*?)```", re.DOTALL)
 SETTLE_SECONDS = 3.0
 LIFT_M = 0.05
 VIDEO_PERIOD = 0.04
+ASK_TRIES = 2
 
 
 class ProgramTimeout(Exception):
@@ -168,11 +169,14 @@ class Task:
                    "read-only", "--model", self.args.model, "-c", f'model_reasoning_effort="{self.args.effort}"',
                    "-c", 'web_search="disabled"', "--output-last-message", str(out), "--color", "never", *names, "-"]
         started = time.monotonic()
-        done = subprocess.run(command, cwd=folder, input=prompt.encode(), capture_output=True, timeout=1200, check=False)
-        reply = out.read_text() if out.exists() else ""
-        if not reply:
-            raise RuntimeError(f"codex returned nothing ({done.returncode}): {done.stderr.decode(errors='replace')[-500:]}")
-        return reply, time.monotonic() - started
+        for _ in range(ASK_TRIES):  # a hung or failed call is infrastructure, not the author's answer
+            done = subprocess.run(command, cwd=folder, input=prompt.encode(), capture_output=True, timeout=1200,
+                                  check=False)
+            reply = out.read_text() if out.exists() else ""
+            if reply:
+                return reply, time.monotonic() - started
+            print(f"codex returned nothing ({done.returncode}); retrying", flush=True)
+        return None, time.monotonic() - started
 
     # --- the loop ---
     def main(self):
@@ -185,6 +189,9 @@ class Task:
             prompt = harness.render_prompt(self.task_text, self.memory, attempts, self.args.attempts)
             (transcript / f"{number:02d}_prompt.md").write_text(prompt)
             reply, asked = self.ask(prompt, images, number)
+            if reply is None:
+                log.append({"number": number, "kind": "no_reply", "codex_seconds": round(asked, 1)})
+                continue
             (transcript / f"{number:02d}_reply.md").write_text(reply)
             execute = EXECUTE.search(reply)
             if execute and int(execute.group(1)) in codes:
