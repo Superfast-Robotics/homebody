@@ -50,27 +50,28 @@ class Remote:
         passed = "PYTEST=0" in out and "RUFF=0" in out
         return passed, out[-3000:]
 
-    def run_suite(self, cid, tasks, repeats, inner, label):
-        """Run the inner loop on TASKS (dicts with name, scene, targets) REPEATS times with candidate
-        CID's code; INNER holds attempts, effort and timeout. Returns the remote results directory."""
+    def run_suite(self, cid, tasks, repeats, label):
+        """Run one HomeBody session per task (dicts with name, scene, targets) REPEATS times with
+        candidate CID's code. Returns the remote results directory."""
         cand = f"{self.work}/cands/{cid}"
         results = f"{self.work}/results/{cid}/{label}"
         lines = [f"{cand} {self.base}/{t['scene']} {self.base}/{t['targets']} {results}/{t['name']}/r{r}"
                  for t in tasks for r in range(repeats)]
         jobs = f"{results}/jobs.txt"
         self.ssh(f"rm -rf {results} && mkdir -p {results} && cat > {jobs} << 'EOF'\n" + "\n".join(lines) + "\nEOF")
-        subprocess.run(["rsync", "-a", str(HERE / "run_jobs.sh"), str(HERE / "inner.py"), f"{self.host}:{self.work}/"],
-                       check=True)
+        subprocess.run(["rsync", "-a", str(HERE / "run_jobs.sh"), str(HERE / "score_episode.py"),
+                        str(HERE / "episode_settings.toml"), f"{self.host}:{self.work}/"], check=True)
         waves = -(-len(lines) // self.parallel)
-        self.ssh(f"bash {self.work}/run_jobs.sh {self.base} {self.parallel} {jobs} {inner['attempts']} "
-                 f"{inner['effort']} {self.work}/inner.py", timeout=waves * 5700 + 600)
+        self.ssh(f"bash {self.work}/run_jobs.sh {self.base} {self.parallel} {jobs} {self.work}",
+                 timeout=waves * 7500 + 600)
         return results
 
     def collect(self, results, local):
-        """Copy each run's result, log and transcript (programs, reports, images) to LOCAL."""
+        """Copy each run's result, log and session events to LOCAL."""
         local.mkdir(parents=True, exist_ok=True)
         subprocess.run(["rsync", "-a", "--include=*/", "--include=result.json", "--include=run.log",
-                        "--include=exit_code", "--include=*.md", "--include=*.jpg", "--exclude=*", "--prune-empty-dirs",
+                        "--include=exit_code", "--include=events.jsonl", "--include=outcome.json",
+                        "--exclude=*", "--prune-empty-dirs",
                         f"{self.host}:{results}/", f"{local}/"], check=True, capture_output=True)
         return local
 

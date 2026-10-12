@@ -13,7 +13,8 @@ README has the install and run commands; the real-robot backend comes with the R
 | `src/homebody/helpers/` | Pure math shared by both releases: geometry, kinematics, collision, grasp, navigation, trajectories, `raster.py` (pixels, clicks, map transforms), `floor.py` (walkable-floor networks), `region.py` (task-region polygons). |
 | `src/homebody/primitives/` | The robot interface (`robot.py` `Robot`), observation records, action limits, `NotReleased`, and the live localization, camera and navigation primitives. |
 | `src/homebody/backends/` | `mujoco.py` implements `Robot` with physics; `real.py` is the real-G1 backend, not yet implemented, coming with the REAL release; `g1/` is the G1 driver for exploration. |
-| `src/homebody/vlm/` | Providers (Codex, Claude Code, two APIs), `catalog.py`, `agent_prompt.md`, what the model sees each turn (`observations.py`). |
+| `src/homebody/vlm/` | Providers (Codex, Claude Code, two APIs), `catalog.py`, what the model sees each turn (`observations.py`). |
+| `src/homebody/harness/` | What the agent writes customized skills against: `agent_prompt.md` (the turn instructions), `env.py` primitives and `API.md`, feedback. |
 | `src/homebody/session/` | The decision loop (`session.py`), settings (`config.py` defaults; `configs/simulation.toml` and a scene's `settings.toml` override), recording; `exploration.py` is `ExplorationSession`, and `live_context.py` the context its skills run in, reading the explorer through `LiveWorld` (`skills/live.py`). |
 | `src/homebody/ui/` | The live console (viser). |
 | `src/homebody/real2sim/` | `exploration/` is the live map, decisions and app behind `homebody real2sim explore` (`skills.py` registers its skills, `explore_prompt.md` is its prompt, `config.py` its settings); `runner.py` reconstructs a scene offline, reading the capture through `src/homebody/capture*.py` and exporting it with `src/homebody/scene_package.py`. |

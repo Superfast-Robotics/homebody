@@ -1,10 +1,12 @@
-"""The inner program's robot API: what a model-written `run(env)` can call.
+"""The primitives a customized skill's `run(env, **arguments)` calls.
 
-Everything goes through the skill Context (the Robot interface), so a program gets camera-derived
-geometry and measured robot state only. Arm poses are 4x4 numpy arrays in the CURRENT torso frame
-(x forward, y left, z up, metres); base goals and scene memory are in the world (map) frame.
+Everything goes through the skill Context (the Robot interface), so a skill gets camera-derived
+geometry and measured robot state only. Objects are chosen as the agent chooses them: by a click
+on the head image the decision was made from (`env.target(click)`), which yields a Target that
+later calls re-find in fresh frames. Arm poses are 4x4 numpy arrays in the CURRENT torso frame
+(x forward, y left, z up, metres); base goals are world (map) coordinates.
 """
-import math
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -15,12 +17,23 @@ from homebody.skills.contract import Runner, SkillFailure
 from homebody.toolkit import calibrated_grasps, clearance, diagnose_ik
 
 MIN_VISIBLE_PIXELS = 12
-LOG_LINES = 200
+LOG_LINES = 120
+
+
+@dataclass(frozen=True)
+class Target:
+    """One segmented thing in the scene, chosen by a click; stable across frames."""
+    label: int
+
+
+def _click(frame, u, v):
+    return [float(min(1000.0, (u + 0.25) * 1000 / (frame.rgb.shape[1] - 1))),
+            float(min(1000.0, (v + 0.25) * 1000 / (frame.rgb.shape[0] - 1)))]
 
 
 class Env:
-    def __init__(self, ctx, memory, labels):
-        self._ctx, self._memory, self._labels = ctx, memory, dict(labels)
+    def __init__(self, ctx, frame):
+        self._ctx, self._decision_frame = ctx, frame
         self._log = []
 
     # --- bookkeeping ---
@@ -31,18 +44,10 @@ class Env:
     def _frame(self):
         return self._ctx.observe(self._epoch)
 
-    def _label(self, entity):
-        if entity not in self._labels:
-            raise KeyError(f"no entity {entity!r}; known: {sorted(self._labels)}")
-        return self._labels[entity]
-
     def log(self, *parts):
-        """Print to the attempt's report (also what print() does)."""
+        """Add a line to the skill's result (also what print() does)."""
         if len(self._log) < LOG_LINES:
             self._log.append(" ".join(str(p) for p in parts)[:300])
-
-    def trace(self, what, **data):
-        self.log(f"[{what}]", {k: (np.round(v, 3).tolist() if isinstance(v, np.ndarray) else v) for k, v in data.items()})
 
     def wait(self, seconds):
         """Let SECONDS of simulated time pass, standing still."""
@@ -50,25 +55,33 @@ class Env:
             self._ctx.advance(self._epoch)
 
     # --- perception ---
-    def memory(self):
-        """The scene memory: [{id, label, location, anchor_xyz (world), portable}] from the scan."""
-        return [dict(item) for item in self._memory]
+    def target(self, click):
+        """The Target under CLICK [x, y] (0-1000) on the head image the decision saw, or None."""
+        frame = self._decision_frame
+        h, w = frame.labels.shape
+        u = int(np.clip(round(float(click[0]) / 1000 * (w - 1)), 0, w - 1))
+        v = int(np.clip(round(float(click[1]) / 1000 * (h - 1)), 0, h - 1))
+        label = int(frame.labels[v, u])
+        return Target(label) if label > 0 else None
 
     def visible(self):
-        """Entity ids in view now, with their visible pixel counts."""
+        """Targets in view now: [{target, click (its middle on the current head image), pixels}]."""
         frame = self._frame()
-        counts = {}
-        for entity, label in self._labels.items():
-            n = int(np.count_nonzero((frame.labels == label) & np.isfinite(frame.depth)))
-            if n >= MIN_VISIBLE_PIXELS:
-                counts[entity] = n
-        return counts
+        found = []
+        for label in np.unique(frame.labels):
+            if label <= 0:
+                continue
+            v, u = np.nonzero((frame.labels == label) & np.isfinite(frame.depth))
+            if len(u) >= MIN_VISIBLE_PIXELS:
+                k = int(np.argmin((u - np.median(u)) ** 2 + (v - np.median(v)) ** 2))
+                found.append({"target": Target(int(label)), "click": _click(frame, u[k], v[k]), "pixels": len(u)})
+        return found
 
-    def locate(self, entity):
-        """Geometry of ENTITY from the head camera's depth, torso frame: {center, top_z, bottom_z,
+    def locate(self, target):
+        """TARGET's geometry from the current head depth, torso frame: {center, top_z, bottom_z,
         radius, extent, n_points}, or None when it is not visible."""
         frame = self._frame()
-        mask = (frame.labels == self._label(entity)) & np.isfinite(frame.depth)
+        mask = (frame.labels == target.label) & np.isfinite(frame.depth)
         if np.count_nonzero(mask) < MIN_VISIBLE_PIXELS:
             return None
         points = points_in(inverse(frame.world_torso) @ frame.world_camera, unproject(frame.depth, frame.intrinsics, mask))
@@ -78,12 +91,21 @@ class Env:
                 "bottom_z": round(float(points[:, 2].min()), 3), "radius": round(float(np.percentile(radial, 95)), 3),
                 "extent": np.ptp(points, axis=0).round(3).tolist(), "n_points": len(points)}
 
+    def click_of(self, target):
+        """TARGET's middle as a click on the CURRENT head image, or None when not visible."""
+        frame = self._frame()
+        v, u = np.nonzero((frame.labels == target.label) & np.isfinite(frame.depth) & (frame.depth > 0))
+        if len(u) < MIN_VISIBLE_PIXELS:
+            return None
+        k = int(np.argmin((u - np.median(u)) ** 2 + (v - np.median(v)) ** 2))
+        return _click(frame, u[k], v[k])
+
     def points_near(self, center, radius=0.25, exclude=()):
-        """Sensed points (torso frame) within RADIUS of CENTER, the EXCLUDE entities removed."""
+        """Sensed points (torso frame) within RADIUS of CENTER, the EXCLUDE targets removed."""
         frame = self._frame()
         mask = frame.labels >= 0
-        for entity in exclude:
-            mask &= frame.labels != self._label(entity)
+        for target in exclude:
+            mask &= frame.labels != target.label
         points = points_in(inverse(frame.world_torso) @ frame.world_camera, unproject(frame.depth, frame.intrinsics, mask))
         near = points[np.linalg.norm(points - np.asarray(center, float), axis=1) < radius]
         return near[:: max(1, len(near) // 3000)]
@@ -106,17 +128,39 @@ class Env:
         m = self._ctx.measure(self._epoch)
         return (inverse(m.world_torso) @ np.array([*np.asarray(xyz, float)[:3], 1.0]))[:3].round(4).tolist()
 
-    # --- base ---
-    def navigate(self, goal_xy, facing_xy, exact=True, hand="right"):
-        """Walk to world GOAL_XY facing world FACING_XY. EXACT stands at the goal; otherwise
-        HomeBody snaps to a clear stance square to the faced surface. Returns {ok, code, message, base}."""
-        result = Runner(self._ctx).run("navigate", {"goal_xy_m": [float(v) for v in goal_xy[:2]],
-                                                    "facing_xy_m": [float(v) for v in facing_xy[:2]],
-                                                    "snap": not exact, "hand": hand}, self._frame())
-        self.log("navigate", result.code, result.message[:120])
-        return {"ok": result.ok, "code": result.code, "message": result.message, "base": self.state()["base"]}
+    # --- built-in skills, callable from a customized skill ---
+    def skill(self, name, **arguments):
+        """Run a built-in skill (navigate, pick, place) with its own arguments: {ok, code, message}."""
+        result = Runner(self._ctx).run(name, arguments, self._frame())
+        self.log(name, result.code, result.message[:160])
+        return {"ok": result.ok, "code": result.code, "message": result.message}
 
-    # --- arm kinematics and collision ---
+    def navigate(self, goal_xy, facing_xy, exact=True, hand="right"):
+        """Built-in navigate to world GOAL_XY facing world FACING_XY. EXACT stands at the goal;
+        otherwise a clear stance square to the faced surface is chosen. {ok, code, message, base}."""
+        result = self.skill("navigate", goal_xy_m=[float(v) for v in goal_xy[:2]],
+                            facing_xy_m=[float(v) for v in facing_xy[:2]], snap=not exact, hand=hand)
+        return {**result, "base": self.state()["base"]}
+
+    def pick(self, target, side="right"):
+        """Built-in pick of a visible TARGET (walks to a grasp stance when needed, lifts into carry)."""
+        click = self.click_of(target)
+        if click is None:
+            return {"ok": False, "code": "NOT_VISIBLE", "message": "the target is not visible"}
+        return self.skill("pick", point_normalized_1000=click, hand=side)
+
+    def place_on(self, target, side="right"):
+        """Built-in place of the held object onto a visible support TARGET (its visible middle)."""
+        click = self.click_of(target)
+        if click is None:
+            return {"ok": False, "code": "NOT_VISIBLE", "message": "the target is not visible"}
+        return self.skill("place", point_normalized_1000=click, hand=side)
+
+    def place_at(self, x_ahead, y_left, delta_z=0.0, side="right"):
+        """Built-in place releasing the held object's centre at torso (x, y), hand height + DELTA_Z."""
+        return self.skill("place", x_ahead_m=float(x_ahead), y_left_m=float(y_left), delta_z_m=float(delta_z), hand=side)
+
+    # --- arm kinematics, collision and planning ---
     def palm_pose(self, side="right"):
         m = self._ctx.measure(self._epoch)
         return inverse(m.world_torso) @ m.palm(self._ctx.arms[side], side)
@@ -148,28 +192,27 @@ class Env:
         pose[:3, 3] = position
         return pose
 
+    def _gate(self, side, exempt, hand):
+        return clearance(self._frame(), self._ctx.arms, side, self._ctx.settings, [t.label for t in exempt],
+                         hand=hand, carried=self._ctx.carried.get(side))
+
     def collides(self, joints, side="right", exempt=(), hand="current"):
         """None if the arm (and hand: "current" shape or "open") at JOINTS clears the sensed scene
-        with the EXEMPT entities removed; otherwise the reason."""
-        gate = clearance(self._frame(), self._ctx.arms, side, self._ctx.settings,
-                         [self._label(e) for e in exempt], hand=hand, carried=self._ctx.carried.get(side))
-        return gate.violation(np.asarray(joints, float))
+        with the EXEMPT targets removed; otherwise the reason."""
+        return self._gate(side, exempt, hand).violation(np.asarray(joints, float))
 
     def path_collides(self, start, end, side="right", exempt=(), hand="current"):
-        gate = clearance(self._frame(), self._ctx.arms, side, self._ctx.settings,
-                         [self._label(e) for e in exempt], hand=hand, carried=self._ctx.carried.get(side))
-        return gate.path_violation(np.asarray(start, float), np.asarray(end, float))
+        return self._gate(side, exempt, hand).path_violation(np.asarray(start, float), np.asarray(end, float))
 
-    def grasp_poses(self, entity, side="right", limit=24):
-        """Calibrated top grasps of ENTITY, best first: [{pre, grasp, width, tier, jaw_in_palm}]."""
-        found = calibrated_grasps(self._frame(), self._label(entity), self._ctx.jaw_samples[side],
-                                  self._ctx.settings.grasp, limit)
+    def grasp_poses(self, target, side="right", limit=24):
+        """Calibrated top grasps of TARGET, best first: [{pre, grasp, width, tier, jaw_in_palm}]."""
+        found = calibrated_grasps(self._frame(), target.label, self._ctx.jaw_samples[side], self._ctx.settings.grasp, limit)
         return [{"pre": g.pre, "grasp": g.grasp, "width": round(g.width, 3), "tier": g.tier,
                  "jaw_in_palm": g.jaw_in_palm.round(3).tolist()} for g in found]
 
     def plan_path(self, pre_poses, goal_poses, side="right", exempt=()):
         """cuRobo: the first (pre, goal) torso-frame pair reachable collision-free from here against
-        the head depth (EXEMPT removed): {ok, index, approach, descent, status}. Needs the server."""
+        the head depth (EXEMPT targets removed): {ok, index, approach, descent, status}."""
         frame = self._frame()
         pres = [frame.world_torso @ np.asarray(p, float) for p in pre_poses]
         goals = [frame.world_torso @ np.asarray(p, float) for p in goal_poses]
@@ -177,7 +220,7 @@ class Env:
             return {"ok": False, "status": "give equal, non-empty lists of poses"}
         planner = CuroboPlanner(self._ctx.settings)
         try:
-            reply = planner.plan(frame, side, pres, goals, tuple(self._label(e) for e in exempt))
+            reply = planner.plan(frame, side, pres, goals, tuple(t.label for t in exempt))
         except PlannerUnavailable as error:
             return {"ok": False, "status": f"planner unavailable: {error}"}
         finally:
@@ -209,7 +252,7 @@ class Env:
         """Cartesian servo of the palm to torso POSE, live-checked: (reached_pose, message)."""
         world = self._ctx.measure(self._epoch).world_torso @ np.asarray(pose, float)
         try:
-            servo_best_effort(self._ctx, self._epoch, side, world, exclude_labels=tuple(self._label(e) for e in exempt))
+            servo_best_effort(self._ctx, self._epoch, side, world, exclude_labels=tuple(t.label for t in exempt))
             message = "ok"
         except SkillFailure as error:
             message = str(error)
@@ -225,50 +268,3 @@ class Env:
 
     def holding(self, side="right"):
         return bool(self._ctx.measure(self._epoch).hands[side].retained(self._ctx.settings.grasp))
-
-    # --- HomeBody's skills ---
-    def _pixel(self, frame, entity):
-        v, u = np.nonzero((frame.labels == self._label(entity)) & np.isfinite(frame.depth) & (frame.depth > 0))
-        if len(u) < MIN_VISIBLE_PIXELS:
-            return None
-        k = int(np.argmin((u - np.median(u)) ** 2 + (v - np.median(v)) ** 2))
-        return [float(min(1000.0, (u[k] + 0.25) * 1000 / (frame.rgb.shape[1] - 1))),
-                float(min(1000.0, (v[k] + 0.25) * 1000 / (frame.rgb.shape[0] - 1)))]
-
-    def skill(self, name, **arguments):
-        """Run a HomeBody skill (navigate, pick, place) with its own arguments: {ok, code, message}."""
-        result = Runner(self._ctx).run(name, arguments, self._frame())
-        self.log(name, result.code, result.message[:160])
-        return {"ok": result.ok, "code": result.code, "message": result.message}
-
-    def pick(self, entity, side="right"):
-        """HomeBody's pick of a visible ENTITY (walks to a grasp stance if needed, lifts into carry)."""
-        frame = self._frame()
-        pixel = self._pixel(frame, entity)
-        if pixel is None:
-            return {"ok": False, "code": "NOT_VISIBLE", "message": f"{entity} is not visible"}
-        result = Runner(self._ctx).run("pick", {"point_normalized_1000": pixel, "hand": side}, frame)
-        self.log("pick", entity, result.code, result.message[:160])
-        return {"ok": result.ok, "code": result.code, "message": result.message}
-
-    def place_on(self, entity, side="right"):
-        """HomeBody's place of the held object onto a visible support ENTITY (its visible middle)."""
-        frame = self._frame()
-        pixel = self._pixel(frame, entity)
-        if pixel is None:
-            return {"ok": False, "code": "NOT_VISIBLE", "message": f"{entity} is not visible"}
-        result = Runner(self._ctx).run("place", {"point_normalized_1000": pixel, "hand": side}, frame)
-        self.log("place_on", entity, result.code, result.message[:160])
-        return {"ok": result.ok, "code": result.code, "message": result.message}
-
-    def place_at(self, x_ahead, y_left, delta_z=0.0, side="right"):
-        """HomeBody's place releasing the held object's centre at torso (x, y), hand height + DELTA_Z."""
-        result = Runner(self._ctx).run("place", {"x_ahead_m": float(x_ahead), "y_left_m": float(y_left),
-                                                 "delta_z_m": float(delta_z), "hand": side}, self._frame())
-        self.log("place_at", round(x_ahead, 3), round(y_left, 3), result.code, result.message[:160])
-        return {"ok": result.ok, "code": result.code, "message": result.message}
-
-    @staticmethod
-    def yaw_to(base, xy):
-        """Heading (rad) from BASE [x, y, ...] toward world XY."""
-        return math.atan2(xy[1] - base[1], xy[0] - base[0])

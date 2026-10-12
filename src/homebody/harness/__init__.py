@@ -1,33 +1,40 @@
-"""The harness a model writes robot programs against: the env API (env.py), its reference
-(API.md), the prompt that asks for a program (prompt.md) and how an attempt's outcome is reported
-back (feedback.py). The outer evolve loop improves this package; the inner loop only uses it.
+"""The harness the agent writes customized skills against: the agent instructions
+(agent_prompt.md), the primitives (env.py) and their reference (API.md), how the task's customized
+skills are shown each turn, and how a customized skill's run is reported back (feedback.py).
+
+The session (frozen) calls exactly these functions; the outer evolve loop improves this package.
 """
 from pathlib import Path
 
-from .env import Env
-from .feedback import report
+from .env import Env, Target
+from .feedback import result as custom_result
 
 HERE = Path(__file__).resolve().parent
 
 
-def build_env(ctx, memory, labels):
-    return Env(ctx, memory, labels)
+def build_env(ctx, frame):
+    return Env(ctx, frame)
 
 
 def api_doc():
     return (HERE / "API.md").read_text()
 
 
-def render_prompt(task, memory, attempts, max_attempts):
-    """The inner prompt: TASK text, scene MEMORY, the API reference and earlier ATTEMPTS' reports."""
-    lines = []
-    for item in memory:
-        anchor = ", ".join(f"{v:.2f}" for v in item["anchor_xyz"])
-        lines.append(f"- {item['id']}: {item['label']}; {item['location']} (anchor [{anchor}]"
-                     f"{', portable' if item['portable'] else ''})")
-    history = "\n\n".join(f"### Attempt {a['number']} (dry run)\n{a['report']}" for a in attempts) or "None yet."
-    return (HERE / "prompt.md").read_text().format(task=task, memory="\n".join(lines), api=api_doc(), history=history,
-                                                 attempt=len(attempts) + 1, max_attempts=max_attempts)
+def agent_instructions(settings):
+    """The instructions that open every turn's prompt; SETTINGS fills its {group.value} fields."""
+    instructions = (HERE / "agent_prompt.md").read_text().format_map(settings).strip()
+    return instructions + "\n\n" + api_doc().strip()
 
 
-__all__ = ["Env", "api_doc", "build_env", "render_prompt", "report"]
+def custom_section(customs):
+    """This task's customized skills as a prompt section, or "" when there are none.
+    CUSTOMS maps a name to {description, code, version}."""
+    if not customs:
+        return ""
+    parts = ["Customized skills this task (current versions):"]
+    for name, item in customs.items():
+        parts.append(f"- {name} (version {item['version']}): {item['description']}\n```python\n{item['code'].strip()}\n```")
+    return "\n".join(parts)
+
+
+__all__ = ["Env", "Target", "agent_instructions", "api_doc", "build_env", "custom_result", "custom_section"]

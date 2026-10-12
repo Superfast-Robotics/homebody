@@ -88,7 +88,7 @@ class Loop:
 
     def run_split(self, cid, split, repeats, suffix=""):
         started = time.monotonic()
-        results = self.remote.run_suite(cid, self.tasks(split), repeats, self.cfg["inner"], split + suffix)
+        results = self.remote.run_suite(cid, self.tasks(split), repeats, split + suffix)
         local = self.remote.collect(results, self.work / "results" / cid / (split + suffix))
         runs = score.read_split(local)
         summary = score.summary(runs)

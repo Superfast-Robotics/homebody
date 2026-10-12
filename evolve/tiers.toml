@@ -1,15 +1,17 @@
 # Which code a harness proposal may change and what it costs. Globs are repository-relative; the
 # first matching rule wins. A patch's tier is the highest tier among the files it touches.
-#   0  the harness programs are written against: change freely
+#   0  the harness customized skills are written against (prompt, primitives, docs): change freely
 #   1  robot-side code the harness builds on (skills, motion, helpers): change with a stated reason
 #   2  the robot interface, backend, walking, settings: change only with a case for it
-#   frozen  the inner runner, the suite, its scorer and this loop: never (rejected unseen)
+#   frozen  the agent loop, the suite, its scorer and this loop: never (rejected unseen)
 
 frozen = [
   "evolve/**", "evaluation/**", "tools/check_manipulation.py", "tools/score_session.py",
   "tools/scenegen.py", "assets/**", "configs/continuous_four.json", "configs/waves/**",
+  # the agent loop and its customize_skill mechanism are the fixed test conditions
+  "src/homebody/session/**", "src/homebody/vlm/**", "src/homebody/__main__.py", "tests/test_session.py",
 ]
 tier0 = ["src/homebody/harness/**", "src/homebody/toolkit/**", "tests/harness/**", "tests/test_toolkit.py"]
-tier1 = ["src/homebody/skills/**", "src/homebody/motion/**", "src/homebody/helpers/**", "src/homebody/vlm/**",
+tier1 = ["src/homebody/skills/**", "src/homebody/motion/**", "src/homebody/helpers/**",
          "src/homebody/remote/**", "tools/curobo_server.py", "tests/**"]
 tier2 = ["**"]

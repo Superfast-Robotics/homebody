@@ -1,0 +1,4 @@
+# Frozen settings for every evaluation episode (train, held-out and the final test).
+[agent]
+reasoning_effort = "medium"
+max_steps = 60

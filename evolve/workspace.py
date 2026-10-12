@@ -1,9 +1,10 @@
-"""The meta-proposer's workspace for one round: brief, train results, every inner-loop transcript
-(the programs astra wrote, the harness's reports back, the executed run) and the history.
+"""The meta-proposer's workspace for one round: brief, train results, every session transcript
+(the agent's decisions, the skills it customized and their code, every result) and the history.
 
 Only train runs are shown. Held-out results decide acceptance but never appear here beyond an
 accepted/rejected verdict.
 """
+import json
 import shutil
 from pathlib import Path
 
@@ -22,7 +23,7 @@ def build(round_dir, best, train_local, history, instructions):
     lines = [f"# Train results with harness {best['id']} (commit {best['commit'][:10]})", "",
              (f"Score {best['train']['score']:.3f} (mean stage / 3), success rate {best['train']['success_rate']:.2f}. "
               "Object stage: 0 untouched, 1 lifted, 2 ended in the target region, 3 physics-verified placement."), "",
-             "| task | instruction | stages per run | dry runs | failures |", "|---|---|---|---|---|"]
+             "| task | instruction | stages per run | customizations per run | failures |", "|---|---|---|---|---|"]
     for task, stages in best["train"]["by_task"].items():
         task_runs = [r for r in runs if r.task == task]
         failures = "<br>".join(f"{r.repeat}: {f}" for r in task_runs for f in r.failures[:4])
@@ -33,14 +34,12 @@ def build(round_dir, best, train_local, history, instructions):
         for repeat_dir in sorted(p for p in task_dir.iterdir() if p.is_dir()):
             out = ws / "runs" / task_dir.name / repeat_dir.name
             out.mkdir(parents=True)
-            transcript = repeat_dir / "transcript"
-            if transcript.exists():
-                for item in sorted(transcript.iterdir()):
-                    if not item.name.endswith("_prompt.md"):  # prompts are prompt.md plus the reports copied here
-                        shutil.copy(item, out / item.name)
             result = repeat_dir / "result.json"
             if result.exists():
                 shutil.copy(result, out / "result.json")
+            events = next(repeat_dir.rglob("events.jsonl"), None)
+            if events:
+                (out / "transcript.md").write_text(transcript(events))
             log = repeat_dir / "run.log"
             if log.exists():
                 errors = [line for line in log.read_text(errors="replace").splitlines()
@@ -68,3 +67,32 @@ def render_history(history):
             lines.append("Proposer's notes:\n" + entry["notes"].strip()[:1500])
         lines.append("")
     return "\n".join(lines) + "\n"
+
+
+def transcript(events_path):
+    """The agent's turns as Markdown: what it saw and chose, the skills it customized (full code)
+    and every result, in order."""
+    lines = []
+    for raw in events_path.read_text(errors="replace").splitlines():
+        try:
+            event = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        if event.get("kind") == "decision":
+            d = event["decision"]
+            arguments = dict(d.get("arguments", {}))
+            code = arguments.pop("code", None)
+            lines.append(f"## Step {event['step']}: {d['skill']} {json.dumps(arguments)}\n{d.get('text', '')}")
+            if code:
+                lines.append(f"```python\n{code}\n```")
+        elif event.get("kind") == "result":
+            r = event["result"]
+            details = {k: v for k, v in r.get("details", {}).items() if k != "traceback"}
+            lines.append(f"Result: {r['code']}: {r['message'][:400]}")
+            if details.get("log"):
+                lines.append("Printed:\n" + "\n".join(str(x) for x in details["log"][-30:]))
+            elif details:
+                lines.append("Details: " + json.dumps(details, default=str)[:600])
+        elif event.get("kind") == "task_finished":
+            lines.append(f"## Task finished: {json.dumps(event.get('outcome', {}), default=str)[:400]}")
+    return "\n\n".join(lines) + "\n"

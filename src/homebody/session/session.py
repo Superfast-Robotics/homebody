@@ -5,9 +5,10 @@ import time
 import traceback
 from collections.abc import Callable
 from dataclasses import asdict
-from pathlib import Path
 
+from homebody import harness
 from homebody.primitives.actions import PhysicsInvalid
+from homebody.session.custom_skills import CUSTOMIZE, CustomSkills
 from homebody.skills.contract import COMMON_FAILURES, Context, Runner
 from homebody.skills.registry import PROMPTS, REGISTRY
 from homebody.vlm.observations import annotations, model_observation, rounded
@@ -120,6 +121,7 @@ class Session:
                                settings=settings, jaw_samples=jaw_samples,
                                cancelled=controls.cancel.is_set, emit=self.skill_event)
         self.runner = Runner(self.context)
+        self.custom = CustomSkills()
         self.history = []
         self.status = "Ready"
         self._physics_fault = None
@@ -191,15 +193,17 @@ class Session:
     def prompt(self, task, frame):
         """The turn's prompt: instructions, skills, scene annotations, hands, task, observation and recent steps."""
         settings = vars(self.settings)
-        instructions = (Path(__file__).parents[1] / "vlm" / "agent_prompt.md").read_text()
         skills = "\n".join(f"{skill.PROMPT.format_map(settings)} Refusals: {', '.join(dict.fromkeys(skill.FAILURES))}."
                            for skill in REGISTRY.values())
+        skills += (f"\n{CUSTOMIZE}: name, description, code. Defines or replaces a skill for the rest of this task "
+                   "(see above).")
         hands = "; ".join(hand_status(side, self.context.carried.get(side)) for side in ("left", "right"))
         steps = "\n".join(json.dumps(rounded({key: entry[key] for key in ("operator_task", "base_pose", "decision", "result")
                                               if key in entry})) for entry in self.history[-24:])
-        return "\n\n".join((
-            instructions.format_map(settings).strip(),
+        return "\n\n".join(part for part in (
+            harness.agent_instructions(settings),
             f"Skills:\n{skills}\nAny skill may also refuse with: {', '.join(COMMON_FAILURES)}.",
+            self.custom.prompt_section(),
             "Initial-scene memory:\n" + annotations(self.semantic_context),
             f"Hands now: {hands}.",
             "Current task:\n" + task,
@@ -230,12 +234,13 @@ class Session:
         started_wall, started_sim = time.monotonic(), self.backend.time
         outcome = {"status": "error", "steps": 0, "model_claim": None}
         self.history.append({"operator_task": task})
+        self.custom.reset()  # customized skills live for one task
         try:
             if self.requires_reset:
                 raise PhysicsInvalid(self._physics_fault[1])
             self.backend.set_evaluation_sink(self.recorder.physics)
-            names = tuple(PROMPTS) + ("done",)
             for step in range(self.settings.agent.max_steps):
+                names = tuple(dict.fromkeys((*PROMPTS, *self.custom.names(), CUSTOMIZE, "done")))
                 if self.controls.cancel.is_set():
                     raise Cancelled("Task stopped by operator")
                 frame = self.observed.snapshot()
@@ -261,8 +266,16 @@ class Session:
                     break
                 if decision.arguments.get("hand") in ("left", "right"):
                     self.view_side = decision.arguments["hand"]
-                result = asdict(self.runner.run(decision.skill, decision.arguments, frame))
-                self.history.append({"base_pose": frame.base_pose.tolist(), "decision": asdict(decision),
+                if decision.skill == CUSTOMIZE:
+                    result = self.custom.define(decision.arguments)
+                elif decision.skill in self.custom.skills:
+                    result = self.custom.run(decision.skill, decision.arguments, self.context, frame)
+                else:
+                    result = asdict(self.runner.run(decision.skill, decision.arguments, frame))
+                shown = asdict(decision)
+                if decision.skill == CUSTOMIZE:  # the current code is shown in its own prompt section
+                    shown["arguments"] = {**shown["arguments"], "code": "<see customized skills>"}
+                self.history.append({"base_pose": frame.base_pose.tolist(), "decision": shown,
                                      "epoch": frame.epoch,
                                      "frame_sequence": frame.sequence, "result": prompted(result)})
                 self.recorder.event("result", step=step, simulation_time=self.backend.time, result=result)
@@ -349,6 +362,7 @@ class Session:
                 self._physics_fault = None
                 self.context.carried.clear()
                 self.history.clear()
+                self.custom.reset()
                 self.controls.cancel.clear()
                 self.recorder.event("scene_reset", epoch=self.backend.epoch)
                 self.update("Ready", "Scene reset. Previous plans were invalidated.")

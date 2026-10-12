@@ -1,8 +1,9 @@
-You are improving a robot-programming harness to remove one mechanism that makes programs fail.
+You are improving the harness a robot agent customizes its skills with, to remove one mechanism
+that makes its per-task skills fail.
 
 Read {workspace}/BRIEF.md first: it says how harness versions are judged and what you may change.
-The diagnosis of the current harness is below; address **Mechanism {mechanism}** only. The runs it
-cites are under {workspace}/runs/. Edit files in the current directory (a git checkout of the
+The diagnosis of the current harness is below; address **Mechanism {mechanism}** only. The sessions
+it cites are under {workspace}/runs/. Edit files in the current directory (a git checkout of the
 current version); do not read or write anything outside it and {workspace}.
 
 Make the smallest harness change that removes the mechanism, in the lowest tier that can. Keep it
@@ -18,7 +19,7 @@ When done, reply with a short note in this form:
 Mechanism: <title>
 Change: <what you changed, file by file>
 Tier and reason: <highest tier touched; for tier 1 or 2, why a lower tier could not do it>
-Expected effect: <how program authors should now succeed more often, on which kinds of tasks>
+Expected effect: <how the agent's customized skills should now succeed more often, on which tasks>
 Risks: <what could get worse>
 
 <diagnosis>

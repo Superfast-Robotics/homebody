@@ -5,22 +5,18 @@ host = "loki-behavior-gh"
 root = "/lambda/nfs/group-volume/workcell-sim/homebody-baseline"
 base = "homebody-astra"   # the seed checkout: its .venv runs every candidate, its assets hold the suite
 work = "astra-evolve"     # candidates and their results
-parallel = 18             # simultaneous inner loops (each runs a simulation and calls astra)
+parallel = 18             # simultaneous sessions (each runs a simulation and calls astra)
 
 [local]
 work = "/home/lohith/startup/homebody_claude/astra-evolve"
 
 [suite]
-# Each task runs the inner loop (evolve/inner.py) and is scored from physics against its targets.
-# Paths are in the base checkout.
+# Each task runs one HomeBody session (episode_settings.toml: astra at medium effort, at most 60
+# steps; the agent may customize skills) scored from physics against its targets. Paths are in the
+# base checkout.
 train = ["assets/generated/train_*"]
 # Held out: results gate acceptance but nothing about them is ever shown to the proposer.
 val = ["assets/generated/val_*", "assets/real2sim/src_kitchen::configs/continuous_four.json"]
-
-[inner]
-# Fixed budget for the program author on every task; part of the frozen test conditions.
-attempts = 4
-effort = "medium"
 
 # The checks a candidate must pass, by the highest tier its patch touches (tiers.toml).
 [gates.0]

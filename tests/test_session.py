@@ -200,7 +200,7 @@ def test_provider_receives_only_the_current_views_and_the_scene_memory(build):
         assert [path.name for path in images] == ["rgb.png", "depth_preview.png", "map.png", "topdown.png"]
         assert len({path.parent for path in images}) == 1
         assert "\n- Island at [1, 2]\n" in prompt
-        assert set(names) == {*SKILLS, "done"}
+        assert set(names) == {*SKILLS, "customize_skill", "done"}
     assert provider.images[0][0].parent != provider.images[1][0].parent
 
 
@@ -332,18 +332,19 @@ def test_prompt_states_what_each_hand_holds(build, carried, line):
 
 
 def test_prompt_numbers_are_settings_limits_or_coordinate_conventions(build):
-    """Every number in the instructions and skills is rendered from the settings, or is an
-    image index, a click bound or the yaw origin; a changed limit changes the prompt."""
+    """The skill lines carry no unrendered fields and the prompt renders the changed settings'
+    limits (the harness's own instructions and primitive reference are free text)."""
     defaults = Settings()
     settings = replace(defaults, motion=replace(defaults.motion, stance_reach=0.52),
                        placement=replace(defaults.placement, release_height=0.02, max_release_height=0.27,
                                          forward_reach=0.43),
                        topdown=replace(defaults.topdown, ahead=(0.1, 1.2), left=(-0.6, 0.65)))
     session = build(Provider([]), settings=settings)
-    instructions = session.prompt("Inspect", session.backend.snapshot()).split("\n\nInitial-scene memory:")[0]
-    assert "{" not in instructions and "}" not in instructions
-    assert set(re.findall(r"(?<![\w.])\d+(?:\.\d+)?", instructions)) == {
-        "0", "1", "2", "3", "4", "1000", "0.52", "0.02", "0.27", "0.43", "0.1", "1.2", "0.6", "0.65"}
+    prompt = session.prompt("Inspect", session.backend.snapshot())
+    skills = prompt.split("\n\nSkills:\n")[1].split("\n\nInitial-scene memory:")[0]
+    assert "{" not in skills and "}" not in skills
+    numbers = set(re.findall(r"(?<![\w.])\d+(?:\.\d+)?", prompt.split("\n\nInitial-scene memory:")[0]))
+    assert {"0.52", "0.02", "0.27", "0.43", "0.1", "1.2", "0.6", "0.65"} <= numbers  # rendered from the settings
 
 
 def test_each_click_argument_names_the_attachment_the_recorder_sends(build):
@@ -887,3 +888,29 @@ def test_busy_retries_run_out_and_other_errors_are_not_retried(build):
     broken = BusyThenAnswers([], busy=9, error=ProviderError("Codex exited 1: invalid schema"))
     session = build(broken)
     assert session.run_task("Inspect")["status"] == "provider_error" and broken.calls == 1
+
+
+def test_customized_skill_replaces_a_skill_for_the_task_and_reports_its_prints(build):
+    code = "def run(env, **arguments):\n    print('ran with', arguments['n'])\n    return {'code': 'NOT_YET', 'message': 'try again'}\n"
+    provider = Provider([Decision("Rewrite pick", "customize_skill", {"name": "pick", "description": "test", "code": code}),
+                         Decision("Use it", "pick", {"n": 3}), Decision("Finished", "done", {}),
+                         Decision("Finished again", "done", {})])
+    session = build(provider)
+    assert session.run_task("Pick")["status"] == "model_done"
+    result = session.history[-1]["result"]
+    assert (result["skill"], result["code"], result["message"]) == ("pick", "NOT_YET", "try again")
+    assert result["details"]["log"] == ["ran with 3"]
+    assert "Customized skills this task" in provider.prompts[1] and "version 1" in provider.prompts[1]
+    assert '"code": "<see customized skills>"' in provider.prompts[1]
+    assert session.run_task("Again")["status"] == "model_done"  # the next task starts without them
+    assert "Customized skills this task" not in provider.prompts[-1] and not session.custom.skills
+
+
+def test_broken_customized_code_is_refused_without_ending_the_task(build):
+    provider = Provider([Decision("Bad", "customize_skill", {"name": "lift", "description": "", "code": "def run(:"}),
+                         Decision("Escape", "customize_skill", {"name": "lift", "description": "", "code": "import os"}),
+                         Decision("Finished", "done", {})])
+    session = build(provider)
+    assert session.run_task("Lift")["status"] == "model_done"
+    codes = [entry["result"]["code"] for entry in session.history if "result" in entry]
+    assert codes == ["INVALID_CODE", "INVALID_CODE"] and "lift" not in session.custom.skills
