@@ -86,19 +86,30 @@ class Loop:
             cache.write_text(json.dumps(text, indent=1))
         return json.loads(cache.read_text())
 
+    def run_split(self, cid, split, repeats, suffix=""):
+        started = time.monotonic()
+        results = self.remote.run_suite(cid, self.tasks(split), repeats, self.cfg["inner"], split + suffix)
+        local = self.remote.collect(results, self.work / "results" / cid / (split + suffix))
+        runs = score.read_split(local)
+        summary = score.summary(runs)
+        self.log(f"{cid} {split}{suffix}: score {summary['score']:.3f}, success {summary['success_rate']:.2f} "
+                 f"({time.monotonic() - started:.0f} s)")
+        return runs
+
     def evaluate(self, cid, checkout, tier):
         """Push, run both splits at the tier's repeats, collect; returns {train, val} summaries."""
         self.remote.push_candidate(cid, checkout)
         repeats = self.cfg["gates"][str(tier)]["repeats"]
-        summaries = {}
+        return {split: score.summary(self.run_split(cid, split, repeats)) for split in ("train", "val")}
+
+    def confirm(self, cid, tier):
+        """A passing candidate's second, independent evaluation, pooled with its first."""
+        repeats = self.cfg["gates"][str(tier)]["repeats"]
+        pooled = {}
         for split in ("train", "val"):
-            started = time.monotonic()
-            results = self.remote.run_suite(cid, self.tasks(split), repeats, self.cfg["inner"], split)
-            local = self.remote.collect(results, self.work / "results" / cid / split)
-            summaries[split] = score.summary(score.read_split(local))
-            self.log(f"{cid} {split}: score {summaries[split]['score']:.3f}, success "
-                     f"{summaries[split]['success_rate']:.2f} ({time.monotonic() - started:.0f} s)")
-        return summaries
+            first = score.read_split(self.work / "results" / cid / split)
+            pooled[split] = score.summary(first + self.run_split(cid, split, repeats, "_confirm"))
+        return pooled
 
     # --- commands ---
     def baseline(self):
@@ -145,6 +156,10 @@ class Loop:
                 continue
             summaries = self.evaluate(cand["cid"], cand["path"], entry["tier"])
             ok, d_train, d_val = score.accept(best, summaries)
+            if ok:  # noise check: accept only if the pooled first and confirming runs still pass
+                self.log(f"{cand['cid']} passed ({d_train:+.3f} train, {d_val:+.3f} held-out); confirming")
+                summaries = self.confirm(cand["cid"], entry["tier"])
+                ok, d_train, d_val = score.accept(best, summaries)
             verdict = (f"train {d_train:+.3f}, held-out {'did not drop' if d_val >= 0 else 'dropped'}"
                        f"{' and rose' if d_val > 0 else ''}")
             entry = {**entry, **summaries, "status": "accepted" if ok else "rejected", "reason": verdict,
