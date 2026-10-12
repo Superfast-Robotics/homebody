@@ -1,0 +1,32 @@
+# The skill-evolution loop's fixed configuration. Frozen: a proposal that edits evolve/** is rejected.
+
+[remote]
+host = "loki-behavior-gh"
+root = "/lambda/nfs/group-volume/workcell-sim/homebody-baseline"
+base = "homebody-astra"   # the seed checkout: its .venv runs every candidate, its assets hold the suite
+work = "astra-evolve"     # candidates and their results
+parallel = 24             # simultaneous scripted runs
+
+[local]
+work = "/home/lohith/startup/homebody_claude/astra-evolve"
+
+[suite]
+# Scripted transfers (tools/check_manipulation.py) scored from physics. Paths are in the base checkout.
+train = ["assets/generated/train_*"]
+# Held out: results gate acceptance but nothing about them is ever shown to the proposer.
+val = ["assets/generated/val_*", "assets/real2sim/src_kitchen::configs/continuous_four.json"]
+wall_timeout = 600
+
+# The checks a candidate must pass, by the highest tier its patch touches (tiers.toml).
+[gates.0]
+repeats = 2
+[gates.1]
+repeats = 2
+[gates.2]
+repeats = 3
+
+[astra]
+model = "gpt-6-astra"
+effort = "medium"
+proposals = 2             # distinct patches per round
+timeout = 1800            # seconds per Codex call
