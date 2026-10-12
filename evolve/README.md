@@ -1,28 +1,26 @@
-# evolve: astra-authored skills
+# evolve: meta-optimising the harness robot programs are written against
 
-A propose → gate → accept loop over HomeBody's own code, after Self-Harness (arXiv 2606.09498)
-with tiered gates, an archive of versions (Darwin Gödel Machine) and the proposer reading full
-traces from disk (Meta-Harness).
+Two loops, after Meta-Harness (arXiv 2603.28052) and Self-Harness (arXiv 2606.09498):
 
-Each round:
-1. **Workspace.** The best version's train runs become `rounds/rNNN/workspace/`: `BRIEF.md`,
-   `results.md`, per-run traces (skill results, stages, plans, `skill_trace` events) and the
-   history of earlier proposals. Held-out results are never written there.
-2. **Diagnose.** Astra (Codex, read-only) groups failures into mechanisms (`diagnosis.md`).
-3. **Propose.** For each of the top K mechanisms, astra edits its own git worktree
-   (`evolve/<id>` branch) with a minimal patch and a note.
-4. **Gate.** The patch's tier is the highest of the files it touches (`tiers.toml`); a frozen file
-   rejects it. Lint and unit tests run with the candidate's code on the remote.
-5. **Evaluate.** Train and held-out scripted suites (`config.toml`), repeats by tier, scored
-   from physics (`score.py`): stage 0 nothing, 1 pick, 2 place, 3 physics-verified success.
-6. **Accept.** Neither split's score drops and at least one rises; among several, the larger gain
-   wins, then the smaller diff. Every candidate is archived (`archive.jsonl`).
+**Inner loop (`inner.py`, frozen; one task).** Astra gets the task, the scan's scene memory, the
+head image and the harness's API reference (`src/homebody/harness/`), writes `run(env)`, which is
+dry-run on a saved simulation; the harness reports back; after up to 4 attempts one program runs
+for real and is scored from physics (0 untouched, 1 lifted, 2 in the target region, 3 placed).
 
-Commands (from the repository root; the work directory is in `config.toml`):
+**Outer loop (`loop.py`; the harness).** Each round:
+1. **Workspace.** The best harness's train runs (programs, reports, images, results) become
+   `rounds/rNNN/workspace/`, with a brief and the history. Held-out results never appear there.
+2. **Diagnose.** Astra (high effort, read-only) finds harness mechanisms behind the failures.
+3. **Propose.** For each of the top K mechanisms, astra patches the harness in its own worktree.
+4. **Gate.** Tier = highest tier the patch touches (`tiers.toml`; the harness and toolkit are tier
+   0); frozen files reject it; lint and unit tests (API.md must match env.py) run remotely.
+5. **Evaluate.** The inner loop runs every train and held-out task with the candidate harness.
+6. **Accept.** Neither split's score drops and one rises; the larger gain, then the smaller diff,
+   wins. Every candidate is archived (`archive.jsonl`).
 
     python3 -m evolve.loop baseline
     python3 -m evolve.loop run --rounds 5
     python3 -m evolve.loop status
 
-The suite's scenes come from `tools/scenegen.py` (train and val draws). The evaluation scenes the
-final version is tested on are kept outside this repository and outside the loop.
+Train and held-out scenes come from `tools/scenegen.py`; the held-out set adds the scanned SRC
+kitchen. The final harness is tested, unchanged, on scenes kept outside this repository.

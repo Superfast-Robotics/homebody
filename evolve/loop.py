@@ -93,7 +93,7 @@ class Loop:
         summaries = {}
         for split in ("train", "val"):
             started = time.monotonic()
-            results = self.remote.run_suite(cid, self.tasks(split), repeats, self.cfg["suite"]["wall_timeout"], split)
+            results = self.remote.run_suite(cid, self.tasks(split), repeats, self.cfg["inner"], split)
             local = self.remote.collect(results, self.work / "results" / cid / split)
             summaries[split] = score.summary(score.read_split(local))
             self.log(f"{cid} {split}: score {summaries[split]['score']:.3f}, success "

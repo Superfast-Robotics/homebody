@@ -1,24 +1,24 @@
-You are changing a humanoid robot's skill code to remove one failure mechanism.
+You are improving a robot-programming harness to remove one mechanism that makes programs fail.
 
-Read {workspace}/BRIEF.md first: it says how versions are judged and what you may change. The
-diagnosis of the current version is below; implement a fix for **Mechanism {mechanism}** only. The
-traces it cites are under {workspace}/traces/. Edit files in the current directory (a git checkout
-of the current version); do not read or write anything outside it and {workspace}.
+Read {workspace}/BRIEF.md first: it says how harness versions are judged and what you may change.
+The diagnosis of the current harness is below; address **Mechanism {mechanism}** only. The runs it
+cites are under {workspace}/runs/. Edit files in the current directory (a git checkout of the
+current version); do not read or write anything outside it and {workspace}.
 
-Make the smallest change that removes the mechanism, in the lowest tier that can. Keep it general:
-nothing tied to particular scenes, names, colours or coordinates. Record the decisions you add with
-`trace(ctx, ...)` from homebody.toolkit. Add or update unit tests under tests/skills/ when the change
-has logic worth pinning. You cannot run the simulator or the test suite here (no MuJoCo), but
-before you finish, run `{ruff} check src tests` and fix every finding, and make sure every
-changed file parses (`python3 -m py_compile <file>`). Other code reads skill internals too (for
-example `src/homebody/ui/` and `tests/` use the fields of pick's and place's `Plan`): search for
-the names you change and keep their users working.
+Make the smallest harness change that removes the mechanism, in the lowest tier that can. Keep it
+general: nothing tied to particular scenes, entity names, colours or coordinates. Keep
+src/homebody/harness/API.md in exact agreement with env.py (every documented call exists with the
+documented signature). Add or update unit tests under tests/harness/ for logic worth pinning. You
+cannot run the simulator or the test suite here (no MuJoCo), but before you finish, run
+`{ruff} check src tests` and fix every finding, and make sure every changed file parses
+(`python3 -m py_compile <file>`). If you change names other code uses (skills, ui, tests), keep
+their users working.
 
 When done, reply with a short note in this form:
 Mechanism: <title>
 Change: <what you changed, file by file>
 Tier and reason: <highest tier touched; for tier 1 or 2, why a lower tier could not do it>
-Expected effect: <which tasks should move, and how>
+Expected effect: <how program authors should now succeed more often, on which kinds of tasks>
 Risks: <what could get worse>
 
 <diagnosis>

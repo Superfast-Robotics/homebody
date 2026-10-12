@@ -1,51 +1,40 @@
-"""Scores from collected scripted runs: success, progress stage and the failures met.
+"""Scores from collected inner-loop runs.
 
-A run's stage is 0 (nothing), 1 (a pick verified by the skill), 2 (a place the skill reported
-done) or 3 (the physics scorer's pass: skills completed, pick and placement verified).
-A split's score is the mean stage over its tasks and repeats, divided by 3.
+Each run's result.json (written by inner.py) holds a stage per targeted object: 0 untouched,
+1 lifted by the robot, 2 ended inside the target region, 3 physics-verified placement. A run's
+stage is the mean over its objects; a split's score is the mean stage over runs, divided by 3.
 """
 import json
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
-
-RESULT = re.compile(r"^RESULT (\S+) (\{.*\})$")
 
 
 @dataclass
 class Run:
     task: str
     repeat: str
-    stage: int
+    stage: float
     success: bool
-    status: str
+    attempts: int
     wall: float
-    failures: list = field(default_factory=list)  # [(label, code, message)]
+    failures: list = field(default_factory=list)  # short strings
 
 
 def read_run(task_dir, repeat_dir):
-    result_path = next(repeat_dir.rglob("result.json"), None)
-    log = (repeat_dir / "run.log").read_text(errors="replace") if (repeat_dir / "run.log").exists() else ""
-    results = []
-    for line in log.splitlines():
-        match = RESULT.match(line)
-        if match:
-            try:
-                results.append((match.group(1), json.loads(match.group(2))))
-            except json.JSONDecodeError:
-                continue
-    picked = any(r["skill"] == "pick" and r["code"] == "OK" for _, r in results)
-    placed = any(r["skill"] == "place" and r["code"] == "OK" for _, r in results)
-    outcome = json.loads(result_path.read_text()) if result_path else {}
-    success = (outcome.get("status") == "skills_completed" and outcome.get("independent_physical_pick_verified") is True
-               and outcome.get("local_placement_score", {}).get("success") is True)
-    stage = 3 if success else 2 if placed else 1 if picked else 0
-    failures = [(label, r["code"], r["message"][:200]) for label, r in results if r["code"] != "OK"]
-    if not result_path:
-        tail = log.strip().splitlines()[-3:] if log.strip() else ["no output"]
-        failures.append(("run", "CRASHED", " | ".join(tail)[:300]))
-    return Run(task_dir.name, repeat_dir.name, stage, success, outcome.get("status", "crashed"),
-               float(outcome.get("wall_seconds", 0.0)), failures)
+    path = repeat_dir / "result.json"
+    if not path.exists():
+        log = (repeat_dir / "run.log").read_text(errors="replace") if (repeat_dir / "run.log").exists() else ""
+        tail = " | ".join(log.strip().splitlines()[-3:])[:300] if log.strip() else "no output"
+        return Run(task_dir.name, repeat_dir.name, 0.0, False, 0, 0.0, [f"inner loop crashed: {tail}"])
+    result = json.loads(path.read_text())
+    failures = [f"{name}: stage {o['stage']} ({o['reason']})" for name, o in result.get("objects", {}).items()
+                if o.get("reason") is not None]
+    execution = result.get("execution") or {}
+    if execution.get("error"):
+        failures.append(f"executed program error: {execution['error'][:200]}")
+    dry = [a for a in result.get("attempts", []) if a.get("kind") == "dry_run"]
+    return Run(task_dir.name, repeat_dir.name, float(result.get("stage", 0.0)), bool(result.get("success")), len(dry),
+               float(result.get("wall_seconds", 0.0)), failures)
 
 
 def read_split(local):
@@ -61,10 +50,10 @@ def summary(runs):
         return {"score": 0.0, "success_rate": 0.0, "runs": 0, "by_task": {}}
     by_task = {}
     for run in runs:
-        by_task.setdefault(run.task, []).append(run.stage)
+        by_task.setdefault(run.task, []).append(round(run.stage, 2))
     return {"score": round(sum(r.stage for r in runs) / (3 * len(runs)), 4),
             "success_rate": round(sum(r.success for r in runs) / len(runs), 4), "runs": len(runs),
-            "by_task": {task: stages for task, stages in by_task.items()}}
+            "by_task": by_task}
 
 
 def accept(parent, child):

@@ -1,16 +1,15 @@
-# Which code a proposal may change and what it costs. Globs are repository-relative; the first
-# matching rule wins. A patch's tier is the highest tier among the files it touches.
-#   0  skills: change freely
-#   1  shared robot-side code a skill builds on: change with a stated reason
+# Which code a harness proposal may change and what it costs. Globs are repository-relative; the
+# first matching rule wins. A patch's tier is the highest tier among the files it touches.
+#   0  the harness programs are written against: change freely
+#   1  robot-side code the harness builds on (skills, motion, helpers): change with a stated reason
 #   2  the robot interface, backend, walking, settings: change only with a case for it
-#   frozen  the suite, its scorer and this loop: never (a patch touching it is rejected)
+#   frozen  the inner runner, the suite, its scorer and this loop: never (rejected unseen)
 
 frozen = [
   "evolve/**", "evaluation/**", "tools/check_manipulation.py", "tools/score_session.py",
   "tools/scenegen.py", "assets/**", "configs/continuous_four.json", "configs/waves/**",
 ]
-tier0 = ["src/homebody/skills/navigate.py", "src/homebody/skills/pick.py", "src/homebody/skills/place.py",
-         "src/homebody/skills/lib/**", "tests/skills/**"]
-tier1 = ["src/homebody/skills/**", "src/homebody/toolkit/**", "src/homebody/motion/**", "src/homebody/helpers/**",
-         "src/homebody/vlm/**", "src/homebody/remote/**", "tools/curobo_server.py", "tests/**"]
+tier0 = ["src/homebody/harness/**", "src/homebody/toolkit/**", "tests/harness/**", "tests/test_toolkit.py"]
+tier1 = ["src/homebody/skills/**", "src/homebody/motion/**", "src/homebody/helpers/**", "src/homebody/vlm/**",
+         "src/homebody/remote/**", "tools/curobo_server.py", "tests/**"]
 tier2 = ["**"]

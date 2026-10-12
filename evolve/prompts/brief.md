@@ -1,48 +1,47 @@
-# Brief: improve the HomeBody skills
+# Brief: improve the harness that robot programs are written against
 
 HomeBody drives a simulated Unitree G1 humanoid (MuJoCo; Dex3 three-finger hands; a head RGB-D
-camera) through skills: `navigate`, `pick`, `place` (`src/homebody/skills/`). Your job is to make
-the robot succeed at tabletop transfer tasks by changing code, round after round.
+camera). On every task, a model (astra) WRITES a Python program `run(env)` against a harness and
+runs it: it gets the task, a scan's scene memory, the head image and the harness's API reference,
+replies with a program, the program is dry-run on a saved simulation, the harness reports back,
+and after up to 4 attempts one program is executed for real and scored from physics.
 
-## How a version is evaluated
+You are improving that HARNESS, not writing task programs. A better harness lets the program
+author succeed more often on tasks it has never seen: clearer and more capable functions, better
+feedback after a dry run, a better prompt. The harness is `src/homebody/harness/`:
+- `env.py`: the `env` object programs call (perception, base, HomeBody's skills, arm, hand, planning),
+- `API.md`: the reference the author reads (it must match env.py exactly),
+- `prompt.md`: the author's instructions,
+- `feedback.py`: what a dry run reports back (text and images),
+- `__init__.py`: how the prompt is assembled.
+It builds on `src/homebody/toolkit/` (also yours) and on HomeBody's skills, motion and helpers.
 
-Each task is a scripted transfer (`tools/check_manipulation.py`, read-only): navigate to a stance,
-`pick` the named object, navigate to the destination, `place` it there. Stances and arguments come
-from the task's sequence file; the skills decide everything else. The physics scorer then checks
-that the object rests inside the destination and that nothing else was disturbed.
+## How a harness version is judged
 
-A run's stage is 0 (nothing), 1 (pick verified), 2 (place reported done) or 3 (physics-verified
-success). A version's score is the mean stage / 3 over tasks and repeats.
+Tasks come from three procedurally generated families, randomised in layout, sizes, heights and
+colours: objects in an open bin to load into a carton; cups (and plates, trays) on a counter to
+return to a shelf level; objects close to a backsplash to move into a side basket. Each targeted
+object scores a stage: 0 untouched, 1 lifted, 2 ended in the target region, 3 physics-verified
+placement. A version's score is the mean stage / 3 over tasks and repeats.
 
-Scenes are procedurally generated in three families, each randomised in layout, sizes, heights
-and colours:
-- objects standing in an open bin on a table, to load into an open carton on the same table;
-- cups (and plates, trays) on a counter, to return to one level of an open shelf unit;
-- objects close to a backsplash and to each other on a counter, to move into a side basket.
-
-`results.md` and `traces/` show the train scenes. Acceptance also uses held-out scenes you never
-see: other draws of the same families, and a real scanned kitchen where the current skills already
-work. A version is accepted only if neither the train nor the held-out score drops and at least one
-rises. So fix mechanisms, not scenes: never special-case object names, colours, coordinates or
-scene ids, and do not break what works.
+`results.md` and `runs/` show the train tasks with the current harness: per run, each attempt's
+reply (the program) and report, the result, and images. Acceptance also uses held-out tasks you
+never see: other draws of the same families and a real scanned kitchen with a four-object task.
+A version is accepted only if neither the train nor the held-out score drops and at least one
+rises. The final harness will be used, unchanged, on other scenes. So improve the harness in
+general: never add anything about particular scenes, entity names, colours or coordinates, and
+never weaken a check to make a task look done.
 
 ## What you may change (evolve/tiers.toml)
 
-- Tier 0, change freely: `skills/navigate.py`, `skills/pick.py`, `skills/place.py`, a new
-  `skills/lib/` package, tests under `tests/skills/`.
-- Tier 1, change with a stated reason: other skill files, `toolkit/`, `motion/`, `helpers/`,
-  `vlm/`, the cuRobo server, other tests.
-- Tier 2, change only with a clear case: the robot interface, the backend, walking, settings,
-  anything else. Its checks are the most expensive.
-- Frozen, never: `evolve/`, `evaluation/`, `assets/`, the scripted runner and scorer, the scene
-  generator. A patch touching them is rejected unseen.
+- Tier 0, change freely: `src/homebody/harness/`, `src/homebody/toolkit/`, `tests/harness/`.
+- Tier 1, with a stated reason: HomeBody's skills, motion, helpers, the cuRobo server, other tests.
+- Tier 2, only with a clear case: the robot interface, backend, walking, settings, anything else.
+- Frozen, never: `evolve/` (the inner runner, the attempt budget, the scorer), `evaluation/`,
+  `assets/`, the scene generator. A patch touching them is rejected unseen.
 
-Make the smallest change that fixes the mechanism. Keep each skill's name and `ARGUMENTS`
-compatible with the scripted runner. Skills reach the robot only through `Context`/`Robot`, never
-the simulator, and never use simulator ground truth. `src/homebody/toolkit/API.md` lists the
-building blocks (IK diagnosis, collision gates with the hand's current shape, calibrated grasps,
-cuRobo paths) and `trace(ctx, what, **data)`, which records a decision into the run's events:
-trace the decisions you add, so the next round can see why a run went the way it did.
-
-You cannot run the simulator here. Lint (ruff) and the unit tests run on every candidate before the
-suite; a failure rejects it.
+The harness reaches the robot only through the skill `Context` (the Robot interface): camera
+frames, measured robot state, commands. Never use simulator ground truth (object poses from the
+physics engine, the scorer, scene files) in the harness. Make the smallest change that addresses
+the problem; keep API.md in exact agreement with env.py. You cannot run the simulator here; lint
+and the unit tests run on every candidate before the suite, and a failure rejects it.
