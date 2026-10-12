@@ -200,7 +200,7 @@ def test_provider_receives_only_the_current_views_and_the_scene_memory(build):
         assert [path.name for path in images] == ["rgb.png", "depth_preview.png", "map.png", "topdown.png"]
         assert len({path.parent for path in images}) == 1
         assert "\n- Island at [1, 2]\n" in prompt
-        assert set(names) == {*SKILLS, "customize_skill", "done"}
+        assert set(names) == {*SKILLS, "customize_skill", "read_skill", "done"}
     assert provider.images[0][0].parent != provider.images[1][0].parent
 
 
@@ -914,3 +914,30 @@ def test_broken_customized_code_is_refused_without_ending_the_task(build):
     assert session.run_task("Lift")["status"] == "model_done"
     codes = [entry["result"]["code"] for entry in session.history if "result" in entry]
     assert codes == ["INVALID_CODE", "INVALID_CODE"] and "lift" not in session.custom.skills
+
+
+def test_edits_revise_a_customized_skill_and_bad_edits_are_refused(build):
+    code = "def run(env, **arguments):\n    return {'code': 'NOT_YET', 'message': 'first'}\n"
+    edit = [{"find": "'NOT_YET', 'message': 'first'", "replace": "'OK', 'message': 'second'"}]
+    provider = Provider([
+        Decision("Edit before defining", "customize_skill", {"name": "lift", "edits": edit}),
+        Decision("Define", "customize_skill", {"name": "lift", "description": "d", "code": code}),
+        Decision("Missing text", "customize_skill", {"name": "lift", "edits": [{"find": "absent", "replace": "x"}]}),
+        Decision("Revise", "customize_skill", {"name": "lift", "edits": edit}),
+        Decision("Use", "lift", {}), Decision("Finished", "done", {})])
+    session = build(provider)
+    assert session.run_task("Lift")["status"] == "model_done"
+    codes = [entry["result"]["code"] for entry in session.history if "result" in entry]
+    assert codes == ["INVALID_ARGUMENT", "OK", "EDIT_FAILED", "OK", "OK"]
+    assert session.history[-1]["result"]["message"] == "second"
+    assert session.custom.skills["lift"]["version"] == 2 and session.custom.skills["lift"]["description"] == "d"
+
+
+def test_read_skill_shows_a_source_for_one_turn(build):
+    provider = Provider([Decision("Read", "read_skill", {"name": "pick"}), Decision("Look", "read_skill", {"name": "nope"}),
+                         Decision("Finished", "done", {})])
+    session = build(provider)
+    assert session.run_task("Read")["status"] == "model_done"
+    assert "Source of pick, the built-in skill" in provider.prompts[1] and "def prepare(" in provider.prompts[1]
+    assert "Source of pick" not in provider.prompts[2]
+    assert [entry["result"]["code"] for entry in session.history if "result" in entry] == ["OK", "INVALID_ARGUMENT"]

@@ -1,7 +1,8 @@
 """Skills the agent writes during a task: `customize_skill` compiles `def run(env, **arguments)`
-against the harness primitives, and the new version replaces (or adds) that skill until the task
-ends. Its runs are sandboxed (no imports or builtins beyond plain computation), bounded in wall
-time, and reported back as ordinary skill results.
+against the harness primitives, from full code or from find/replace edits to the task's current
+version, and it replaces (or adds) that skill until the task ends. Its runs are sandboxed (no
+imports or builtins beyond plain computation), bounded in wall time, and reported back as ordinary
+skill results. `read_skill` shows a skill's current source (built-in or customized) for one turn.
 """
 import dataclasses
 import time
@@ -13,9 +14,10 @@ from homebody import harness
 from homebody.primitives.actions import PhysicsInvalid
 
 CUSTOMIZE = "customize_skill"
+READ = "read_skill"
 RUN_SECONDS = 300.0  # wall time one customized-skill run may take
 MAX_CODE_CHARS = 20000
-RESERVED = frozenset({CUSTOMIZE, "done"})
+RESERVED = frozenset({CUSTOMIZE, READ, "done"})
 NAME_CHARS = frozenset("abcdefghijklmnopqrstuvwxyz0123456789_")
 SAFE_BUILTINS = {name: __builtins__[name] if isinstance(__builtins__, dict) else getattr(__builtins__, name)
                  for name in ("abs", "min", "max", "range", "len", "enumerate", "zip", "float", "int", "list", "dict",
@@ -61,9 +63,19 @@ class CustomSkills:
                                        for name, item in self.skills.items()})
 
     def define(self, arguments):
-        """Compile ARGUMENTS {name, description, code}; a skill result dict."""
+        """Compile ARGUMENTS {name, description, code} or {name, description?, edits: [{find, replace}]}
+        (edits apply to the task's current customized version); a skill result dict."""
         name, code = arguments.get("name"), arguments.get("code")
-        description = arguments.get("description", "")
+        if "edits" in arguments:
+            if code is not None:
+                return refusal("INVALID_ARGUMENT", "give either code or edits, not both")
+            if name not in self.skills:
+                return refusal("INVALID_ARGUMENT", f"edits apply only to a customized skill; {name!r} has none "
+                                                   "this task, so give its full code")
+            code, problem = apply_edits(self.skills[name]["code"], arguments["edits"])
+            if problem:
+                return refusal("EDIT_FAILED", problem)
+        description = arguments.get("description", self.skills.get(name, {}).get("description", ""))
         if not isinstance(name, str) or not name or set(name) - NAME_CHARS or name in RESERVED:
             return {"skill": CUSTOMIZE, "code": "INVALID_ARGUMENT", "details": {},
                     "message": "name must be lowercase letters, digits or _, and not customize_skill or done"}
@@ -103,3 +115,22 @@ class CustomSkills:
             error = f"{type(exc).__name__}: {exc}{where}"
         result = harness.custom_result(env, returned, error)
         return {"skill": name, **result}
+
+
+def refusal(code, message):
+    return {"skill": CUSTOMIZE, "code": code, "details": {}, "message": message}
+
+
+def apply_edits(source, edits):
+    """SOURCE with each {find, replace} applied in order; (new source, None) or (None, problem).
+    Each FIND must occur exactly once in the text at its turn."""
+    if not isinstance(edits, list) or not edits:
+        return None, "edits must be a non-empty list of {find, replace}"
+    for index, edit in enumerate(edits, 1):
+        if not isinstance(edit, dict) or not isinstance(edit.get("find"), str) or not isinstance(edit.get("replace"), str):
+            return None, f"edit {index} needs text find and replace"
+        count = source.count(edit["find"]) if edit["find"] else 0
+        if count != 1:
+            return None, f"edit {index}: find occurs {count} times in the current code; it must occur exactly once"
+        source = source.replace(edit["find"], edit["replace"], 1)
+    return source, None

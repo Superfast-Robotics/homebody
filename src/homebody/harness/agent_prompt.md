@@ -26,6 +26,9 @@ and code (Python defining `def run(env, **arguments)` with the robot primitives 
 new version replaces that skill for the rest of this task, and you then call it like any skill. It
 returns {{"code": "OK" or a refusal code, "message": ...}}; whatever it prints comes back with the
 result. Inside it, the built-in skills stay callable through env.pick, env.place_on, env.navigate.
+To revise a skill you customized, give edits instead of code: a list of {{"find": exact text,
+"replace": new text}}, each find occurring exactly once in its current code. read_skill shows any
+skill's current source (a built-in's, to learn how it works) in the next turn.
 
 done takes summary and ends the task: choose it once the task is complete or cannot be completed, and say which in summary.
 

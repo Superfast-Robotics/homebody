@@ -6,8 +6,10 @@ three derived images, the scene memory from a scan, the recent steps and the ins
 replies with one action: a skill call (navigate, pick, place), `customize_skill`, or `done`.
 `customize_skill(name, description, code)` writes Python `def run(env, **arguments)` against the
 robot primitives (`env`), and that version replaces or adds the skill for the rest of the task; the
-agent then calls it, reads its result and printed lines, and may revise it. Customized skills do not
-carry over between tasks.
+agent then calls it, reads its result and printed lines, and may revise it, with full code or with
+find/replace `edits` to its current version. `read_skill(name)` shows any skill's current source (a
+built-in's, or its own customized version) for one turn. Customized skills do not carry over between
+tasks.
 
 You are improving the HARNESS that makes those per-task customized skills work: what the agent is
 told and given, not the skills of any one task. The harness is `src/homebody/harness/`:

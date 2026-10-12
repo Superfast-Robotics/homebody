@@ -37,4 +37,11 @@ def custom_section(customs):
     return "\n".join(parts)
 
 
-__all__ = ["Env", "Target", "agent_instructions", "api_doc", "build_env", "custom_result", "custom_section"]
+def source_section(name, source, customized):
+    """The source read_skill asked for, shown for one turn."""
+    kind = "your customized version" if customized else "the built-in skill (reference only: edits apply to customized skills)"
+    return f"Source of {name}, {kind}:\n```python\n{source.rstrip()}\n```"
+
+
+__all__ = ["Env", "Target", "agent_instructions", "api_doc", "build_env", "custom_result", "custom_section",
+           "source_section"]
