@@ -167,6 +167,9 @@ class Loop:
             note = astra.propose(path, ws, diagnosis, mechanism, round_dir / f"{cid}_note.md")
         except Exception as error:  # noqa: BLE001 -- a failed proposal is recorded, not fatal
             return {"cid": cid, "path": path, "meta": {"status": "failed", "reason": f"proposer error: {error}"}}
+        # Safe lint fixes first, so a style rule does not cost a whole proposal.
+        subprocess.run(["uvx", "--quiet", "ruff", "check", "--fix", "--quiet", "src", "tests"], cwd=path,
+                       check=False, capture_output=True)
         git("add", "-A", cwd=path)
         if not git("status", "--porcelain", cwd=path):
             return {"cid": cid, "path": path, "meta": {"status": "rejected", "reason": "no change", "notes": note}}
