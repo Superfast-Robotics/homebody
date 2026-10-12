@@ -30,3 +30,4 @@ model = "gpt-6-astra"
 effort = "medium"
 proposals = 2             # distinct patches per round
 timeout = 1800            # seconds per Codex call
+ruff = "/home/lohith/startup/homebody_claude/astra-evolve/bin/ruff"  # same version as the remote

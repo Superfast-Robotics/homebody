@@ -8,8 +8,11 @@ of the current version); do not read or write anything outside it and {workspace
 Make the smallest change that removes the mechanism, in the lowest tier that can. Keep it general:
 nothing tied to particular scenes, names, colours or coordinates. Record the decisions you add with
 `trace(ctx, ...)` from homebody.toolkit. Add or update unit tests under tests/skills/ when the change
-has logic worth pinning. You cannot run the simulator, but make sure the code at least parses
-(`python3 -m py_compile <file>`).
+has logic worth pinning. You cannot run the simulator or the test suite here (no MuJoCo), but
+before you finish, run `{ruff} check src tests` and fix every finding, and make sure every
+changed file parses (`python3 -m py_compile <file>`). Other code reads skill internals too (for
+example `src/homebody/ui/` and `tests/` use the fields of pick's and place's `Plan`): search for
+the names you change and keep their users working.
 
 When done, reply with a short note in this form:
 Mechanism: <title>

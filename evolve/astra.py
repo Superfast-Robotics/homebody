@@ -32,5 +32,5 @@ def diagnose(worktree, workspace, out):
 
 def propose(worktree, workspace, diagnosis, mechanism, out):
     prompt = (HERE / "prompts" / "propose.md").read_text().format(
-        workspace=workspace, diagnosis=diagnosis, mechanism=mechanism)
+        workspace=workspace, diagnosis=diagnosis, mechanism=mechanism, ruff=settings()["ruff"])
     return codex(prompt, worktree, "workspace-write", out)
