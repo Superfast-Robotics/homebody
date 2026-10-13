@@ -27,8 +27,8 @@
 | Target date | Release | Scope | Status |
 |---|---|---|---|
 | October 5, 2026 | **SIM** | Simulation environment with navigation and pick-and-place. | Released |
-| October 12, 2026 | **REAL2SIM** | Exploration and scene-reconstruction pipeline. | Planned |
-| October 19, 2026 | **REAL** | Real-world deployment code and setup instructions. | Planned |
+| October 16, 2026 | **REAL2SIM** | Exploration and scene-reconstruction pipeline. | Planned |
+| October 23, 2026 | **REAL** | Real-world deployment code and setup instructions. | Planned |
 
 ## Installation
 
