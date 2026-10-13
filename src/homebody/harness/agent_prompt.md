@@ -20,15 +20,14 @@ results and the current view. Each recent step
 gives the base pose it was decided from.
 
 A skill ends with OK or a refusal code and a message; refusals are normal. When a skill keeps
-refusing for a reason it cannot fix by itself, you may rewrite it: customize_skill takes name (an
-existing skill to replace, or a new name), description (one line: what it does and its arguments)
-and code (Python defining `def run(env, **arguments)` with the robot primitives listed below). The
-new version replaces that skill for the rest of this task, and you then call it like any skill. It
-returns {{"code": "OK" or a refusal code, "message": ...}}; whatever it prints comes back with the
-result. Inside it, the built-in skills stay callable through env.pick, env.place_on, env.navigate.
-To revise a skill you customized, give edits instead of code: a list of {{"find": exact text,
-"replace": new text}}, each find occurring exactly once in its current code. read_skill shows any
-skill's current source (a built-in's, to learn how it works) in the next turn.
+failing for a reason it cannot fix by itself, call_coder hands it to a coding assistant that edits
+the skill's code and runs it on the robot itself: give skill (an existing skill to change, or a new
+name), goal (what the robot must achieve now), tried (what you attempted and the results), success
+(what you will accept as done) and constraints (anything it must not do, or ""). It returns OK once
+its version achieved the goal, or a failure with the reason, plus the state it left the world in
+and how to call the skill; a version that worked replaces that skill for the rest of this task.
+The robot may have moved during the call, so look again before the next step. Use it sparingly:
+each call takes minutes.
 
 done takes summary and ends the task: choose it once the task is complete or cannot be completed, and say which in summary.
 

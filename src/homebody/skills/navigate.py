@@ -1,6 +1,5 @@
 """The navigate skill: route on the static map to a stance and verify arrival from localized poses."""
 import math
-import sys
 from dataclasses import dataclass
 from itertools import pairwise
 
@@ -21,6 +20,7 @@ from homebody.motion.carry import compact_carry, continuing, recover
 
 from .contract import Result, SkillFailure
 
+MAX_FLOAT = float(np.finfo(float).max)  # a Python float compares exactly with any int
 NEEDS = ("base_velocity", "arm_target", "advance", "stop")
 
 FAILURES = ("NO_ROUTE", "STALL", "TIMEOUT", "ARRIVAL_NOT_VERIFIED", "CARRY_CLEARED", "HOLD_UNCERTAIN")
@@ -123,7 +123,7 @@ def map_point(arguments, name, navigation):
 
 
 def finite_number(value):
-    return type(value) in (int, float) and -sys.float_info.max <= value <= sys.float_info.max
+    return type(value) in (int, float) and -MAX_FLOAT <= value <= MAX_FLOAT
 
 
 def stance(arguments, navigation, free, requested, facing, yaw, snap, start, settings, reach):

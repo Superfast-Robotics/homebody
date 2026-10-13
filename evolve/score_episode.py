@@ -3,7 +3,7 @@ session under an --output root) from physics.
 
 Each targeted object gets a stage: 0 untouched, 1 lifted by the robot, 2 ended inside its target
 region, 3 physics-verified placement (the frozen evaluator's verdict). Writes nothing; prints the
-result JSON, with the session's step and customization counts.
+result JSON, with the session's step and coder-call counts.
 """
 import json
 import runpy
@@ -40,7 +40,7 @@ def main(session, targets_path, evaluate_py):
     print(json.dumps({"success": bool(verdict["success"]) and outcome.get("status") == "model_done",
                       "stage": round(sum(o["stage"] for o in objects.values()) / max(1, len(objects)), 3),
                       "objects": objects, "untargeted": verdict.get("untargeted"), "status": outcome.get("status"),
-                      "steps": len(skills), "customizations": skills.count("customize_skill"),
+                      "steps": len(skills), "customizations": skills.count("call_coder"),
                       "wall_seconds": outcome.get("wall_seconds", 0.0)}, indent=1, default=str))
 
 

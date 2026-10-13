@@ -148,14 +148,17 @@ class Runner:
             registry = REGISTRY
         self.context, self.registry = context, registry
 
-    def run(self, name, arguments, selected_frame):
-        """A declared result. A programming error propagates after the terminal event."""
-        attempt = self.prepare(name, arguments, selected_frame)
+    def run(self, name, arguments, selected_frame, skill=None):
+        """A declared result, from SKILL (a module in the skill protocol) or else the registered NAME.
+        A programming error propagates after the terminal event."""
+        attempt = self.prepare(name, arguments, selected_frame, skill)
         return attempt.result if attempt.finished else self._phase(attempt, attempt.execute)
 
-    def prepare(self, name, arguments, selected_frame):
-        """An attempt holding its plan for `execute`; a refused preparation has already finished it."""
-        attempt = Attempt(self.context, name, selected_frame, self.registry.get(name))
+    def prepare(self, name, arguments, selected_frame, skill=None):
+        """An attempt holding its plan for `execute`, from SKILL or else the registered NAME; a refused
+        preparation has already finished it."""
+        attempt = Attempt(self.context, name, selected_frame,
+                          skill if skill is not None else self.registry.get(name))
         self.context.begin(name, attempt.skill)
         self.context.emit({"type": "skill_started", "skill": name, "frame_id": selected_frame.frame_id})
         self._phase(attempt, lambda: attempt.prepare(arguments))

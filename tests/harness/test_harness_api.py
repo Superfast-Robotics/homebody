@@ -22,15 +22,19 @@ def test_every_documented_call_exists_with_its_parameters():
                 assert key in parameters, f"env.{name} has no parameter {key!r} that API.md documents"
 
 
-def test_instructions_render_settings_and_include_the_primitives():
+def test_instructions_render_settings_and_explain_call_coder():
     text = harness.agent_instructions(vars(Settings()))
-    assert "customize_skill" in text and "env.target(click)" in text
+    assert "call_coder" in text and "{" not in text
 
 
-def test_custom_section_shows_each_current_version():
-    assert harness.custom_section({}) == ""
-    text = harness.custom_section({"pick": {"description": "deeper grasp", "code": "def run(env):\n    pass\n", "version": 2}})
-    assert "pick (version 2): deeper grasp" in text and "def run(env):" in text
+def test_coder_request_carries_the_request_and_its_limits():
+    text = harness.coder_request(target="pick", origin="the built-in skill",
+                                 request={"goal": "lift the cup", "success": "cup held", "tried": "", "constraints": ""},
+                                 task="Clear the table", recent=['{"decision": 1}'], source_root="/src", python="/py",
+                                 limits={"seconds": 300, "checks": 6, "executes": 2}, library=[])
+    assert "skill `pick`" in text and "lift the cup" in text and "cup held" in text and "2 executes" in text
+    assert "/src/homebody" in text and '- {"decision": 1}' in text
+    assert "check" in harness.coder_instructions() and "execute" in harness.coder_instructions()
 
 
 def test_click_selects_the_labelled_thing_under_it():
@@ -40,11 +44,3 @@ def test_click_selects_the_labelled_thing_under_it():
     env = Env(ctx=None, frame=frame)
     assert env.target([500, 350]) == Target(7)
     assert env.target([10, 10]) is None
-
-
-def test_result_reports_code_message_and_prints():
-    env = Env(ctx=None, frame=None)
-    env.log("tried", 3)
-    assert harness.custom_result(env, {"code": "NO_GRASP", "message": "walls"}, None) == {
-        "code": "NO_GRASP", "message": "walls", "details": {"log": ["tried 3"]}}
-    assert harness.custom_result(env, None, "KeyError: x (line 2)")["code"] == "SKILL_ERROR"

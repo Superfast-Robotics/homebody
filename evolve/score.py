@@ -15,7 +15,7 @@ class Run:
     repeat: str
     stage: float
     success: bool
-    attempts: int  # customize_skill calls
+    attempts: int  # call_coder calls
     wall: float
     failures: list = field(default_factory=list)  # short strings
 

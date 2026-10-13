@@ -1,9 +1,9 @@
-Robot primitives for customized skills (`env` in `run(env, **arguments)`). Only `np` and `math`
-are available: no imports, files or network. Arm poses are 4x4 numpy arrays in the CURRENT torso
-frame (x forward, y left, z up, metres), which moves whenever the robot walks; base goals are world
-(map) coordinates; `side` is "right" (default) or "left". Things are chosen by clicks [x, y]
-(0-1000) on the head image (image 1) of the decision that called the skill, so pass clicks in
-your arguments.
+Higher-level primitives a skill module may use: `from homebody.harness import Env`, then in
+`execute(plan, ctx)` build `env = Env(ctx, frame)` with the frame the skill was called on (keep
+prepare's `selected` in the plan). Arm poses are 4x4 numpy arrays in the CURRENT torso frame (x
+forward, y left, z up, metres), which moves whenever the robot walks; base goals are world (map)
+coordinates; `side` is "right" (default) or "left". Things are chosen by clicks [x, y] (0-1000) on
+that frame's head image.
 
 Perception:
 - `env.target(click)` -> a Target for the thing under the click, or None
@@ -30,4 +30,4 @@ Arm, hand and planning:
 - `env.follow(joint_waypoints, side)` (planned path, no live check), `env.move_through(joint_waypoints, side)` (live-checked) -> None or why stopped
 - `env.servo_to(pose, side, exempt=())` -> (reached_pose, message)
 - `env.grip(closure, side)` (0 open .. 1 closed .. 1.12 squeeze), `env.holding(side)`
-- `env.wait(seconds)`, `env.log(...)` (or print)
+- `env.wait(seconds)`, `env.log(...)`

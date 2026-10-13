@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 
 from homebody.primitives.observations import Frame, HandState, NavigationMap
-from homebody.session.config import Agent
+from homebody.session.config import Agent, Coder
 from homebody.session.recorder import Recorder
 from homebody.session.session import Session
 from homebody.session.settings import Settings
@@ -200,7 +200,7 @@ def test_provider_receives_only_the_current_views_and_the_scene_memory(build):
         assert [path.name for path in images] == ["rgb.png", "depth_preview.png", "map.png", "topdown.png"]
         assert len({path.parent for path in images}) == 1
         assert "\n- Island at [1, 2]\n" in prompt
-        assert set(names) == {*SKILLS, "customize_skill", "read_skill", "done"}
+        assert set(names) == {*SKILLS, "call_coder", "done"}
     assert provider.images[0][0].parent != provider.images[1][0].parent
 
 
@@ -890,57 +890,93 @@ def test_busy_retries_run_out_and_other_errors_are_not_retried(build):
     assert session.run_task("Inspect")["status"] == "provider_error" and broken.calls == 1
 
 
-def test_customized_skill_replaces_a_skill_for_the_task_and_reports_its_prints(build):
-    code = "def run(env, **arguments):\n    print('ran with', arguments['n'])\n    return {'code': 'NOT_YET', 'message': 'try again'}\n"
-    provider = Provider([Decision("Rewrite pick", "customize_skill", {"name": "pick", "description": "test", "code": code}),
-                         Decision("Use it", "pick", {"n": 3}), Decision("Finished", "done", {}),
-                         Decision("Finished again", "done", {})])
-    session = build(provider)
-    assert session.run_task("Pick")["status"] == "model_done"
+FAKE_CODEX = """#!{python}
+# Stands in for `codex exec`: writes SKILL into the workspace, calls the robot tools over the socket
+# the MCP server would use, and leaves STATUS as its final answer.
+import json, re, socket, sys
+args = sys.argv[1:]
+workspace = args[args.index("-C") + 1]
+socket_path = re.search(r'"-m", "homebody.session.coder_mcp", "([^"]+)"', " ".join(args)).group(1)
+open(workspace + "/skills/lift.py", "w").write({skill!r})
+def tool(name, arguments):
+    with socket.socket(socket.AF_UNIX) as c:
+        c.connect(socket_path)
+        c.sendall((json.dumps({{"tool": name, "arguments": arguments}}) + "\\n").encode())
+        data = b""
+        while not data.endswith(b"\\n"):
+            data += c.recv(65536)
+    return json.loads(data)
+log = [tool(name, {{"height": 0.1}}) for name in {tools!r}]
+open(workspace + "/../tools.json", "w").write(json.dumps(log))
+open(args[args.index("-o") + 1], "w").write(json.dumps({{"status": {status!r}, "summary": "s", "state": "st", "usage": "u"}}))
+"""
+LIFT = """from .contract import Result, SkillFailure
+NEEDS = ("advance",)
+FAILURES = ("TOO_HIGH",)
+PROMPT = "lift: height in metres."
+def prepare(arguments, selected, current, planning):
+    if arguments.get("height", 0) > 1:
+        raise SkillFailure("TOO_HIGH", "out of reach")
+    return {"height": arguments["height"]}
+def execute(plan, ctx):
+    return Result("lift", "OK", f"lifted {plan['height']}")
+"""
+
+
+def coder_session(build, tmp_path, monkeypatch, decisions, *, skill=LIFT, tools=("check", "execute"), status="success"):
+    import sys
+    monkeypatch.delenv("HOMEBODY_CODER_CODEX", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    codex = tmp_path / "fake-codex"
+    codex.write_text(FAKE_CODEX.format(python=sys.executable, skill=skill, tools=list(tools), status=status))
+    codex.chmod(0o755)
+    settings = Settings(agent=Agent(done_settle_seconds=0.), coder=Coder(codex=str(codex), seconds=60.0, calls=2))
+    provider = Provider(decisions)
+    return build(provider, settings=settings), provider
+
+
+REQUEST = {"skill": "lift", "goal": "lift it", "tried": "pick refused", "success": "held up", "constraints": ""}
+
+
+def test_call_coder_registers_the_version_that_executed_for_the_task(build, tmp_path, monkeypatch):
+    session, provider = coder_session(build, tmp_path, monkeypatch, [
+        Decision("Ask", "call_coder", REQUEST), Decision("Use", "lift", {"height": 0.2}),
+        Decision("Finished", "done", {}), Decision("Finished again", "done", {})])
+    assert session.run_task("Lift")["status"] == "model_done"
+    results = [entry["result"] for entry in session.history if "result" in entry]
+    assert [r["code"] for r in results] == ["OK", "OK"] and results[1]["message"] == "lifted 0.2"
+    assert results[0]["details"]["skill_version"] == 1 and results[0]["details"]["executes"][0]["code"] == "OK"
+    assert "lift: height in metres." in provider.prompts[1] and "1 call left" in provider.prompts[1]
+    call = next(session.recorder.path.glob("tasks/*/coder/call-1"))
+    assert (call / "workspace" / "AGENTS.md").is_file() and (call / "workspace" / "REQUEST.md").is_file()
+    assert max(path.name for path in (call / "workspace" / "observation").iterdir()) == "state.json"
+    checked = json.loads((call / "tools.json").read_text())[0]
+    assert checked["prepare"] == {"code": "OK", "plan": "{'height': 0.1}"}
+    assert session.run_task("Again")["status"] == "model_done"  # the next task starts without it
+    assert "lift" not in provider.names[-1] and not session.coder.skills
+
+
+def test_call_coder_refuses_forbidden_imports_and_unchecked_executes(build, tmp_path, monkeypatch):
+    session, _ = coder_session(build, tmp_path, monkeypatch, [Decision("Ask", "call_coder", REQUEST),
+                                                              Decision("Finished", "done", {})],
+                               skill="import os\n" + LIFT, status="success")
+    assert session.run_task("Lift")["status"] == "model_done"
     result = session.history[-1]["result"]
-    assert (result["skill"], result["code"], result["message"]) == ("pick", "NOT_YET", "try again")
-    assert result["details"]["log"] == ["ran with 3"]
-    assert "Customized skills this task" in provider.prompts[1] and "version 1" in provider.prompts[1]
-    assert '"code": "<see customized skills>"' in provider.prompts[1]
-    assert session.run_task("Again")["status"] == "model_done"  # the next task starts without them
-    assert "Customized skills this task" not in provider.prompts[-1] and not session.custom.skills
+    assert result["code"] == "CODER_FAILED" and "without an execute that returned OK" in result["message"]
+    call = next(session.recorder.path.glob("tasks/*/coder/call-1"))
+    check, execute = json.loads((call / "tools.json").read_text())
+    assert "not allowed" in check["error"] and "check" in execute["error"] and not session.coder.skills
 
 
-def test_broken_customized_code_is_refused_without_ending_the_task(build):
-    provider = Provider([Decision("Bad", "customize_skill", {"name": "lift", "description": "", "code": "def run(:"}),
-                         Decision("Escape", "customize_skill", {"name": "lift", "description": "", "code": "import os"}),
-                         Decision("Finished", "done", {})])
-    session = build(provider)
+def test_call_coder_validates_its_request_and_its_budget(build, tmp_path, monkeypatch):
+    session, _ = coder_session(build, tmp_path, monkeypatch, [
+        Decision("Bad", "call_coder", {"skill": "Lift!", "goal": "g", "success": "s"}),
+        Decision("Ask", "call_coder", REQUEST), Decision("Again", "call_coder", REQUEST),
+        Decision("Third", "call_coder", REQUEST), Decision("Finished", "done", {})],
+        tools=("check",), status="infeasible")
     assert session.run_task("Lift")["status"] == "model_done"
     codes = [entry["result"]["code"] for entry in session.history if "result" in entry]
-    assert codes == ["INVALID_CODE", "INVALID_CODE"] and "lift" not in session.custom.skills
-
-
-def test_edits_revise_a_customized_skill_and_bad_edits_are_refused(build):
-    code = "def run(env, **arguments):\n    return {'code': 'NOT_YET', 'message': 'first'}\n"
-    edit = [{"find": "'NOT_YET', 'message': 'first'", "replace": "'OK', 'message': 'second'"}]
-    provider = Provider([
-        Decision("Edit before defining", "customize_skill", {"name": "lift", "edits": edit}),
-        Decision("Define", "customize_skill", {"name": "lift", "description": "d", "code": code}),
-        Decision("Missing text", "customize_skill", {"name": "lift", "edits": [{"find": "absent", "replace": "x"}]}),
-        Decision("Revise", "customize_skill", {"name": "lift", "edits": edit}),
-        Decision("Use", "lift", {}), Decision("Finished", "done", {})])
-    session = build(provider)
-    assert session.run_task("Lift")["status"] == "model_done"
-    codes = [entry["result"]["code"] for entry in session.history if "result" in entry]
-    assert codes == ["INVALID_ARGUMENT", "OK", "EDIT_FAILED", "OK", "OK"]
-    assert session.history[-1]["result"]["message"] == "second"
-    assert session.custom.skills["lift"]["version"] == 2 and session.custom.skills["lift"]["description"] == "d"
-
-
-def test_read_skill_shows_a_source_for_one_turn(build):
-    provider = Provider([Decision("Read", "read_skill", {"name": "pick"}), Decision("Look", "read_skill", {"name": "nope"}),
-                         Decision("Finished", "done", {})])
-    session = build(provider)
-    assert session.run_task("Read")["status"] == "model_done"
-    assert "Source of pick, the built-in skill" in provider.prompts[1] and "def prepare(" in provider.prompts[1]
-    assert "Source of pick" not in provider.prompts[2]
-    assert [entry["result"]["code"] for entry in session.history if "result" in entry] == ["OK", "INVALID_ARGUMENT"]
+    assert codes == ["INVALID_ARGUMENT", "CODER_INFEASIBLE", "CODER_INFEASIBLE", "CODER_LIMIT"]
 
 
 def test_older_steps_drop_result_details_but_keep_code_and_message():

@@ -1,5 +1,5 @@
-You are improving the harness a robot agent customizes its skills with, to remove one mechanism
-that makes its per-task skills fail.
+You are improving the harness a robot agent and its coding assistant work with, to remove one
+mechanism that makes their per-task skills fail.
 
 Read {workspace}/BRIEF.md first: it says how harness versions are judged and what you may change.
 The diagnosis of the current harness is below; address **Mechanism {mechanism}** only. The sessions
@@ -19,7 +19,7 @@ When done, reply with a short note in this form:
 Mechanism: <title>
 Change: <what you changed, file by file>
 Tier and reason: <highest tier touched; for tier 1 or 2, why a lower tier could not do it>
-Expected effect: <how the agent's customized skills should now succeed more often, on which tasks>
+Expected effect: <how the agent and its assistant should now succeed more often, on which tasks>
 Risks: <what could get worse>
 
 <diagnosis>

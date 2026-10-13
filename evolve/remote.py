@@ -68,12 +68,14 @@ class Remote:
         return results
 
     def collect(self, results, local):
-        """Copy each run's result, log and session events to LOCAL."""
+        """Copy each run's result, log, session events and coder sessions to LOCAL."""
         if local.exists():  # a re-run must not inherit an earlier run's files
             shutil.rmtree(local)
         local.mkdir(parents=True)
         subprocess.run(["rsync", "-a", "--include=*/", "--include=result.json", "--include=run.log",
                         "--include=exit_code", "--include=events.jsonl", "--include=outcome.json",
+                        "--include=REQUEST.md", "--include=tools.jsonl", "--include=start_*.py",
+                        "--include=**/workspace/skills/*.py", "--include=**/workspace/lib/*.py",
                         "--exclude=*", "--prune-empty-dirs",
                         f"{self.host}:{results}/", f"{local}/"], check=True, capture_output=True)
         return local

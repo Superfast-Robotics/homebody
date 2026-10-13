@@ -1,9 +1,10 @@
 """The meta-proposer's workspace for one round: brief, train results, every session transcript
-(the agent's decisions, the skills it customized and their code, every result) and the history.
+(the agent's decisions and results, and each coding-assistant call) and the history.
 
 Only train runs are shown. Held-out results decide acceptance but never appear here beyond an
 accepted/rejected verdict.
 """
+import difflib
 import json
 import shutil
 from pathlib import Path
@@ -23,7 +24,7 @@ def build(round_dir, best, train_local, history, instructions):
     lines = [f"# Train results with harness {best['id']} (commit {best['commit'][:10]})", "",
              (f"Score {best['train']['score']:.3f} (mean stage / 3), success rate {best['train']['success_rate']:.2f}. "
               "Object stage: 0 untouched, 1 lifted, 2 ended in the target region, 3 physics-verified placement."), "",
-             "| task | instruction | stages per run | customizations per run | failures |", "|---|---|---|---|---|"]
+             "| task | instruction | stages per run | coder calls per run | failures |", "|---|---|---|---|---|"]
     for task, stages in best["train"]["by_task"].items():
         task_runs = [r for r in runs if r.task == task]
         failures = "<br>".join(f"{r.repeat}: {f}" for r in task_runs for f in r.failures[:4])
@@ -37,9 +38,11 @@ def build(round_dir, best, train_local, history, instructions):
             result = repeat_dir / "result.json"
             if result.exists():
                 shutil.copy(result, out / "result.json")
-            events = next(repeat_dir.rglob("events.jsonl"), None)
+            events = next((path for path in repeat_dir.rglob("events.jsonl") if "coder" not in path.parts), None)
             if events:
                 (out / "transcript.md").write_text(transcript(events))
+            for call in sorted(repeat_dir.rglob("coder/call-*")):
+                (out / f"coder-{call.name}.md").write_text(coder_call(call))
             log = repeat_dir / "run.log"
             if log.exists():
                 errors = [line for line in log.read_text(errors="replace").splitlines()
@@ -69,9 +72,44 @@ def render_history(history):
     return "\n".join(lines) + "\n"
 
 
+def coder_call(call):
+    """One coding-assistant session as Markdown: request, actions, robot tool calls, the change to
+    the skill and the final answer."""
+    def read(path):
+        return path.read_text(errors="replace") if path.is_file() else ""
+    lines = [f"# Coder {call.name}", "", read(call / "workspace" / "REQUEST.md"), "## What the assistant did"]
+    for raw in read(call / "events.jsonl").splitlines():
+        try:
+            item = json.loads(raw).get("item", {})
+        except json.JSONDecodeError:
+            continue
+        if raw.find('"item.completed"') < 0:
+            continue
+        if item.get("type") == "agent_message":
+            lines.append(f"- says: {item.get('text', '')[:600]}")
+        elif item.get("type") == "command_execution":
+            lines.append(f"- runs `{item.get('command', '')[:200]}` (exit {item.get('exit_code')}): "
+                         f"{str(item.get('aggregated_output', ''))[:300]!r}")
+        elif item.get("type") == "file_change":
+            lines.append(f"- edits {', '.join(change.get('path', '').split('/workspace/')[-1] for change in item.get('changes', []))}")
+    lines.append("\n## Robot tool calls")
+    for raw in read(call / "tools.jsonl").splitlines():
+        entry = json.loads(raw)
+        lines.append(f"- {entry['request'].get('tool')}({json.dumps(entry['request'].get('arguments'))}) -> "
+                     f"{json.dumps(entry['answer'], default=str)[:900]}")
+    start = next(call.glob("start_*.py"), None)
+    if start is not None:
+        final = call / "workspace" / "skills" / start.name.removeprefix("start_")
+        diff = difflib.unified_diff(read(start).splitlines(), read(final).splitlines(), "before", "after", lineterm="")
+        lines += ["\n## Change to the skill", "```diff", "\n".join(diff) or "(unchanged)", "```"]
+    for library in sorted((call / "workspace" / "lib").glob("*.py")):
+        lines += [f"\n## lib/{library.name}", f"```python\n{read(library)}\n```"]
+    lines += ["\n## Result", f"```json\n{read(call / 'result.json')}\n```"]
+    return "\n".join(lines) + "\n"
+
+
 def transcript(events_path):
-    """The agent's turns as Markdown: what it saw and chose, the skills it customized (full code)
-    and every result, in order."""
+    """The agent's turns as Markdown: what it saw and chose and every result, in order."""
     lines = []
     for raw in events_path.read_text(errors="replace").splitlines():
         try:
@@ -80,11 +118,7 @@ def transcript(events_path):
             continue
         if event.get("kind") == "decision":
             d = event["decision"]
-            arguments = dict(d.get("arguments", {}))
-            code = arguments.pop("code", None)
-            lines.append(f"## Step {event['step']}: {d['skill']} {json.dumps(arguments)}\n{d.get('text', '')}")
-            if code:
-                lines.append(f"```python\n{code}\n```")
+            lines.append(f"## Step {event['step']}: {d['skill']} {json.dumps(d.get('arguments', {}))}\n{d.get('text', '')}")
         elif event.get("kind") == "result":
             r = event["result"]
             details = {k: v for k, v in r.get("details", {}).items() if k != "traceback"}

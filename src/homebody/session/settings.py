@@ -9,6 +9,7 @@ from .config import (
     Agent,
     BlindFinish,
     Camera,
+    Coder,
     Collision,
     Curobo,
     Grasp,
@@ -72,6 +73,7 @@ class Settings:
     recording: Recording = field(default_factory=Recording)
     blind_finish: BlindFinish = field(default_factory=BlindFinish)
     curobo: Curobo = field(default_factory=Curobo)
+    coder: Coder = field(default_factory=Coder)
 
     def __post_init__(self):
         for group in fields(self):

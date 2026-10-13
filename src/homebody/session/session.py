@@ -1,5 +1,4 @@
 """One physics owner, one decision, one skill result; operator tasks can continue."""
-import inspect
 import json
 import math
 import time
@@ -9,7 +8,7 @@ from dataclasses import asdict
 
 from homebody import harness
 from homebody.primitives.actions import PhysicsInvalid
-from homebody.session.custom_skills import CUSTOMIZE, READ, CustomSkills
+from homebody.session.coder import CALL, Coder
 from homebody.skills.contract import COMMON_FAILURES, Context, Runner
 from homebody.skills.registry import PROMPTS, REGISTRY
 from homebody.vlm.observations import annotations, model_observation, rounded
@@ -132,8 +131,7 @@ class Session:
                                settings=settings, jaw_samples=jaw_samples,
                                cancelled=controls.cancel.is_set, emit=self.skill_event)
         self.runner = Runner(self.context)
-        self.custom = CustomSkills()
-        self.shown_source = None  # (name, source, customized) for the next turn only
+        self.coder = Coder(settings.coder)
         self.history = []
         self.status = "Ready"
         self._physics_fault = None
@@ -205,10 +203,12 @@ class Session:
     def prompt(self, task, frame):
         """The turn's prompt: instructions, skills, scene annotations, hands, task, observation and recent steps."""
         settings = vars(self.settings)
+        modules = {**REGISTRY, **{name: self.coder.module(name) for name in self.coder.names()}}
         skills = "\n".join(f"{skill.PROMPT.format_map(settings)} Refusals: {', '.join(dict.fromkeys(skill.FAILURES))}."
-                           for skill in REGISTRY.values())
-        skills += (f"\n{CUSTOMIZE}: name, description, and code or edits. Defines or replaces a skill for the rest of "
-                   f"this task (see above).\n{READ}: name. Shows that skill's current source next turn.")
+                           for skill in modules.values())
+        left = self.settings.coder.calls - self.coder.calls
+        skills += (f"\n{CALL}: skill, goal, tried, success, constraints. A coding assistant changes the skill and "
+                   f"runs it on the robot (see above); {left} call{'s' if left != 1 else ''} left this task.")
         hands = "; ".join(hand_status(side, self.context.carried.get(side)) for side in ("left", "right"))
         recent = self.history[-HISTORY_STEPS:]
         steps = "\n".join(json.dumps(rounded(history_line(entry, full=index >= len(recent) - DETAILED_STEPS)))
@@ -216,25 +216,11 @@ class Session:
         return "\n\n".join(part for part in (
             harness.agent_instructions(settings),
             f"Skills:\n{skills}\nAny skill may also refuse with: {', '.join(COMMON_FAILURES)}.",
-            self.custom.prompt_section(),
-            harness.source_section(*self.shown_source) if self.shown_source else "",
             "Initial-scene memory:\n" + annotations(self.semantic_context),
             f"Hands now: {hands}.",
             "Current task:\n" + task,
             "Current observation:\n" + json.dumps(model_observation(frame)),
             "Recent steps, oldest first:\n" + (steps or "none")))
-
-    def read_skill(self, name):
-        """Queue NAME's current source (customized, else built-in) for the next prompt."""
-        if name in self.custom.skills:
-            self.shown_source = (name, self.custom.skills[name]["code"], True)
-        elif name in REGISTRY:
-            self.shown_source = (name, inspect.getsource(REGISTRY[name]), False)
-        else:
-            return {"skill": READ, "code": "INVALID_ARGUMENT", "details": {},
-                    "message": f"no skill {name!r}; skills: {', '.join((*REGISTRY, *self.custom.skills))}"}
-        lines = self.shown_source[1].count("\n") + 1
-        return {"skill": READ, "code": "OK", "details": {}, "message": f"the source of {name} ({lines} lines) is shown below"}
 
     def decide(self, prompt, images, names, attempt):
         """One decision. A busy service is asked again under attempt-retryN."""
@@ -260,20 +246,18 @@ class Session:
         started_wall, started_sim = time.monotonic(), self.backend.time
         outcome = {"status": "error", "steps": 0, "model_claim": None}
         self.history.append({"operator_task": task})
-        self.custom.reset()  # customized skills live for one task
-        self.shown_source = None
+        self.coder.reset(task_dir)  # coded skills live for one task
         try:
             if self.requires_reset:
                 raise PhysicsInvalid(self._physics_fault[1])
             self.backend.set_evaluation_sink(self.recorder.physics)
             for step in range(self.settings.agent.max_steps):
-                names = tuple(dict.fromkeys((*PROMPTS, *self.custom.names(), CUSTOMIZE, READ, "done")))
+                names = tuple(dict.fromkeys((*PROMPTS, *self.coder.names(), CALL, "done")))
                 if self.controls.cancel.is_set():
                     raise Cancelled("Task stopped by operator")
                 frame = self.observed.snapshot()
                 images = self.recorder.agent_images(frame)
                 prompt = self.prompt(task, frame)
-                self.shown_source = None  # a read source is shown for one turn
                 self.update("Thinking")
                 decision = self.decide(prompt, images, names, task_dir / "decisions" / f"step-{step:03d}")
                 if self.controls.cancel.is_set() or frame.epoch != self.backend.epoch:
@@ -294,19 +278,14 @@ class Session:
                     break
                 if decision.arguments.get("hand") in ("left", "right"):
                     self.view_side = decision.arguments["hand"]
-                if decision.skill == CUSTOMIZE:
-                    result = self.custom.define(decision.arguments)
-                elif decision.skill == READ:
-                    result = self.read_skill(decision.arguments.get("name"))
-                elif decision.skill in self.custom.skills:
-                    result = self.custom.run(decision.skill, decision.arguments, self.context, frame)
+                if decision.skill == CALL:
+                    result = self.coder.call(decision.arguments, self)
+                elif decision.skill in self.coder.skills:
+                    result = asdict(self.runner.run(decision.skill, decision.arguments, frame,
+                                                    skill=self.coder.module(decision.skill)))
                 else:
                     result = asdict(self.runner.run(decision.skill, decision.arguments, frame))
-                shown = asdict(decision)
-                if decision.skill == CUSTOMIZE:  # the current code is shown in its own prompt section
-                    shown["arguments"] = {key: ("<see customized skills>" if key in ("code", "edits") else value)
-                                          for key, value in shown["arguments"].items()}
-                self.history.append({"base_pose": frame.base_pose.tolist(), "decision": shown,
+                self.history.append({"base_pose": frame.base_pose.tolist(), "decision": asdict(decision),
                                      "epoch": frame.epoch,
                                      "frame_sequence": frame.sequence, "result": prompted(result)})
                 self.recorder.event("result", step=step, simulation_time=self.backend.time, result=result)
@@ -393,7 +372,7 @@ class Session:
                 self._physics_fault = None
                 self.context.carried.clear()
                 self.history.clear()
-                self.custom.reset()
+                self.coder.reset()
                 self.controls.cancel.clear()
                 self.recorder.event("scene_reset", epoch=self.backend.epoch)
                 self.update("Ready", "Scene reset. Previous plans were invalidated.")

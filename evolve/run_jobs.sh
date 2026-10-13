@@ -12,7 +12,7 @@ run_one() {
   local task
   task=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['default_task'])" "$scene/task_scene.json")
   PATH="$W/relay-bin:$PATH" CODEX_RELAY_TOKEN="$(cat ~/.codex_relay_token)" MUJOCO_GL=egl \
-    LITELLM_BASE_URL=http://127.0.0.1:14000 LITELLM_API_KEY="$(cat ~/.litellm_key)" \
+    LITELLM_BASE_URL=http://127.0.0.1:14000 LITELLM_API_KEY="$(cat ~/.litellm_key)" HOMEBODY_CODER_CODEX="$W/coder-codex/codex" \
     PYTHONPATH="$cand/src:$cand/vendor" timeout 7200 "$BASE/.venv/bin/python" -m homebody --headless --root "$cand" \
     --scene "$scene" --model "$MODEL" --settings "$EVOLVE/episode_settings.toml" --output "$out/session" \
     --task "$task" > "$out/run.log" 2>&1

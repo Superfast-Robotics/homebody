@@ -158,6 +158,22 @@ class Curobo:
 
 
 @dataclass(frozen=True)
+class Coder:
+    """The coding sub-agent the agent calls with call_coder (session/coder.py): Codex at `codex`
+    (HOMEBODY_CODER_CODEX overrides it) running `model` through the provider at `base_url` (the key in
+    LITELLM_API_KEY). One call may take `seconds` of wall time, motion included, with at most `checks`
+    dry runs and `executes` real runs; a task allows `calls` calls."""
+    codex: str = "codex"
+    model: str = "gpt-6.1-sol"
+    effort: str = "medium"
+    base_url: str = "http://127.0.0.1:14000/v1"
+    seconds: float = 300.0
+    checks: int = 6
+    executes: int = 2
+    calls: int = 3
+
+
+@dataclass(frozen=True)
 class SharedMotion:
     arm_timeout: float = 15.0
     palm_tolerance: float = 0.015

@@ -8,7 +8,7 @@
 frozen = [
   "evolve/**", "evaluation/**", "tools/check_manipulation.py", "tools/score_session.py",
   "tools/scenegen.py", "assets/**", "configs/continuous_four.json", "configs/waves/**",
-  # the agent loop and its customize_skill mechanism are the fixed test conditions
+  # the agent loop and its call_coder mechanism are the fixed test conditions
   "src/homebody/session/**", "src/homebody/vlm/**", "src/homebody/__main__.py", "tests/test_session.py",
 ]
 tier0 = ["src/homebody/harness/**", "src/homebody/toolkit/**", "tests/harness/**", "tests/test_toolkit.py"]
