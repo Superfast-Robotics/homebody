@@ -33,6 +33,16 @@ def hand_status(side: str, carry: dict | None) -> str:
 
 
 REAL_TIME_SLACK = 0.5  # s behind the wall clock before the pace restarts
+HISTORY_STEPS = 24  # recent steps shown each turn
+DETAILED_STEPS = 4  # the newest of them keep their results' details; older ones keep code and message
+
+
+def history_line(entry, full):
+    """One recent step as the prompt shows it; an older step's result drops its details."""
+    line = {key: entry[key] for key in ("operator_task", "base_pose", "decision", "result") if key in entry}
+    if not full and "result" in line:
+        line["result"] = {key: value for key, value in line["result"].items() if key != "details"}
+    return line
 
 
 class ObservedBackend:
@@ -200,8 +210,9 @@ class Session:
         skills += (f"\n{CUSTOMIZE}: name, description, and code or edits. Defines or replaces a skill for the rest of "
                    f"this task (see above).\n{READ}: name. Shows that skill's current source next turn.")
         hands = "; ".join(hand_status(side, self.context.carried.get(side)) for side in ("left", "right"))
-        steps = "\n".join(json.dumps(rounded({key: entry[key] for key in ("operator_task", "base_pose", "decision", "result")
-                                              if key in entry})) for entry in self.history[-24:])
+        recent = self.history[-HISTORY_STEPS:]
+        steps = "\n".join(json.dumps(rounded(history_line(entry, full=index >= len(recent) - DETAILED_STEPS)))
+                          for index, entry in enumerate(recent))
         return "\n\n".join(part for part in (
             harness.agent_instructions(settings),
             f"Skills:\n{skills}\nAny skill may also refuse with: {', '.join(COMMON_FAILURES)}.",

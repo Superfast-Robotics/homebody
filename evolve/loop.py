@@ -133,15 +133,21 @@ class Loop:
                 for split, runs in second.items()}
 
     # --- commands ---
-    def baseline(self):
+    def baseline(self, passes=3):
         commit = git("rev-parse", "HEAD")
         checkout = self.worktree("v000", commit)
         passed, output = self.remote_checks("v000", checkout)
         if not passed:
             raise SystemExit(f"the baseline fails its own checks:\n{output}")
         self.evaluate("v000", checkout, 0)
-        summaries = self.confirm("v000", 0)  # a baseline is measured as often as a confirmed candidate
-        self.record({"id": "v000", "parent": None, "round": 0, "commit": commit, "status": "baseline", **summaries})
+        repeats = self.cfg["gates"]["0"]["repeats"]
+        runs = {s: score.read_split(self.work / "results" / "v000" / s) for s in ("train", "val")}
+        for index in range(2, passes + 1):  # more passes than a candidate gets: a steadier reference
+            for split, extra in self.both_splits("v000", repeats, f"_pass{index}").items():
+                runs[split] = runs[split] + extra
+        summaries = {split: score.summary(r) for split, r in runs.items()}
+        self.record({"id": "v000", "parent": None, "round": 0, "commit": commit, "status": "baseline",
+                     "passes": passes, **summaries})
 
     def rebaseline(self):
         """Pool the baseline with its own confirmation run, so it is measured like a confirmed candidate."""
@@ -287,7 +293,8 @@ class Loop:
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("baseline")
+    baseline = sub.add_parser("baseline")
+    baseline.add_argument("--passes", type=int, default=3, help="evaluations pooled into the baseline")
     sub.add_parser("round")
     run = sub.add_parser("run")
     run.add_argument("--rounds", type=int, required=True)
@@ -298,7 +305,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     loop = Loop()
     if args.command == "baseline":
-        loop.baseline()
+        loop.baseline(args.passes)
     elif args.command == "round":
         loop.round()
     elif args.command == "rebaseline":

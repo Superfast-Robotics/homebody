@@ -941,3 +941,11 @@ def test_read_skill_shows_a_source_for_one_turn(build):
     assert "Source of pick, the built-in skill" in provider.prompts[1] and "def prepare(" in provider.prompts[1]
     assert "Source of pick" not in provider.prompts[2]
     assert [entry["result"]["code"] for entry in session.history if "result" in entry] == ["OK", "INVALID_ARGUMENT"]
+
+
+def test_older_steps_drop_result_details_but_keep_code_and_message():
+    from homebody.session.session import history_line
+    entry = {"base_pose": [0, 0, 0], "decision": {"text": "t", "skill": "pick", "arguments": {}},
+             "result": {"skill": "pick", "code": "NO_GRASP", "message": "walls", "details": {"tried": 40}}}
+    assert history_line(entry, full=True)["result"]["details"] == {"tried": 40}
+    assert history_line(entry, full=False)["result"] == {"skill": "pick", "code": "NO_GRASP", "message": "walls"}
