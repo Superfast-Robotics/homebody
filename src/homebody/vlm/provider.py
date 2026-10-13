@@ -237,11 +237,14 @@ def error_body(error: urllib.error.HTTPError) -> str:
 
 
 def streamed(reply: str) -> dict:
-    """The final response of a Responses API event stream, or its error event."""
+    """The final response of a Responses API event stream, or its error event. A stream that keeps no
+    response (store false) leaves the completed response's output empty and sends each output item in
+    its own done event, so those fill it."""
     events = [json.loads(line[5:]) for line in reply.splitlines() if line.startswith("data:") and line[5:].strip() not in ("", "[DONE]")]
+    items = [event["item"] for event in events if event.get("type") == "response.output_item.done"]
     for event in reversed(events):
         if event.get("type") == "response.completed":
-            return event["response"]
+            return {**event["response"], "output": event["response"].get("output") or items}
         if event.get("type") in ("error", "response.failed"):
             return {"error": event}
     return {"error": "the event stream ended without a completed response"}

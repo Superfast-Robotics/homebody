@@ -208,3 +208,14 @@ def test_a_claude_code_overload_is_read_from_its_result_envelope(tmp_path):
     stdout.write_text(json.dumps({"is_error": True, "api_error_status": 529, "terminal_reason": "api_error",
                                   "result": "API Error: 529 Overloaded. This is a server-side issue"}))
     assert isinstance(failure(f"Claude Code exited 1: {reported_errors(stdout)}"), ProviderBusy)
+
+
+def test_an_event_stream_without_stored_output_is_rebuilt_from_its_item_events():
+    from homebody.vlm.provider import streamed
+    item = {"type": "message", "content": [{"type": "output_text", "text": '{"skill": "done"}'}]}
+    stream = "\n".join("data: " + json.dumps(event) for event in (
+        {"type": "response.created", "response": {}},
+        {"type": "response.output_item.done", "item": item},
+        {"type": "response.completed", "response": {"output": [], "usage": {"input_tokens": 9}}})) + "\ndata: [DONE]\n"
+    assert streamed(stream) == {"output": [item], "usage": {"input_tokens": 9}}
+    assert "error" in streamed('data: {"type": "error", "message": "x"}\n')
