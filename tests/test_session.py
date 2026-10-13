@@ -951,7 +951,7 @@ def test_call_coder_registers_the_version_that_executed_for_the_task(build, tmp_
     assert (call / "workspace" / "AGENTS.md").is_file() and (call / "workspace" / "REQUEST.md").is_file()
     assert max(path.name for path in (call / "workspace" / "observation").iterdir()) == "state.json"
     checked = json.loads((call / "tools.json").read_text())[0]
-    assert checked["prepare"] == {"code": "OK", "plan": "{'height': 0.1}"}
+    assert checked["prepare"] == {"code": "OK", "plan": "{'height': 0.1}"} and 0 < checked["seconds_left"] <= 60
     assert session.run_task("Again")["status"] == "model_done"  # the next task starts without it
     assert "lift" not in provider.names[-1] and not session.coder.skills
 

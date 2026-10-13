@@ -270,15 +270,18 @@ class CoderCall:
         return [f"{Path(f.filename).name}:{f.lineno} {f.line}" for f in frames[-3:]]
 
     def serve(self, request):
+        """The tool's answer, with the call's remaining wall time."""
         tool, arguments = request.get("tool"), request.get("arguments")
-        if not isinstance(arguments, dict):
-            return {"error": "arguments must be an object"}
         handler = {"check": self.check, "execute": self.execute}.get(tool)
-        if handler is None:
-            return {"error": f"unknown tool {tool!r}"}
-        if self.physics_error is not None:
-            return {"error": "the simulation became invalid; stop and report failed"}
-        return handler(arguments)
+        if not isinstance(arguments, dict):
+            answer = {"error": "arguments must be an object"}
+        elif handler is None:
+            answer = {"error": f"unknown tool {tool!r}"}
+        elif self.physics_error is not None:
+            answer = {"error": "the simulation became invalid; stop and report failed"}
+        else:
+            answer = handler(arguments)
+        return {**answer, "seconds_left": max(0, round(self.deadline - time.monotonic()))}
 
     # --- the Codex process ---
     def command(self, socket_path):

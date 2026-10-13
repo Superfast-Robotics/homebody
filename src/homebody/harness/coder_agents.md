@@ -40,7 +40,9 @@ No files, processes, network or simulator.
 
 You may run Python (the interpreter in REQUEST.md, with `PYTHONPATH` set to the source tree) for
 pure computations; it cannot reach the robot. The limits in REQUEST.md are hard: wall time
-(including the robot's motion), checks and executes.
+(including the robot's motion), checks and executes. Every tool answer gives `seconds_left`; the
+session is cut off at zero and an answer not given by then is lost, so give your final answer while
+at least 30 seconds remain, even if you are still exploring (status failed, with what you learned).
 
 ## How to work
 
