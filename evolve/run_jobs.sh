@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # run_jobs.sh BASE PARALLEL JOBS_FILE EVOLVE_DIR MODEL: run every "CANDIDATE SCENE TARGETS OUT" line of
 # JOBS_FILE as one HomeBody session (the agent may customize skills) with the candidate's code,
-# then score it from physics. Astra is reached through the Codex relay.
+# then score it from physics. The agent model is reached through the LiteLLM proxy tunnel (port 14000) and
+# the coding sub-agent through the Codex relay.
 set -uo pipefail
 BASE=$1; PARALLEL=$2; JOBS=$3; EVOLVE=$4; MODEL=$5
 W=$(dirname "$BASE")
@@ -11,6 +12,7 @@ run_one() {
   local task
   task=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['default_task'])" "$scene/task_scene.json")
   PATH="$W/relay-bin:$PATH" CODEX_RELAY_TOKEN="$(cat ~/.codex_relay_token)" MUJOCO_GL=egl \
+    LITELLM_BASE_URL=http://127.0.0.1:14000 LITELLM_API_KEY="$(cat ~/.litellm_key)" \
     PYTHONPATH="$cand/src:$cand/vendor" timeout 7200 "$BASE/.venv/bin/python" -m homebody --headless --root "$cand" \
     --scene "$scene" --model "$MODEL" --settings "$EVOLVE/episode_settings.toml" --output "$out/session" \
     --task "$task" > "$out/run.log" 2>&1

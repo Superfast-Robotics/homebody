@@ -20,8 +20,8 @@ val = ["assets/generated/val_*", "assets/real2sim/src_kitchen::configs/continuou
 
 [agent]
 # The model playing HomeBody's agent in every evaluation episode (a session/config.py MODELS key).
-# GPT-6.1 Sol: near-Astra on agentic work at a fifth of Astra's token price.
-model = "sol61"
+# Astra through the LiteLLM proxy: only HomeBody's own prompt reaches the model (no Codex context).
+model = "astra-litellm"
 
 # The checks a candidate must pass, by the highest tier its patch touches (tiers.toml).
 [gates.0]

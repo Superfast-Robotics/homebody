@@ -236,6 +236,17 @@ def error_body(error: urllib.error.HTTPError) -> str:
         return f"body unreadable ({type(failure).__name__})"
 
 
+def streamed(reply: str) -> dict:
+    """The final response of a Responses API event stream, or its error event."""
+    events = [json.loads(line[5:]) for line in reply.splitlines() if line.startswith("data:") and line[5:].strip() not in ("", "[DONE]")]
+    for event in reversed(events):
+        if event.get("type") == "response.completed":
+            return event["response"]
+        if event.get("type") in ("error", "response.failed"):
+            return {"error": event}
+    return {"error": "the event stream ended without a completed response"}
+
+
 def run_request(name: str, url: str, headers: Mapping[str, str], body: dict, *, prompt: str,
                 attempt: Path, timeout: float, tick: Callable[[], None],
                 cancelled: Callable[[], bool], redacted: dict | None = None) -> dict:
@@ -270,7 +281,7 @@ def run_request(name: str, url: str, headers: Mapping[str, str], body: dict, *, 
             raise RuntimeError(f"{name} request thread died; its traceback went to stderr")
         (attempt / "reply.json").write_text(outcome["reply"])
         try:
-            reply = json.loads(outcome["reply"])
+            reply = streamed(outcome["reply"]) if outcome["reply"].startswith("data:") else json.loads(outcome["reply"])
         except json.JSONDecodeError as exc:
             raise ProviderError(f"{name} returned no JSON: {exc}") from exc
         if not isinstance(reply, dict):

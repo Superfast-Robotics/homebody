@@ -89,6 +89,8 @@ class Topdown:
 MODELS = {
     "astra": ("codex", "gpt-6-astra", "high"),
     "astra-api": ("openai-api", "gpt-6-astra", None),
+    "astra-litellm": ("litellm", "gpt-6-astra", "medium"),
+    "sol61-litellm": ("litellm", "gpt-6.1-sol", "medium"),
     "sol": ("codex", "gpt-5.6-sol", "high"),
     "sol61": ("codex", "gpt-6.1-sol", "high"),
     "sol61-api": ("openai-api", "gpt-6.1-sol", None),
