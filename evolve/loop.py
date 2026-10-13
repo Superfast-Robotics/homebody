@@ -21,6 +21,8 @@ from .remote import Remote, suite_tasks
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent
+COMPLETE = ".complete"  # written once a split has finished and been collected
+DONE = ".done"  # written once a round has given every verdict
 MECHANISM = re.compile(r"^## Mechanism (\d+):", re.MULTILINE)
 
 
@@ -91,32 +93,42 @@ class Loop:
         return json.loads(cache.read_text())
 
     def run_split(self, cid, split, repeats, suffix=""):
+        local = self.work / "results" / cid / (split + suffix)
+        if (local / COMPLETE).exists():  # resuming: this split already finished and was collected
+            runs = score.read_split(local)
+            self.log(f"{cid} {split}{suffix}: reusing its completed runs (score {score.summary(runs)['score']:.3f})")
+            return runs
         started = time.monotonic()
         results = self.remote.run_suite(cid, self.tasks(split), repeats, split + suffix)
-        local = self.remote.collect(results, self.work / "results" / cid / (split + suffix))
+        self.remote.collect(results, local)
         if score.quota_hit(local):  # infrastructure, not the harness: stop without judging anything
             self.log(f"{cid} {split}{suffix}: the model's usage limit was hit; stopping without a verdict")
             raise QuotaExhausted(f"usage limit hit while evaluating {cid}; resume the round once it resets")
+        (local / COMPLETE).write_text(f"{len(score.read_split(local))} runs\n")
         runs = score.read_split(local)
         summary = score.summary(runs)
         self.log(f"{cid} {split}{suffix}: score {summary['score']:.3f}, success {summary['success_rate']:.2f} "
                  f"({time.monotonic() - started:.0f} s)")
         return runs
 
+    def both_splits(self, cid, repeats, suffix=""):
+        """Train and held-out at once: an evaluation waits for its slowest session, not two in turn."""
+        with ThreadPoolExecutor(2) as pool:
+            futures = {split: pool.submit(self.run_split, cid, split, repeats, suffix) for split in ("train", "val")}
+            return {split: future.result() for split, future in futures.items()}
+
     def evaluate(self, cid, checkout, tier):
         """Push, run both splits at the tier's repeats, collect; returns {train, val} summaries."""
         self.remote.push_candidate(cid, checkout)
         repeats = self.cfg["gates"][str(tier)]["repeats"]
-        return {split: score.summary(self.run_split(cid, split, repeats)) for split in ("train", "val")}
+        return {split: score.summary(runs) for split, runs in self.both_splits(cid, repeats).items()}
 
     def confirm(self, cid, tier):
         """A passing candidate's second, independent evaluation, pooled with its first."""
         repeats = self.cfg["gates"][str(tier)]["repeats"]
-        pooled = {}
-        for split in ("train", "val"):
-            first = score.read_split(self.work / "results" / cid / split)
-            pooled[split] = score.summary(first + self.run_split(cid, split, repeats, "_confirm"))
-        return pooled
+        second = self.both_splits(cid, repeats, "_confirm")
+        return {split: score.summary(score.read_split(self.work / "results" / cid / split) + runs)
+                for split, runs in second.items()}
 
     # --- commands ---
     def baseline(self):
@@ -134,7 +146,8 @@ class Loop:
 
     def round(self):
         best = self.best()
-        number = 1 + max((e.get("round", 0) for e in self.archive()), default=0)
+        unfinished = sorted(p for p in (self.work / "rounds").glob("r[0-9][0-9][0-9]") if not (p / DONE).exists())
+        number = int(unfinished[0].name[1:]) if unfinished else 1 + max((e.get("round", 0) for e in self.archive()), default=0)
         round_dir = self.work / "rounds" / f"r{number:03d}"
         round_dir.mkdir(parents=True, exist_ok=True)
         self.log(f"round {number}: improving {best['id']} (train {best['train']['score']:.3f}, "
@@ -154,7 +167,8 @@ class Loop:
         with ThreadPoolExecutor(len(cids)) as pool:
             notes = list(pool.map(lambda pair: self.propose(pair[0], pair[1], best, ws, diagnosis, round_dir),
                                   zip(cids, mechanisms)))
-        candidates = [c for c in notes if c is not None]
+        judged = {e["id"] for e in self.archive()}
+        candidates = [c for c in notes if c is not None and c["cid"] not in judged]  # resuming: skip verdicts given
         accepted = []
         for cand in candidates:
             entry = {"id": cand["cid"], "parent": best["id"], "round": number, **cand["meta"]}
@@ -186,6 +200,7 @@ class Loop:
                     entry = {**entry, "status": "rejected", "reason": entry["reason"] + "; passed, but another "
                              "candidate this round scored higher (or tied with a smaller diff)"}
                 self.record(entry)
+        (round_dir / DONE).write_text("done\n")
         self.log(f"round {number}: done; best is now {self.best()['id']}")
 
     def propose(self, cid, mechanism, best, ws, diagnosis, round_dir):
