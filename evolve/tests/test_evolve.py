@@ -53,3 +53,12 @@ def test_acceptance_needs_no_drop_and_one_rise():
     assert score.accept(parent, {"train": {"score": 0.3}, "val": {"score": 0.3}})[0]
     assert not score.accept(parent, {"train": {"score": 0.5}, "val": {"score": 0.25}})[0]
     assert not score.accept(parent, {"train": {"score": 0.2}, "val": {"score": 0.3}})[0]
+
+
+def test_quota_exhaustion_is_detected_in_collected_sessions(tmp_path):
+    run_dir(tmp_path, "a", "r0", log="fine")
+    assert not score.quota_hit(tmp_path)
+    outcome = tmp_path / "a" / "r0" / "session" / "tasks" / "task-000" / "outcome.json"
+    outcome.parent.mkdir(parents=True)
+    outcome.write_text('{"status": "provider_error", "reason": "Codex exited 1: You\u2019ve hit your usage limit."}')
+    assert score.quota_hit(tmp_path)

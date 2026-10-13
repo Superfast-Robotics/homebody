@@ -24,6 +24,10 @@ REPO = HERE.parent
 MECHANISM = re.compile(r"^## Mechanism (\d+):", re.MULTILINE)
 
 
+class QuotaExhausted(RuntimeError):
+    pass
+
+
 def config():
     return tomllib.loads((HERE / "config.toml").read_text())
 
@@ -90,6 +94,9 @@ class Loop:
         started = time.monotonic()
         results = self.remote.run_suite(cid, self.tasks(split), repeats, split + suffix)
         local = self.remote.collect(results, self.work / "results" / cid / (split + suffix))
+        if score.quota_hit(local):  # infrastructure, not the harness: stop without judging anything
+            self.log(f"{cid} {split}{suffix}: the model's usage limit was hit; stopping without a verdict")
+            raise QuotaExhausted(f"usage limit hit while evaluating {cid}; resume the round once it resets")
         runs = score.read_split(local)
         summary = score.summary(runs)
         self.log(f"{cid} {split}{suffix}: score {summary['score']:.3f}, success {summary['success_rate']:.2f} "
@@ -134,8 +141,13 @@ class Loop:
                  f"val {best['val']['score']:.3f})")
         history = [e for e in self.archive() if e["status"] != "baseline"]
         ws = workspace.build(round_dir, best, self.work / "results" / best["id"] / "train", history, self.instructions())
-        diag_tree = self.worktree(f"r{number:03d}d", best["commit"])
-        diagnosis = astra.diagnose(diag_tree, ws, round_dir / "diagnosis.md")
+        saved = round_dir / "diagnosis.md"
+        if saved.exists() and saved.read_text().strip():  # resuming an interrupted round
+            diagnosis = saved.read_text()
+            self.log(f"round {number}: resuming with its saved diagnosis")
+        else:
+            diag_tree = self.worktree(f"r{number:03d}d", best["commit"])
+            diagnosis = astra.diagnose(diag_tree, ws, saved)
         mechanisms = [int(n) for n in MECHANISM.findall(diagnosis)][: self.cfg["astra"]["proposals"]] or [1]
         self.log(f"round {number}: diagnosis names mechanisms {MECHANISM.findall(diagnosis)}; proposing {mechanisms}")
         cids = [f"r{number:03d}c{n}" for n in mechanisms]
@@ -178,8 +190,12 @@ class Loop:
 
     def propose(self, cid, mechanism, best, ws, diagnosis, round_dir):
         path = self.worktree(cid, best["commit"])
+        note_path = round_dir / f"{cid}_note.md"
+        if git("rev-parse", "HEAD", cwd=path) != best["commit"] and note_path.exists():  # resuming: already committed
+            self.log(f"{cid}: resuming with its committed patch")
+            return {"cid": cid, "path": path, "meta": self.patch_meta(path, best, note_path.read_text(), mechanism)}
         try:
-            note = astra.propose(path, ws, diagnosis, mechanism, round_dir / f"{cid}_note.md")
+            note = astra.propose(path, ws, diagnosis, mechanism, note_path)
         except Exception as error:  # noqa: BLE001 -- a failed proposal is recorded, not fatal
             return {"cid": cid, "path": path, "meta": {"status": "failed", "reason": f"proposer error: {error}"}}
         # Safe lint fixes first, so a style rule does not cost a whole proposal.
@@ -190,6 +206,10 @@ class Loop:
             return {"cid": cid, "path": path, "meta": {"status": "rejected", "reason": "no change", "notes": note}}
         git("-c", "user.name=astra", "-c", "user.email=astra@localhost", "commit", "-q", "-m",
             f"evolve {cid}: mechanism {mechanism}\n\n{note[:3000]}", cwd=path)
+        return {"cid": cid, "path": path, "meta": self.patch_meta(path, best, note, mechanism)}
+
+    def patch_meta(self, path, best, note, mechanism):
+        """Files, size, tier and frozen check of the worktree's committed patch against BEST."""
         commit = git("rev-parse", "HEAD", cwd=path)
         files = git("diff", "--name-only", best["commit"], commit).splitlines()
         numstat = git("diff", "--numstat", best["commit"], commit).splitlines()
@@ -199,7 +219,7 @@ class Loop:
                 "mechanism": mechanism}
         if classified.frozen:
             meta.update(status="rejected", reason=f"touches frozen files {list(classified.frozen)}")
-        return {"cid": cid, "path": path, "meta": meta}
+        return meta
 
     def status(self):
         for e in self.archive():

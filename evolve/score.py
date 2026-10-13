@@ -59,3 +59,16 @@ def accept(parent, child):
     d_train = child["train"]["score"] - parent["train"]["score"]
     d_val = child["val"]["score"] - parent["val"]["score"]
     return d_train >= 0 and d_val >= 0 and max(d_train, d_val) > 0, round(d_train, 4), round(d_val, 4)
+
+
+QUOTA_MARKERS = ("usage limit", "rate limit exceeded", "insufficient_quota")
+
+
+def quota_hit(local):
+    """Whether any collected session ended because the model's usage quota ran out."""
+    for path in Path(local).rglob("*"):
+        if path.name in ("outcome.json", "run.log") and path.is_file():
+            text = path.read_text(errors="replace").lower()
+            if any(marker in text for marker in QUOTA_MARKERS):
+                return True
+    return False
