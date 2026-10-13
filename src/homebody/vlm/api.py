@@ -86,14 +86,54 @@ class OpenAiApi:
         return Decision.parse(content, names)
 
 
+class LiteLlm:
+    """OpenAI Responses API through a LiteLLM proxy (LITELLM_BASE_URL, default 127.0.0.1:4000) holding a
+    ChatGPT sign-in: only this request reaches the model. The text goes before the images and the cache key
+    is fixed, so the instructions every turn repeats are served from the prompt cache."""
+    LABEL, KEY = "LiteLLM", "LITELLM_API_KEY"
+    BASE = "http://127.0.0.1:4000"
+    CACHE_KEY = "homebody-agent"
+
+    def __init__(self, settings: Agent):
+        self.settings = settings
+
+    @staticmethod
+    def effort(settings: Agent) -> str:
+        return {"max": "xhigh"}.get(settings.effort, settings.effort)
+
+    def request(self, prompt: str, images: tuple[Path, ...], names: tuple[str, ...]) -> dict:
+        content = [{"type": "input_text", "text": prompt}]
+        content += [{"type": "input_image", "image_url": f"data:{MEDIA[image.suffix.lower()]};base64,{image_data(image)}"}
+                    for image in images]
+        return {"model": self.settings.model_id, "input": [{"role": "user", "content": content}],
+                "reasoning": {"effort": self.effort(self.settings)}, "prompt_cache_key": self.CACHE_KEY,
+                "text": {"format": {"type": "json_schema", "name": "decision", "strict": True, "schema": schema(names)}}}
+
+    def generate(self, prompt: str, *, images: tuple[Path, ...], names: tuple[str, ...],
+                 attempt: Path, tick: Callable[[], None], cancelled: Callable[[], bool]) -> Decision:
+        headers = {"Authorization": f"Bearer {key(self.KEY)}", "content-type": "application/json"}
+        url = os.environ.get("LITELLM_BASE_URL", self.BASE).rstrip("/") + "/v1/responses"
+        body = self.request(prompt, images, names)
+        reply = run_request("LiteLLM", url, headers, body, prompt=prompt, attempt=attempt,
+                            timeout=self.settings.timeout, tick=tick, cancelled=cancelled,
+                            redacted=redact(body, images))
+        texts = [part.get("text", "") for item in reply.get("output") or [] if item.get("type") == "message"
+                 for part in item.get("content") or [] if part.get("type") == "output_text"]
+        if not texts:
+            raise ProviderError(f"LiteLLM returned no decision: {json.dumps(reply)[:500]}")
+        return Decision.parse(texts[-1], names)
+
+
 def redact(body: dict, images: tuple[Path, ...]) -> dict:
     """The request as recorded: image bytes replaced by the image file names, in order."""
     names = iter(image.name for image in images)
     record = json.loads(json.dumps(body))
-    for message in record["messages"]:
+    for message in record.get("messages") or record.get("input") or []:
         for part in message["content"]:
             if part.get("type") == "image":
                 part["source"] = {"file": next(names)}
             elif part.get("type") == "image_url":
                 part["image_url"] = {"file": next(names)}
+            elif part.get("type") == "input_image":
+                part["image_url"] = next(names)
     return record
