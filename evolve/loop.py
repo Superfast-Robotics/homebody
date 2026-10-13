@@ -101,7 +101,7 @@ class Loop:
             self.log(f"{cid} {split}{suffix}: reusing its completed runs (score {score.summary(runs)['score']:.3f})")
             return runs
         started = time.monotonic()
-        results = self.remote.run_suite(cid, self.tasks(split), repeats, split + suffix)
+        results = self.remote.run_suite(cid, self.tasks(split), repeats, split + suffix, self.cfg["agent"]["model"])
         self.remote.collect(results, local)
         if score.quota_hit(local):  # infrastructure, not the harness: stop without judging anything
             self.log(f"{cid} {split}{suffix}: the model's usage limit was hit; stopping without a verdict")

@@ -90,6 +90,8 @@ MODELS = {
     "astra": ("codex", "gpt-6-astra", "high"),
     "astra-api": ("openai-api", "gpt-6-astra", None),
     "sol": ("codex", "gpt-5.6-sol", "high"),
+    "sol61": ("codex", "gpt-6.1-sol", "high"),
+    "sol61-api": ("openai-api", "gpt-6.1-sol", None),
     "sol-api": ("openai-api", "gpt-5.6-sol", None),
     "luna": ("codex", "gpt-5.6-luna", "high"),
     "luna-api": ("openai-api", "gpt-5.6-luna", None),

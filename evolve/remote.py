@@ -51,7 +51,7 @@ class Remote:
         passed = "PYTEST=0" in out and "RUFF=0" in out
         return passed, out[-3000:]
 
-    def run_suite(self, cid, tasks, repeats, label):
+    def run_suite(self, cid, tasks, repeats, label, model):
         """Run one HomeBody session per task (dicts with name, scene, targets) REPEATS times with
         candidate CID's code. Returns the remote results directory."""
         cand = f"{self.work}/cands/{cid}"
@@ -63,7 +63,7 @@ class Remote:
         subprocess.run(["rsync", "-a", str(HERE / "run_jobs.sh"), str(HERE / "score_episode.py"),
                         str(HERE / "episode_settings.toml"), f"{self.host}:{self.work}/"], check=True)
         waves = -(-len(lines) // self.parallel)
-        self.ssh(f"bash {self.work}/run_jobs.sh {self.base} {self.parallel} {jobs} {self.work}",
+        self.ssh(f"bash {self.work}/run_jobs.sh {self.base} {self.parallel} {jobs} {self.work} {model}",
                  timeout=waves * 7500 + 600)
         return results
 
