@@ -6,6 +6,8 @@ accept by the non-regression rule into an archive of versions.
     python3 -m evolve.loop round            # one round from the best version
     python3 -m evolve.loop run --rounds 5
     python3 -m evolve.loop status
+    python3 -m evolve.loop rebaseline       # pool the baseline with its own confirmation run
+    python3 -m evolve.loop rejudge 1        # re-apply the rule to round 1 against the current best
 """
 import argparse
 import json
@@ -137,8 +139,46 @@ class Loop:
         passed, output = self.remote_checks("v000", checkout)
         if not passed:
             raise SystemExit(f"the baseline fails its own checks:\n{output}")
-        summaries = self.evaluate("v000", checkout, 0)
+        self.evaluate("v000", checkout, 0)
+        summaries = self.confirm("v000", 0)  # a baseline is measured as often as a confirmed candidate
         self.record({"id": "v000", "parent": None, "round": 0, "commit": commit, "status": "baseline", **summaries})
+
+    def rebaseline(self):
+        """Pool the baseline with its own confirmation run, so it is measured like a confirmed candidate."""
+        entry = next(e for e in self.archive() if e["status"] == "baseline")
+        pooled = self.confirm(entry["id"], 0)
+        self.record({**entry, **pooled, "status": "baseline", "reason": "re-measured: pooled with a confirmation run"})
+
+    def rejudge(self, number):
+        """Re-apply the acceptance rule to round NUMBER's evaluated candidates against the current best,
+        from their stored runs; one that newly passes its first evaluation gets its confirmation."""
+        best = self.best()
+        latest = {e["id"]: e for e in self.archive() if e.get("round") == number and e.get("train")}
+        accepted = []
+        for entry in latest.values():
+            cid, tier = entry["id"], entry["tier"]
+            first = {s: score.summary(score.read_split(self.work / "results" / cid / s)) for s in ("train", "val")}
+            if all((self.work / "results" / cid / f"{s}_confirm" / COMPLETE).exists() for s in ("train", "val")):
+                pooled = {s: score.summary(score.read_split(self.work / "results" / cid / s) +
+                                           score.read_split(self.work / "results" / cid / f"{s}_confirm"))
+                          for s in ("train", "val")}
+            elif score.accept(best, first)[0]:
+                self.log(f"{cid} now passes its first evaluation against {best['id']}; confirming")
+                pooled = self.confirm(cid, tier)
+            else:
+                pooled = first
+            ok, d_train, d_val = score.accept(best, pooled)
+            verdict = (f"re-judged against re-measured {best['id']}: train {d_train:+.3f}, held-out "
+                       f"{'did not drop' if d_val >= 0 else 'dropped'}{' and rose' if d_val > 0 else ''}")
+            judged = {**entry, **pooled, "status": "accepted" if ok else "rejected", "reason": verdict,
+                      "d_train": d_train, "d_val": d_val}
+            (accepted.append(judged) if ok else self.record(judged))
+        if accepted:
+            winner = max(accepted, key=lambda e: (e["d_train"] + e["d_val"], -e.get("lines_changed", 0)))
+            for entry in accepted:
+                self.record(entry if entry is winner else {**entry, "status": "rejected",
+                            "reason": entry["reason"] + "; passed, but another candidate scored higher"})
+        self.log(f"round {number} re-judged; best is now {self.best()['id']}")
 
     def remote_checks(self, cid, checkout):
         self.remote.push_candidate(cid, checkout)
@@ -152,7 +192,7 @@ class Loop:
         round_dir.mkdir(parents=True, exist_ok=True)
         self.log(f"round {number}: improving {best['id']} (train {best['train']['score']:.3f}, "
                  f"val {best['val']['score']:.3f})")
-        history = [e for e in self.archive() if e["status"] != "baseline"]
+        history = list({e["id"]: e for e in self.archive() if e["status"] != "baseline"}.values())  # latest verdicts
         ws = workspace.build(round_dir, best, self.work / "results" / best["id"] / "train", history, self.instructions())
         saved = round_dir / "diagnosis.md"
         if saved.exists() and saved.read_text().strip():  # resuming an interrupted round
@@ -252,12 +292,19 @@ def main(argv=None):
     run = sub.add_parser("run")
     run.add_argument("--rounds", type=int, required=True)
     sub.add_parser("status")
+    sub.add_parser("rebaseline")
+    rejudge = sub.add_parser("rejudge")
+    rejudge.add_argument("round", type=int)
     args = parser.parse_args(argv)
     loop = Loop()
     if args.command == "baseline":
         loop.baseline()
     elif args.command == "round":
         loop.round()
+    elif args.command == "rebaseline":
+        loop.rebaseline()
+    elif args.command == "rejudge":
+        loop.rejudge(args.round)
     elif args.command == "run":
         for _ in range(args.rounds):
             loop.round()
