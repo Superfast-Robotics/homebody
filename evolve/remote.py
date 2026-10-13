@@ -1,4 +1,5 @@
 """The remote machine: candidate checkouts, scripted suite runs and their results."""
+import shutil
 import subprocess
 import tomllib
 from dataclasses import dataclass
@@ -68,7 +69,9 @@ class Remote:
 
     def collect(self, results, local):
         """Copy each run's result, log and session events to LOCAL."""
-        local.mkdir(parents=True, exist_ok=True)
+        if local.exists():  # a re-run must not inherit an earlier run's files
+            shutil.rmtree(local)
+        local.mkdir(parents=True)
         subprocess.run(["rsync", "-a", "--include=*/", "--include=result.json", "--include=run.log",
                         "--include=exit_code", "--include=events.jsonl", "--include=outcome.json",
                         "--exclude=*", "--prune-empty-dirs",
