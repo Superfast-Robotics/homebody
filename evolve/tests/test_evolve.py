@@ -64,3 +64,11 @@ def test_quota_exhaustion_is_detected_in_collected_sessions(tmp_path):
     outcome.parent.mkdir(parents=True)
     outcome.write_text('{"status": "provider_error", "reason": "Codex exited 1: You\u2019ve hit your usage limit."}')
     assert score.quota_hit(tmp_path)
+
+
+def test_a_void_run_with_every_object_dropped_is_left_out(tmp_path):
+    for repeat, result in (("r0", {"stage": 3.0, "success": True}), ("r1", {"stage": None, "void": True})):
+        (tmp_path / "task" / repeat).mkdir(parents=True)
+        (tmp_path / "task" / repeat / "result.json").write_text(json.dumps(result))
+    runs = score.read_split(tmp_path)
+    assert [run.repeat for run in runs] == ["r0"] and score.summary(runs)["score"] == 1.0

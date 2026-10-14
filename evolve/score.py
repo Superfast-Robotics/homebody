@@ -2,7 +2,8 @@
 
 Each run's result.json (written by score_episode.py) holds a stage per targeted object: 0 untouched,
 1 lifted by the robot, 2 ended inside the target region, 3 physics-verified placement. A run's
-stage is the mean over its objects; a split's score is the mean stage over runs, divided by 3.
+stage is the mean over its objects; a split's score is the mean stage over runs, divided by 3. A void
+run (every object dropped to the floor, which the robot cannot recover) is left out.
 """
 import json
 from dataclasses import dataclass, field
@@ -27,6 +28,8 @@ def read_run(task_dir, repeat_dir):
         tail = " | ".join(log.strip().splitlines()[-3:])[:300] if log.strip() else "no output"
         return Run(task_dir.name, repeat_dir.name, 0.0, False, 0, 0.0, [f"session crashed: {tail}"])
     result = json.loads(path.read_text())
+    if result.get("void"):
+        return None
     failures = [f"{name}: stage {o['stage']} ({o['reason']})" for name, o in result.get("objects", {}).items()
                 if o.get("reason") is not None]
     if result.get("status") not in (None, "model_done"):
@@ -39,7 +42,9 @@ def read_split(local):
     runs = []
     for task_dir in sorted(p for p in Path(local).iterdir() if p.is_dir()):
         for repeat_dir in sorted(p for p in task_dir.iterdir() if p.is_dir()):
-            runs.append(read_run(task_dir, repeat_dir))
+            run = read_run(task_dir, repeat_dir)
+            if run is not None:
+                runs.append(run)
     return runs
 
 

@@ -2,8 +2,10 @@
 session under an --output root) from physics.
 
 Each targeted object gets a stage: 0 untouched, 1 lifted by the robot, 2 ended inside its target
-region, 3 physics-verified placement (the frozen evaluator's verdict). Writes nothing; prints the
-result JSON, with the session's step and coder-call counts.
+region, 3 physics-verified placement (the frozen evaluator's verdict). An object the robot lifted
+that ends on the floor is "dropped": the robot cannot bend to pick it up again, so for now it is left
+out of the run's mean, and a run whose every object was dropped is void (left out of the score).
+Writes nothing; prints the result JSON, with the session's step and coder-call counts.
 """
 import json
 import runpy
@@ -13,6 +15,7 @@ from pathlib import Path
 import numpy as np
 
 LIFT_M = 0.05
+FALL_M = 0.5  # ending this far below its start means it fell to the floor (scenes differ in floor height)
 
 
 def main(session, targets_path, evaluate_py):
@@ -33,12 +36,15 @@ def main(session, targets_path, evaluate_py):
         end = np.asarray(rows[-1]["objects"][name]["position"])
         low, high = (np.asarray(b) for b in goal["bounds"])
         inside = bool(np.all(end >= low) and np.all(end <= high))
-        objects[name] = {"stage": 3 if reason is None else 2 if inside else 1 if lifted else 0, "reason": reason}
+        dropped = lifted and not inside and end[2] < start[2] - FALL_M
+        objects[name] = {"stage": 3 if reason is None else 2 if inside else 1 if lifted else 0, "reason": reason,
+                         "dropped": bool(dropped)}
+    kept = [o["stage"] for o in objects.values() if not o["dropped"]]
     outcome = json.loads((physics.parent / "outcome.json").read_text()) if (physics.parent / "outcome.json").exists() else {}
     events = [json.loads(line) for line in (session / "events.jsonl").read_text().splitlines() if line.strip()]
     skills = [e["decision"]["skill"] for e in events if e.get("kind") == "decision"]
     print(json.dumps({"success": bool(verdict["success"]) and outcome.get("status") == "model_done",
-                      "stage": round(sum(o["stage"] for o in objects.values()) / max(1, len(objects)), 3),
+                      "stage": round(sum(kept) / len(kept), 3) if kept else None, "void": bool(objects) and not kept,
                       "objects": objects, "untargeted": verdict.get("untargeted"), "status": outcome.get("status"),
                       "steps": len(skills), "customizations": skills.count("call_coder"),
                       "wall_seconds": outcome.get("wall_seconds", 0.0)}, indent=1, default=str))
