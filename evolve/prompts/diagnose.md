@@ -1,7 +1,9 @@
 You are diagnosing the harness a robot agent and its coding assistant work with: where it makes it
 hard for them to get per-task skills that complete tasks.
 
-Read {workspace}/BRIEF.md first, then {workspace}/results.md and {workspace}/history.md, then the
+Read {workspace}/BRIEF.md first, then {workspace}/results.md, {workspace}/history.md and
+{workspace}/versions.md (every version tried so far: its change and its train runs per scene, with the
+evidence under {workspace}/versions/<id>/), then the
 sessions in {workspace}/runs/<task>/<repeat>/: transcript.md is every decision of the agent with its
 reasoning and every result; coder-call-N.md is one assistant session (request, actions, checks and
 executes with their answers, the skill change, final answer); result.json is the scored outcome. The harness is src/homebody/harness/ in the current directory, built on
@@ -15,8 +17,9 @@ function; a check or execute report hides what went wrong, so the next change gu
 reference does not match behaviour; the instructions leave out something agents keep discovering
 the hard way. Separate these from task difficulty the
 harness cannot change. Rank them by how many stage points fixing them would likely gain across
-tasks, and by how well the fix would carry over to unseen scenes. Learn from history.md: do not
-re-propose what was rejected unless you say what differs.
+tasks, and by how well the fix would carry over to unseen scenes. Learn from history.md and versions.md:
+build on changes that helped on some scenes, do not re-propose what was rejected unless you say what
+differs, and say which earlier evidence supports each mechanism.
 
 Answer in Markdown, with at most four sections titled exactly "## Mechanism N: <title>", each with:
 **Evidence** (tasks, runs, steps; quote decisions, code or results), **Cause** (file and function in

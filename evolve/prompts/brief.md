@@ -35,9 +35,10 @@ placement. A version's score is the mean stage / 3 over tasks and repeats.
 assistant session: the request, what the assistant did, every check and execute with its answer,
 the change it made to the skill and its final answer.
 Acceptance also uses held-out tasks you never see: other draws of the same families and a real
-scanned kitchen with a four-object task. A version is accepted only if neither the train nor the
-held-out score drops by more than 0.02 and at least one rises by more than that, confirmed by a
-second evaluation. The final harness is
+scanned kitchen with a four-object task. Each run's value is half its stage (/3)
+and half its task success, so clean completions count most. A version is accepted only if, compared
+scene by scene with the current harness, neither split's value falls by more than two standard errors
+and at least one rises by more than one and a half, confirmed by a second evaluation. The final harness is
 used, unchanged, on other scenes. So improve the harness in general: never add anything about
 particular scenes, objects, colours or coordinates, and never weaken a check to make a task look done.
 

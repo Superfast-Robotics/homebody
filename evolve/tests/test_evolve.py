@@ -48,9 +48,10 @@ def test_stages_from_inner_results(tmp_path):
     assert s["score"] == round(4 / 9, 4) and s["success_rate"] == round(1 / 3, 4) and s["by_task"]["a"] == [3.0, 1.0]
 
 
-def split(**scenes):
+def split(successes=None, **scenes):
     runs = [stage for stages in scenes.values() for stage in stages]
-    return {"score": sum(runs) / (3 * len(runs)), "by_task": scenes}
+    summary = {"score": sum(runs) / (3 * len(runs)), "by_task": scenes}
+    return {**summary, "success_by_task": successes} if successes else summary
 
 
 def test_acceptance_weighs_each_change_against_its_standard_error():
@@ -89,3 +90,18 @@ def test_family_success_is_reported_and_every_run_counts(tmp_path):
         (tmp_path / task / repeat / "result.json").write_text(json.dumps(result))
     summary = score.summary(score.read_split(tmp_path))
     assert summary["runs"] == 3 and summary["success_by_family"] == {"shelf_return": 0.5, "src_kitchen": 0.0}
+
+
+def test_task_success_carries_half_of_a_runs_value():
+    stages = {"a": [3, 3, 3, 3]}
+    parent = {"train": split(successes={"a": [0, 0, 0, 0]}, **stages), "val": split(c=[3, 3, 3, 3])}
+    finished = {"train": split(successes={"a": [1, 1, 1, 1]}, **stages), "val": split(c=[3, 3, 3, 3])}
+    ok, d_train, *_ = score.accept(parent, finished)
+    assert ok and d_train == 0.5
+
+
+def test_a_drop_within_two_standard_errors_is_tolerated():
+    parent = {"train": split(a=[1, 1, 1, 1]), "val": split(c=[3, 3, 3, 0], d=[3, 0, 3, 3])}
+    child = {"train": split(a=[3, 3, 3, 3]), "val": split(c=[3, 0, 3, 0], d=[3, 0, 3, 3])}
+    _, _, d_val, _, se_val = score.accept(parent, child)
+    assert d_val < 0 and d_val + 2 * se_val >= 0 and score.accept(parent, child)[0]

@@ -7,6 +7,7 @@ accepted/rejected verdict.
 import difflib
 import json
 import shutil
+import subprocess
 from pathlib import Path
 
 from . import score
@@ -31,24 +32,8 @@ def build(round_dir, best, train_local, history, instructions):
         lines.append(f"| {task} | {instructions.get(task, '')} | {stages} | {[r.attempts for r in task_runs]} | "
                      f"{failures or '-'} |")
     (ws / "results.md").write_text("\n".join(lines) + "\n")
-    for task_dir in sorted(p for p in Path(train_local).iterdir() if p.is_dir()):
-        for repeat_dir in sorted(p for p in task_dir.iterdir() if p.is_dir()):
-            out = ws / "runs" / task_dir.name / repeat_dir.name
-            out.mkdir(parents=True)
-            result = repeat_dir / "result.json"
-            if result.exists():
-                shutil.copy(result, out / "result.json")
-            events = next((path for path in repeat_dir.rglob("events.jsonl") if "coder" not in path.parts), None)
-            if events:
-                (out / "transcript.md").write_text(transcript(events))
-            for call in sorted(repeat_dir.rglob("coder/call-*")):
-                (out / f"coder-{call.name}.md").write_text(coder_call(call))
-            log = repeat_dir / "run.log"
-            if log.exists():
-                errors = [line for line in log.read_text(errors="replace").splitlines()
-                          if "Traceback" in line or "Error" in line][-20:]
-                if errors:
-                    (out / "runner_errors.log").write_text("\n".join(errors) + "\n")
+    copy_runs(Path(train_local), ws / "runs")
+    versions(ws, Path(train_local).parents[1], best, history)
     (ws / "history.md").write_text(render_history(history))
     return ws
 
@@ -130,3 +115,83 @@ def transcript(events_path):
         elif event.get("kind") == "task_finished":
             lines.append(f"## Task finished: {json.dumps(event.get('outcome', {}), default=str)[:400]}")
     return "\n\n".join(lines) + "\n"
+
+
+def copy_runs(source, dest, prefix=""):
+    """Each run of a collected split under SOURCE as DEST/<task>/<prefix><repeat>/: its result, the
+    agent's transcript, one write-up per coder call and the runner's errors."""
+    for task_dir in sorted(p for p in Path(source).iterdir() if p.is_dir()):
+        for repeat_dir in sorted(p for p in task_dir.iterdir() if p.is_dir()):
+            out = dest / task_dir.name / f"{prefix}{repeat_dir.name}"
+            out.mkdir(parents=True)
+            result = repeat_dir / "result.json"
+            if result.exists():
+                shutil.copy(result, out / "result.json")
+            events = next((path for path in repeat_dir.rglob("events.jsonl") if "coder" not in path.parts), None)
+            if events:
+                (out / "transcript.md").write_text(transcript(events))
+            for call in sorted(repeat_dir.rglob("coder/call-*")):
+                (out / f"coder-{call.name}.md").write_text(coder_call(call))
+            log = repeat_dir / "run.log"
+            if log.exists():
+                errors = [line for line in log.read_text(errors="replace").splitlines()
+                          if "Traceback" in line or "Error" in line][-20:]
+                if errors:
+                    (out / "runner_errors.log").write_text("\n".join(errors) + "\n")
+
+
+def short_name(task):
+    """train_04_shelf_return -> 04 shelf; other scenes keep their name."""
+    parts = task.split("_")
+    return f"{parts[1]} {parts[2]}" if len(parts) > 2 and parts[1].isdigit() else task
+
+
+LABELS = {"plain": "homebody_baseline: the original HomeBody skills and prompt, no coder",
+          "v000-old": "the starting harness measured under the old conditions (physics ran during coder calls)"}
+
+
+def versions(ws, results_dir, best, history):
+    """Every earlier version's train evidence for the diagnosis: versions.md compares them with the
+    current harness scene by scene, and versions/<id>/ holds each one's change and its train runs.
+    Held-out results stay out, as everywhere in the workspace."""
+    entries = {e["id"]: e for e in history}
+    current = best["train"]
+    lines = ["# Every version tried so far, on the train scenes",
+             "",
+             f"The current harness is {best['id']}. Each row is an earlier version: what it changed and how its",
+             "train runs went per scene (mean stage over its runs; 0 untouched, 1 lifted, 2 in the target",
+             "region, 3 placed), against the current harness. Candidates r002* to r004* were built on r001c2, so",
+             "their diffs add to r001c2's change. Candidates evaluated before the current conditions ran 2 runs per",
+             "scene with the physics running during coder calls. Use this to learn what helped where, what hurt",
+             "and what was already tried; versions/<id>/ has each one's change.diff, note.md and train runs.",
+             "",
+             "| version | status | change | " + " | ".join(short_name(t) for t in current["by_task"])
+             + " | success |",
+             "|---|---|---|" + "---|" * (len(current["by_task"]) + 1)]
+    mean = lambda stages: f"{sum(stages) / len(stages):.2f}" if stages else "-"
+    lines.append(f"| **{best['id']}** (current) | {best['status']} | - | "
+                 + " | ".join(mean(v) for v in current["by_task"].values()) + f" | {current['success_rate']:.2f} |")
+    for vdir in sorted(p for p in results_dir.iterdir() if p.is_dir()):
+        vid = vdir.name
+        if vid in (best["id"], "pilot"):
+            continue
+        splits = sorted(d for d in vdir.glob("train*") if d.is_dir())
+        runs = [run for d in splits for run in score.read_split(d)]
+        if not runs:
+            continue
+        out = ws / "versions" / vid
+        for d in splits:
+            copy_runs(d, out / "runs", prefix=d.name.removeprefix("train").strip("_") + ("_" if d.name != "train" else ""))
+        entry = entries.get(vid, {})
+        if entry.get("notes"):
+            (out / "note.md").write_text(entry["notes"])
+        if entry.get("commit"):
+            diff = subprocess.run(["git", "diff", f"{entry['commit']}~1", entry["commit"], "--", "src", "tests"],
+                                  cwd=HERE.parent, capture_output=True, text=True, check=False).stdout
+            (out / "change.diff").write_text(diff)
+        summary = score.summary(runs)
+        change = LABELS.get(vid) or (entry.get("notes", "").splitlines() or ["-"])[0].removeprefix("Mechanism:").strip()
+        lines.append(f"| {vid} | {entry.get('status', 'reference')} | {change[:90]} | "
+                     + " | ".join(mean(summary["by_task"].get(t, [])) for t in current["by_task"])
+                     + f" | {summary['success_rate']:.2f} |")
+    (ws / "versions.md").write_text("\n".join(lines) + "\n")

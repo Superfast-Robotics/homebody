@@ -4,8 +4,10 @@ Each run's result.json (written by score_episode.py) holds a stage per targeted 
 1 lifted by the robot, 2 ended inside the target region, 3 physics-verified placement. A run's
 stage is the mean over its objects; a split's score is the mean stage over runs, divided by 3.
 
-Acceptance compares a candidate with its parent scene by scene, with the standard error of that
-difference estimated from the runs' spread, so a change is judged against the evaluation's own noise.
+Acceptance compares a candidate with its parent scene by scene on each run's value, half its stage
+(/3) and half its task success, with the standard error of that difference estimated from the runs'
+spread, so a change is judged against the evaluation's own noise and a clean completion counts more
+than partial progress.
 """
 import json
 from dataclasses import dataclass, field
@@ -49,13 +51,14 @@ def read_split(local):
 def summary(runs):
     if not runs:
         return {"score": 0.0, "success_rate": 0.0, "runs": 0, "by_task": {}}
-    by_task, by_family = {}, {}
+    by_task, by_family, success_by_task = {}, {}, {}
     for run in runs:
         by_task.setdefault(run.task, []).append(round(run.stage, 2))
+        success_by_task.setdefault(run.task, []).append(int(run.success))
         by_family.setdefault(family(run.task), []).append(run.success)
     return {"score": round(sum(r.stage for r in runs) / (3 * len(runs)), 4),
             "success_rate": round(sum(r.success for r in runs) / len(runs), 4), "runs": len(runs),
-            "by_task": by_task,
+            "by_task": by_task, "success_by_task": success_by_task,
             "success_by_family": {name: round(sum(s) / len(s), 3) for name, s in sorted(by_family.items())}}
 
 
@@ -65,25 +68,35 @@ def family(task):
     return parts[2] if len(parts) == 3 and parts[1].isdigit() else task
 
 
-Z_DROP = 1.0  # a split counts as worse only if it falls by more than this many standard errors
+SUCCESS_WEIGHT = 0.5  # a run's value: (1 - w) * stage / 3 + w * task success
+Z_DROP = 2.0  # a split counts as worse only if it falls by more than this many standard errors (drops make
+#               single runs swing, so the band is wide)
 Z_RISE = 1.5  # and as better only if it rises by more than this many
 
 
+def values(split, scene):
+    """The runs' values on SCENE: stage and success weighed by SUCCESS_WEIGHT. A summary without
+    per-run success (older archive entries) counts a stage-3 run as a success."""
+    stages = split["by_task"][scene]
+    successes = split.get("success_by_task", {}).get(scene) or [int(stage >= 3) for stage in stages]
+    return [(1 - SUCCESS_WEIGHT) * stage / 3 + SUCCESS_WEIGHT * success for stage, success in zip(stages, successes)]
+
+
 def difference(parent, child):
-    """(score difference, its standard error) of CHILD over PARENT for one split's summaries, scene by
+    """(value difference, its standard error) of CHILD over PARENT for one split's summaries, scene by
     scene over the scenes both ran: each scene's runs give its mean and, pooled across both, its spread."""
     scenes = sorted(set(parent["by_task"]) & set(child["by_task"]))
     if not scenes:
         return 0.0, 0.0
     total, variance = 0.0, 0.0
     for scene in scenes:
-        a, b = parent["by_task"][scene], child["by_task"][scene]
+        a, b = values(parent, scene), values(child, scene)
         both = a + b
         mean = sum(both) / len(both)
         spread = sum((x - mean) ** 2 for x in both) / max(1, len(both) - 1)
         total += sum(b) / len(b) - sum(a) / len(a)
         variance += spread / len(a) + spread / len(b)
-    return total / (3 * len(scenes)), variance ** 0.5 / (3 * len(scenes))
+    return total / len(scenes), variance ** 0.5 / len(scenes)
 
 
 def accept(parent, child):
@@ -98,7 +111,7 @@ def accept(parent, child):
 
 def verdict(d_train, d_val, se_train, se_val):
     """The archive's one-line reason for a comparison."""
-    return f"train {d_train:+.3f} (se {se_train:.3f}), held-out {d_val:+.3f} (se {se_val:.3f})"
+    return f"value: train {d_train:+.3f} (se {se_train:.3f}), held-out {d_val:+.3f} (se {se_val:.3f})"
 
 
 QUOTA_MARKERS = ("usage limit", "rate limit exceeded", "insufficient_quota")
