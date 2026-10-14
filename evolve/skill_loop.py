@@ -141,6 +141,10 @@ class SkillLoop:
         (ws / "history.md").write_text("# Earlier versions of the skill\n\n" + "\n\n".join(history) + "\n")
         return ws
 
+    def proposer(self):
+        """The model that diagnoses and patches the skill ([skill] model and effort)."""
+        return {"model": self.cfg["model"], "effort": self.cfg["effort"]}
+
     def allowed(self, files):
         patterns = [p.format(skill=self.skill) for p in EDITABLE]
         return [f for f in files if not any(fnmatch.fnmatch(f, p) for p in patterns)]
@@ -154,7 +158,10 @@ class SkillLoop:
         reader = self.loop.worktree(f"{self.skill}-s{number:03d}d", best["commit"])
         prompt = (HERE / "prompts" / "skill_diagnose.md").read_text().format(workspace=ws, skill=self.skill)
         diagnosis_path = round_dir / "diagnosis.md"
-        diagnosis = diagnosis_path.read_text() if diagnosis_path.exists() else astra.codex(prompt, reader, "read-only", diagnosis_path)
+        if diagnosis_path.exists():  # resuming
+            diagnosis = diagnosis_path.read_text()
+        else:
+            diagnosis = astra.codex(prompt, reader, "read-only", diagnosis_path, **self.proposer())
         accepted = []
         for index in range(1, self.loop.cfg["astra"]["proposals"] + 1):
             cid = f"s{number:03d}c{index}"
@@ -167,7 +174,7 @@ class SkillLoop:
                     ruff=astra.settings()["ruff"], python=astra.settings()["python"],
                     editable=", ".join(p.format(skill=self.skill) for p in EDITABLE))
                 try:
-                    note = astra.codex(prompt, path, "workspace-write", note_path)
+                    note = astra.codex(prompt, path, "workspace-write", note_path, **self.proposer())
                 except Exception as error:  # noqa: BLE001 -- a failed proposal is recorded, not fatal
                     self.record({**entry, "status": "failed", "reason": f"proposer error: {error}"})
                     continue

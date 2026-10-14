@@ -46,5 +46,7 @@ python = "/home/lohith/startup/homebody_claude/astra-evolve/testenv/bin/python" 
 # Skill-level optimisation (skill_loop.py): the skill Astra improves, its benchmark episodes (under the
 # remote work dir; skill_episodes.py writes them) and how many run at once (no model, ~1 core each).
 name = "pick"
+model = "gpt-6.1-sol"     # diagnoses and patches the skill (Codex)
+effort = "medium"
 episodes = "skillbench/pick_episodes"
 parallel = 28

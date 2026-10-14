@@ -11,10 +11,11 @@ def settings(path=HERE / "config.toml"):
     return tomllib.loads(path.read_text())["astra"]
 
 
-def codex(prompt, cd, sandbox, out, extra_dirs=()):
+def codex(prompt, cd, sandbox, out, extra_dirs=(), model=None, effort=None):
+    """Run one Codex exec with PROMPT in CD; MODEL and EFFORT override the [astra] settings."""
     s = settings()
     command = ["codex", "exec", "--ephemeral", "--ignore-user-config", "--skip-git-repo-check", "--sandbox", sandbox,
-               "--cd", str(cd), "--model", s["model"], "-c", f'model_reasoning_effort="{s["effort"]}"',
+               "--cd", str(cd), "--model", model or s["model"], "-c", f'model_reasoning_effort="{effort or s["effort"]}"',
                "-c", 'web_search="disabled"', "--output-last-message", str(out), "--color", "never"]
     for directory in extra_dirs:
         command += ["--add-dir", str(directory)]
