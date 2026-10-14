@@ -5,7 +5,10 @@ Each targeted object gets a stage: 0 untouched, 1 lifted by the robot, 2 ended i
 region, 3 physics-verified placement (the frozen evaluator's verdict). An object the robot lifted
 that ends on the floor is flagged "dropped" and keeps stage 1 (lifted): the robot cannot bend to pick
 it up again, so a drop is not scored below an object never touched, and every run stays in the score.
-Writes nothing; prints the result JSON, with the session's step and coder-call counts.
+Writes nothing; prints the result JSON, with the session's step and coder-call counts and its cost: the
+tokens of every agent decision and coder call, in credits at the model's rates. A coder call cut off
+at its time limit leaves no usage record; it is counted in coder_unmetered and charged the mean of the
+metered calls (or CODER_FALLBACK when none are).
 """
 import json
 import runpy
@@ -15,7 +18,56 @@ from pathlib import Path
 import numpy as np
 
 LIFT_M = 0.05
+RATES = {"input": 50.0, "cached": 2.5, "output": 250.0}  # credits per 1M tokens (GPT-6.1 Sol)
+CODER_FALLBACK = (120_000, 480_000, 4_000)  # (uncached, cached, output) tokens of a typical coder call
 FALL_M = 0.5  # ending this far below its start means it fell to the floor (scenes differ in floor height)
+
+
+def credits(uncached, cached, output):
+    return (uncached * RATES["input"] + cached * RATES["cached"] + output * RATES["output"]) / 1e6
+
+
+def decision_usage(reply):
+    """(input, cached, output) tokens of one agent decision's reply: a Responses API event stream or a
+    JSON body with usage; zeros when it has none (a CLI provider)."""
+    text = reply.read_text(errors="replace")
+    usage = None
+    if text.startswith("data:"):
+        for line in text.splitlines():
+            if line.startswith("data:") and '"response.completed"' in line:
+                usage = json.loads(line[5:])["response"].get("usage")
+    else:
+        try:
+            usage = json.loads(text).get("usage")
+        except (json.JSONDecodeError, AttributeError):
+            usage = None
+    if not usage:
+        return 0, 0, 0
+    total = usage.get("input_tokens", usage.get("prompt_tokens", 0))
+    cached = (usage.get("input_tokens_details") or usage.get("prompt_tokens_details") or {}).get("cached_tokens", 0)
+    return total, cached, usage.get("output_tokens", usage.get("completion_tokens", 0))
+
+
+def cost(task_dir):
+    """The task's token use and credits: agent decisions (every attempt, retries included) and coder calls."""
+    main = [decision_usage(reply) for reply in task_dir.glob("decisions/*/reply.json")]
+    coder, unmetered = [], 0
+    for events in task_dir.glob("coder/call-*/events.jsonl"):
+        turns = [json.loads(line)["usage"] for line in events.read_text(errors="replace").splitlines()
+                 if '"turn.completed"' in line]
+        if turns:
+            coder.append((turns[-1]["input_tokens"], turns[-1].get("cached_input_tokens", 0), turns[-1]["output_tokens"]))
+        else:
+            unmetered += 1
+    main_in, main_cached, main_out = (sum(column) for column in zip(*main)) if main else (0, 0, 0)
+    coder_in, coder_cached, coder_out = (sum(column) for column in zip(*coder)) if coder else (0, 0, 0)
+    metered = credits(main_in - main_cached, main_cached, main_out) + credits(coder_in - coder_cached, coder_cached, coder_out)
+    per_call = (credits(coder_in - coder_cached, coder_cached, coder_out) / len(coder) if coder
+                else credits(*CODER_FALLBACK))
+    return {"main_input": main_in, "main_cached": main_cached, "main_output": main_out,
+            "coder_input": coder_in, "coder_cached": coder_cached, "coder_output": coder_out,
+            "coder_metered": len(coder), "coder_unmetered": unmetered,
+            "credits": round(metered + unmetered * per_call, 3)}
 
 
 def main(session, targets_path, evaluate_py):
@@ -47,7 +99,8 @@ def main(session, targets_path, evaluate_py):
                       "dropped": sum(o["dropped"] for o in objects.values()),
                       "objects": objects, "untargeted": verdict.get("untargeted"), "status": outcome.get("status"),
                       "steps": len(skills), "customizations": skills.count("call_coder"),
-                      "wall_seconds": outcome.get("wall_seconds", 0.0)}, indent=1, default=str))
+                      "wall_seconds": outcome.get("wall_seconds", 0.0), "cost": cost(physics.parent)},
+                     indent=1, default=str))
 
 
 if __name__ == "__main__":

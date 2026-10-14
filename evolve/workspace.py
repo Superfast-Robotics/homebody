@@ -166,11 +166,12 @@ def versions(ws, results_dir, best, history):
              "and what was already tried; versions/<id>/ has each one's change.diff, note.md and train runs.",
              "",
              "| version | status | change | " + " | ".join(short_name(t) for t in current["by_task"])
-             + " | success |",
-             "|---|---|---|" + "---|" * (len(current["by_task"]) + 1)]
+             + " | success | credits/run | min/run |",
+             "|---|---|---|" + "---|" * (len(current["by_task"]) + 3)]
     mean = lambda stages: f"{sum(stages) / len(stages):.2f}" if stages else "-"
     lines.append(f"| **{best['id']}** (current) | {best['status']} | - | "
-                 + " | ".join(mean(v) for v in current["by_task"].values()) + f" | {current['success_rate']:.2f} |")
+                 + " | ".join(mean(v) for v in current["by_task"].values())
+                 + f" | {current['success_rate']:.2f} | {current.get('credits', '-')} | {current.get('minutes', '-')} |")
     for vdir in sorted(p for p in results_dir.iterdir() if p.is_dir()):
         vid = vdir.name
         if vid in (best["id"], "pilot"):
@@ -193,5 +194,5 @@ def versions(ws, results_dir, best, history):
         change = LABELS.get(vid) or (entry.get("notes", "").splitlines() or ["-"])[0].removeprefix("Mechanism:").strip()
         lines.append(f"| {vid} | {entry.get('status', 'reference')} | {change[:90]} | "
                      + " | ".join(mean(summary["by_task"].get(t, [])) for t in current["by_task"])
-                     + f" | {summary['success_rate']:.2f} |")
+                     + f" | {summary['success_rate']:.2f} | {summary['credits'] or '-'} | {summary['minutes']} |")
     (ws / "versions.md").write_text("\n".join(lines) + "\n")

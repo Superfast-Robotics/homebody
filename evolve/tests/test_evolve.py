@@ -105,3 +105,32 @@ def test_a_drop_within_two_standard_errors_is_tolerated():
     child = {"train": split(a=[3, 3, 3, 3]), "val": split(c=[3, 0, 3, 0], d=[3, 0, 3, 3])}
     _, _, d_val, _, se_val = score.accept(parent, child)
     assert d_val < 0 and d_val + 2 * se_val >= 0 and score.accept(parent, child)[0]
+
+
+def priced(credits, minutes, stages=(1, 1, 1, 1)):
+    """A (train, val) summary pair with the same accuracy and the given per-run credits and minutes."""
+    side = {"by_task": {"a": list(stages)}, "score": sum(stages) / 12,
+            "credits_by_task": {"a": credits}, "minutes_by_task": {"a": minutes}}
+    return {"train": side, "val": {**side, "by_task": {"a": list(stages)}}}
+
+
+def test_equal_accuracy_at_clearly_lower_cost_is_accepted():
+    parent = priced([10, 11, 9, 10], [20, 21, 19, 20])
+    cheaper = priced([5, 6, 4, 5], [20, 21, 19, 20])
+    assert score.judge(parent, cheaper)["basis"] == "cost (accuracy unchanged)"
+    slightly = priced([9.5, 10.5, 8.5, 9.5], [20, 21, 19, 20])
+    assert not score.judge(parent, slightly)["ok"]
+
+
+def test_a_time_win_needs_unchanged_cost():
+    parent = priced([10, 11, 9, 10], [20, 21, 19, 20])
+    faster = priced([10, 11, 9, 10], [10, 11, 9, 10])
+    assert score.judge(parent, faster)["basis"] == "time (accuracy and cost unchanged)"
+    pricier = priced([14, 15, 13, 14], [10, 11, 9, 10])
+    assert not score.judge(parent, pricier)["ok"]
+
+
+def test_lower_cost_never_buys_an_accuracy_drop():
+    parent = priced([10, 11, 9, 10], [20, 21, 19, 20], stages=(3, 3, 3, 3))
+    worse = priced([2, 2, 2, 2], [5, 5, 5, 5], stages=(0, 0, 0, 0))
+    assert score.judge(parent, worse)["basis"] == "accuracy dropped"

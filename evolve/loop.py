@@ -173,8 +173,8 @@ class Loop:
                 pooled = self.confirm(cid, tier)
             else:
                 pooled = first
-            ok, d_train, d_val, se_train, se_val = score.accept(best, pooled)
-            verdict = f"re-judged against {best['id']}: " + score.verdict(d_train, d_val, se_train, se_val)
+            ok, d_train, d_val, _, _ = score.accept(best, pooled)
+            verdict = f"re-judged against {best['id']}: " + score.describe(best, pooled)
             judged = {**entry, **pooled, "status": "accepted" if ok else "rejected", "reason": verdict,
                       "d_train": d_train, "d_val": d_val}
             (accepted.append(judged) if ok else self.record(judged))
@@ -226,12 +226,12 @@ class Loop:
                 self.record({**entry, "status": "rejected", "reason": "lint or unit tests failed: " + output[-600:]})
                 continue
             summaries = self.evaluate(cand["cid"], cand["path"], entry["tier"])
-            ok, d_train, d_val, se_train, se_val = score.accept(best, summaries)
+            ok, d_train, d_val, _, _ = score.accept(best, summaries)
             if ok:  # noise check: accept only if the pooled first and confirming runs still pass
-                self.log(f"{cand['cid']} passed ({score.verdict(d_train, d_val, se_train, se_val)}); confirming")
+                self.log(f"{cand['cid']} passed ({score.describe(best, summaries)}); confirming")
                 summaries = self.confirm(cand["cid"], entry["tier"])
-                ok, d_train, d_val, se_train, se_val = score.accept(best, summaries)
-            verdict = score.verdict(d_train, d_val, se_train, se_val)
+                ok, d_train, d_val, _, _ = score.accept(best, summaries)
+            verdict = score.describe(best, summaries)
             entry = {**entry, **summaries, "status": "accepted" if ok else "rejected", "reason": verdict,
                      "d_train": d_train, "d_val": d_val}
             (accepted if ok else []).append(entry)

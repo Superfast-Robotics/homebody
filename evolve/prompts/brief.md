@@ -38,7 +38,12 @@ Acceptance also uses held-out tasks you never see: other draws of the same famil
 scanned kitchen with a four-object task. Each run's value is half its stage (/3)
 and half its task success, so clean completions count most. A version is accepted only if, compared
 scene by scene with the current harness, neither split's value falls by more than two standard errors
-and at least one rises by more than one and a half, confirmed by a second evaluation. The final harness is
+and at least one rises by more than one and a half, confirmed by a second evaluation.
+Accuracy comes first, then cost, then time: with accuracy unchanged within that band, a version is
+also accepted when its credits per run (agent decisions plus coding-assistant calls, which dominate)
+fall by at least a fifth, or, at no higher cost, when its minutes per run fall by at least a fifth.
+So a change that makes the assistant's calls fewer, shorter or more often successful is valuable
+even when the stage scores stay the same. The final harness is
 used, unchanged, on other scenes. So improve the harness in general: never add anything about
 particular scenes, objects, colours or coordinates, and never weaken a check to make a task look done.
 
