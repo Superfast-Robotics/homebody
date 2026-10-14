@@ -45,6 +45,7 @@ OUTPUT_SCHEMA = {
 DISABLED_FEATURES = ("apps", "plugins", "remote_plugin", "multi_agent", "image_generation", "browser_use",
                      "browser_use_external", "computer_use", "in_app_browser", "tool_suggest", "skill_search",
                      "goals", "hooks", "worktrees")
+IDLE_POLL = 0.1  # s between checks for a tool call while the coder thinks
 MIN_EXECUTE_SECONDS = 20.0  # an execute needs at least this much of the call's time left
 PLAN_CHARS = 1500
 TEMPLATE = '''"""{name}: a new skill."""
@@ -337,9 +338,9 @@ class CoderCall:
                 return "physics"
             if time.monotonic() > self.deadline:
                 return "timeout"
-            ready, _, _ = select.select([server], [], [], 0.0)
+            # The world is paused while the coder thinks (no physics, no CPU); its executes advance it.
+            ready, _, _ = select.select([server], [], [], IDLE_POLL)
             if not ready:
-                self.session.heartbeat()
                 continue
             connection, _ = server.accept()
             with connection:
