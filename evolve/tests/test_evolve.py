@@ -48,11 +48,13 @@ def test_stages_from_inner_results(tmp_path):
     assert s["score"] == round(4 / 9, 4) and s["success_rate"] == round(1 / 3, 4) and s["by_task"]["a"] == [3.0, 1.0]
 
 
-def test_acceptance_needs_no_drop_and_one_rise():
+def test_acceptance_needs_no_drop_beyond_noise_and_one_real_rise():
     parent = {"train": {"score": 0.2}, "val": {"score": 0.3}}
     assert score.accept(parent, {"train": {"score": 0.3}, "val": {"score": 0.3}})[0]
+    assert score.accept(parent, {"train": {"score": 0.3}, "val": {"score": 0.29}})[0]  # a noise-sized dip
     assert not score.accept(parent, {"train": {"score": 0.5}, "val": {"score": 0.25}})[0]
     assert not score.accept(parent, {"train": {"score": 0.2}, "val": {"score": 0.3}})[0]
+    assert not score.accept(parent, {"train": {"score": 0.21}, "val": {"score": 0.31}})[0]  # only noise
 
 
 def test_quota_exhaustion_is_detected_in_collected_sessions(tmp_path):

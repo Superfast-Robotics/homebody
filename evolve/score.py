@@ -54,11 +54,16 @@ def summary(runs):
             "by_task": by_task}
 
 
-def accept(parent, child):
-    """Self-Harness's rule on (train, val) summaries: neither split worse, at least one better."""
+TOLERANCE = 0.02  # score change treated as run-to-run noise (v000's two val passes differed by 0.021)
+
+
+def accept(parent, child, tolerance=TOLERANCE):
+    """Self-Harness's rule on (train, val) summaries, with a noise band: neither split worse by more
+    than TOLERANCE, and at least one better by more than it."""
     d_train = child["train"]["score"] - parent["train"]["score"]
     d_val = child["val"]["score"] - parent["val"]["score"]
-    return d_train >= 0 and d_val >= 0 and max(d_train, d_val) > 0, round(d_train, 4), round(d_val, 4)
+    ok = min(d_train, d_val) >= -tolerance and max(d_train, d_val) > tolerance
+    return ok, round(d_train, 4), round(d_val, 4)
 
 
 QUOTA_MARKERS = ("usage limit", "rate limit exceeded", "insufficient_quota")

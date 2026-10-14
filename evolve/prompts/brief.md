@@ -36,7 +36,8 @@ assistant session: the request, what the assistant did, every check and execute 
 the change it made to the skill and its final answer.
 Acceptance also uses held-out tasks you never see: other draws of the same families and a real
 scanned kitchen with a four-object task. A version is accepted only if neither the train nor the
-held-out score drops and at least one rises, confirmed by a second evaluation. The final harness is
+held-out score drops by more than 0.02 and at least one rises by more than that, confirmed by a
+second evaluation. The final harness is
 used, unchanged, on other scenes. So improve the harness in general: never add anything about
 particular scenes, objects, colours or coordinates, and never weaken a check to make a task look done.
 
