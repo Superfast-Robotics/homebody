@@ -36,6 +36,7 @@ class SkillLoop:
         self.work.mkdir(parents=True, exist_ok=True)
         self.archive_path = self.work / "archive.jsonl"
         self.remote = self.loop.remote
+        self.diagnose_model = None
 
     # --- bookkeeping ---
     def archive(self):
@@ -142,8 +143,12 @@ class SkillLoop:
         return ws
 
     def proposer(self):
-        """The model that diagnoses and patches the skill ([skill] model and effort)."""
+        """The model that patches the skill ([skill] model and effort)."""
         return {"model": self.cfg["model"], "effort": self.cfg["effort"]}
+
+    def diagnoser(self):
+        """The model that diagnoses the skill: [skill], unless a run named another (--diagnose-model)."""
+        return {"model": self.diagnose_model or self.cfg["model"], "effort": self.cfg["effort"]}
 
     def allowed(self, files):
         patterns = [p.format(skill=self.skill) for p in EDITABLE]
@@ -161,7 +166,7 @@ class SkillLoop:
         if diagnosis_path.exists():  # resuming
             diagnosis = diagnosis_path.read_text()
         else:
-            diagnosis = astra.codex(prompt, reader, "read-only", diagnosis_path, **self.proposer())
+            diagnosis = astra.codex(prompt, reader, "read-only", diagnosis_path, **self.diagnoser())
         accepted = []
         for index in range(1, self.loop.cfg["astra"]["proposals"] + 1):
             cid = f"s{number:03d}c{index}"
@@ -221,13 +226,16 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("baseline").add_argument("commit")
-    sub.add_parser("run").add_argument("--rounds", type=int, required=True)
+    run = sub.add_parser("run")
+    run.add_argument("--rounds", type=int, required=True)
+    run.add_argument("--diagnose-model", help="Codex model for the diagnoses of this run (default: [skill] model)")
     sub.add_parser("status")
     args = parser.parse_args(argv)
     loop = SkillLoop()
     if args.command == "baseline":
         loop.baseline(args.commit)
     elif args.command == "run":
+        loop.diagnose_model = args.diagnose_model
         loop.run(args.rounds)
     else:
         for entry in loop.archive():
