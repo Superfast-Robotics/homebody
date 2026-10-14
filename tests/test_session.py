@@ -940,13 +940,13 @@ REQUEST = {"skill": "lift", "goal": "lift it", "tried": "pick refused", "success
 
 def test_call_coder_registers_the_version_that_executed_for_the_task(build, tmp_path, monkeypatch):
     session, provider = coder_session(build, tmp_path, monkeypatch, [
-        Decision("Ask", "call_coder", REQUEST), Decision("Use", "lift", {"height": 0.2}),
+        Decision("Try", "navigate", {}), Decision("Ask", "call_coder", REQUEST), Decision("Use", "lift", {"height": 0.2}),
         Decision("Finished", "done", {}), Decision("Finished again", "done", {})])
     assert session.run_task("Lift")["status"] == "model_done"
-    results = [entry["result"] for entry in session.history if "result" in entry]
+    results = [entry["result"] for entry in session.history if "result" in entry][1:]
     assert [r["code"] for r in results] == ["OK", "OK"] and results[1]["message"] == "lifted 0.2"
     assert results[0]["details"]["skill_version"] == 1 and results[0]["details"]["executes"][0]["code"] == "OK"
-    assert "lift: height in metres." in provider.prompts[1] and "1 call left" in provider.prompts[1]
+    assert "lift: height in metres." in provider.prompts[2] and "1 call left" in provider.prompts[2]
     call = next(session.recorder.path.glob("tasks/*/coder/call-1"))
     assert (call / "workspace" / "AGENTS.md").is_file() and (call / "workspace" / "REQUEST.md").is_file()
     assert max(path.name for path in (call / "workspace" / "observation").iterdir()) == "state.json"
@@ -957,7 +957,8 @@ def test_call_coder_registers_the_version_that_executed_for_the_task(build, tmp_
 
 
 def test_call_coder_refuses_forbidden_imports_and_unchecked_executes(build, tmp_path, monkeypatch):
-    session, _ = coder_session(build, tmp_path, monkeypatch, [Decision("Ask", "call_coder", REQUEST),
+    session, _ = coder_session(build, tmp_path, monkeypatch, [Decision("Try", "navigate", {}),
+                                                              Decision("Ask", "call_coder", REQUEST),
                                                               Decision("Finished", "done", {})],
                                skill="import os\n" + LIFT, status="success")
     assert session.run_task("Lift")["status"] == "model_done"
@@ -970,13 +971,15 @@ def test_call_coder_refuses_forbidden_imports_and_unchecked_executes(build, tmp_
 
 def test_call_coder_validates_its_request_and_its_budget(build, tmp_path, monkeypatch):
     session, _ = coder_session(build, tmp_path, monkeypatch, [
+        Decision("Too early", "call_coder", REQUEST), Decision("Try", "navigate", {}),
         Decision("Bad", "call_coder", {"skill": "Lift!", "goal": "g", "success": "s"}),
         Decision("Ask", "call_coder", REQUEST), Decision("Again", "call_coder", REQUEST),
         Decision("Third", "call_coder", REQUEST), Decision("Finished", "done", {})],
         tools=("check",), status="infeasible")
     assert session.run_task("Lift")["status"] == "model_done"
     codes = [entry["result"]["code"] for entry in session.history if "result" in entry]
-    assert codes == ["INVALID_ARGUMENT", "CODER_INFEASIBLE", "CODER_INFEASIBLE", "CODER_LIMIT"]
+    assert codes == ["CODER_NOT_YET", "INVALID_ARGUMENT", "INVALID_ARGUMENT", "CODER_INFEASIBLE",
+                     "CODER_INFEASIBLE", "CODER_LIMIT"]
 
 
 def test_older_steps_drop_result_details_but_keep_code_and_message():

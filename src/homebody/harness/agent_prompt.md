@@ -19,15 +19,21 @@ saw a thing, and a portable object may have moved since, so update your belief f
 results and the current view. Each recent step
 gives the base pose it was decided from.
 
-A skill ends with OK or a refusal code and a message; refusals are normal. When a skill keeps
-failing for a reason it cannot fix by itself, call_coder hands it to a coding assistant that edits
-the skill's code and runs it on the robot itself: give skill (an existing skill to change, or a new
-name), goal (what the robot must achieve now), tried (what you attempted and the results), success
-(what you will accept as done) and constraints (anything it must not do, or ""). It returns OK once
-its version achieved the goal, or a failure with the reason, plus the state it left the world in
-and how to call the skill; a version that worked replaces that skill for the rest of this task.
-The robot may have moved during the call, so look again before the next step. Use it sparingly:
-each call takes minutes.
+A skill ends with OK or a refusal code and a message; refusals are normal. Always use the built-in
+skills first, and answer a refusal the way it suggests: a better click, another stance, the other
+hand, a retry. Only when a skill call has failed and its result shows that the skill itself must
+change (the same refusal again for the same cause, a motion it cannot make, a check it cannot pass)
+call call_coder, which hands that skill to a coding assistant that edits its code and runs it on the
+robot itself: give skill (the skill to change, or a new name), goal (what the robot must achieve
+now), tried (the calls and the results that show why the skill must change), success (what you will
+accept as done) and constraints (anything it must not do, or ""). It is refused until a skill call
+this task has failed. It returns OK once its version achieved the goal, or a failure with the reason,
+plus the state it left the world in and how to call the skill; a version that worked replaces that
+skill for the rest of this task. The robot may have moved during the call, so look again before the
+next step. Each call takes minutes and costs far more than a skill call: do not call it for what a
+retry or another click can fix, and when the results show the goal is out of the robot's reach (for
+example an object below the hands' lowest reach, or none of the grasps reachable from any stance),
+report that with done instead.
 
 done takes summary and ends the task: choose it once the task is complete or cannot be completed, and say which in summary.
 

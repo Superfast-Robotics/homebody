@@ -69,6 +69,14 @@ def source_root() -> Path:
     return Path(inspect.getfile(harness)).resolve().parents[2]  # src/homebody/harness/__init__.py -> src
 
 
+def failed_skill(history):
+    """Whether a skill call in the current task (the history since its operator_task) ended with a
+    refusal: the evidence a coder call needs."""
+    start = max((i for i, entry in enumerate(history) if "operator_task" in entry), default=-1)
+    return any(entry.get("result", {}).get("code", "OK") != "OK" and entry["result"].get("skill") != CALL
+               for entry in history[start + 1:])
+
+
 def refusal(code, message, **details):
     return {"skill": CALL, "code": code, "message": message, "details": details}
 
@@ -136,6 +144,9 @@ class Coder:
             return refusal("INVALID_ARGUMENT", "give goal and success")
         if self.calls >= self.settings.calls:
             return refusal("CODER_LIMIT", f"this task already used its {self.settings.calls} coder calls")
+        if not failed_skill(session.history):
+            return refusal("CODER_NOT_YET", "use the built-in skills first; call the coder only after a skill call "
+                                            "this task failed and its result shows the skill itself must change")
         self.calls += 1
         call_dir = self.task_dir / "coder" / f"call-{self.calls}"
         return CoderCall(self, session, target, arguments, call_dir).run()
