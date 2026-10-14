@@ -173,9 +173,8 @@ class Loop:
                 pooled = self.confirm(cid, tier)
             else:
                 pooled = first
-            ok, d_train, d_val = score.accept(best, pooled)
-            verdict = (f"re-judged against re-measured {best['id']}: train {d_train:+.3f}, held-out "
-                       f"{'did not drop' if d_val >= 0 else 'dropped'}{' and rose' if d_val > 0 else ''}")
+            ok, d_train, d_val, se_train, se_val = score.accept(best, pooled)
+            verdict = f"re-judged against {best['id']}: " + score.verdict(d_train, d_val, se_train, se_val)
             judged = {**entry, **pooled, "status": "accepted" if ok else "rejected", "reason": verdict,
                       "d_train": d_train, "d_val": d_val}
             (accepted.append(judged) if ok else self.record(judged))
@@ -227,13 +226,12 @@ class Loop:
                 self.record({**entry, "status": "rejected", "reason": "lint or unit tests failed: " + output[-600:]})
                 continue
             summaries = self.evaluate(cand["cid"], cand["path"], entry["tier"])
-            ok, d_train, d_val = score.accept(best, summaries)
+            ok, d_train, d_val, se_train, se_val = score.accept(best, summaries)
             if ok:  # noise check: accept only if the pooled first and confirming runs still pass
-                self.log(f"{cand['cid']} passed ({d_train:+.3f} train, {d_val:+.3f} held-out); confirming")
+                self.log(f"{cand['cid']} passed ({score.verdict(d_train, d_val, se_train, se_val)}); confirming")
                 summaries = self.confirm(cand["cid"], entry["tier"])
-                ok, d_train, d_val = score.accept(best, summaries)
-            verdict = (f"train {d_train:+.3f}, held-out {'did not drop' if d_val >= 0 else 'dropped'}"
-                       f"{' and rose' if d_val > 0 else ''}")
+                ok, d_train, d_val, se_train, se_val = score.accept(best, summaries)
+            verdict = score.verdict(d_train, d_val, se_train, se_val)
             entry = {**entry, **summaries, "status": "accepted" if ok else "rejected", "reason": verdict,
                      "d_train": d_train, "d_val": d_val}
             (accepted if ok else []).append(entry)

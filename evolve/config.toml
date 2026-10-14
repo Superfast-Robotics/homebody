@@ -5,7 +5,7 @@ host = "loki-behavior-gh"
 root = "/lambda/nfs/group-volume/workcell-sim/homebody-baseline"
 base = "homebody-astra"   # the seed checkout: its .venv runs every candidate, its assets hold the suite
 work = "astra-evolve"     # candidates and their results
-parallel = 18             # simultaneous sessions (each runs a simulation and calls astra)
+parallel = 15             # simultaneous sessions per split (train and val run at once: 30 cores)
 
 [local]
 work = "/home/lohith/startup/homebody_claude/astra-evolve"
@@ -16,7 +16,8 @@ work = "/home/lohith/startup/homebody_claude/astra-evolve"
 # base checkout.
 train = ["assets/generated/train_*"]
 # Held out: results gate acceptance but nothing about them is ever shown to the proposer.
-val = ["assets/generated/val_*", "assets/real2sim/src_kitchen::configs/continuous_four.json"]
+val = ["assets/generated/val_*", "assets/generated/heldout_*",
+       "assets/real2sim/src_kitchen::configs/continuous_four.json"]
 
 [agent]
 # The model playing HomeBody's agent in every evaluation episode (a session/config.py MODELS key).
@@ -26,11 +27,11 @@ model = "sol61-litellm"
 
 # The checks a candidate must pass, by the highest tier its patch touches (tiers.toml).
 [gates.0]
-repeats = 2
+repeats = 4
 [gates.1]
-repeats = 2
+repeats = 4
 [gates.2]
-repeats = 3
+repeats = 4
 
 [astra]
 # The meta-proposer that diagnoses and patches the harness.

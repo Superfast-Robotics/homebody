@@ -48,13 +48,28 @@ def test_stages_from_inner_results(tmp_path):
     assert s["score"] == round(4 / 9, 4) and s["success_rate"] == round(1 / 3, 4) and s["by_task"]["a"] == [3.0, 1.0]
 
 
-def test_acceptance_needs_no_drop_beyond_noise_and_one_real_rise():
-    parent = {"train": {"score": 0.2}, "val": {"score": 0.3}}
-    assert score.accept(parent, {"train": {"score": 0.3}, "val": {"score": 0.3}})[0]
-    assert score.accept(parent, {"train": {"score": 0.3}, "val": {"score": 0.29}})[0]  # a noise-sized dip
-    assert not score.accept(parent, {"train": {"score": 0.5}, "val": {"score": 0.25}})[0]
-    assert not score.accept(parent, {"train": {"score": 0.2}, "val": {"score": 0.3}})[0]
-    assert not score.accept(parent, {"train": {"score": 0.21}, "val": {"score": 0.31}})[0]  # only noise
+def split(**scenes):
+    runs = [stage for stages in scenes.values() for stage in stages]
+    return {"score": sum(runs) / (3 * len(runs)), "by_task": scenes}
+
+
+def test_acceptance_weighs_each_change_against_its_standard_error():
+    parent = {"train": split(a=[1, 1, 1, 1], b=[0, 0, 0, 0]), "val": split(c=[3, 3, 2, 3])}
+    clear = {"train": split(a=[3, 3, 3, 3], b=[0, 0, 0, 0]), "val": split(c=[3, 3, 3, 2])}
+    assert score.accept(parent, clear)[0]
+    noisy = {"train": split(a=[1, 3, 1, 1], b=[0, 0, 0, 0]), "val": split(c=[3, 3, 2, 3])}
+    assert not score.accept(parent, noisy)[0]  # one lucky run is within the noise
+    worse = {"train": split(a=[3, 3, 3, 3], b=[0, 0, 0, 0]), "val": split(c=[0, 0, 1, 0])}
+    assert not score.accept(parent, worse)[0]
+    _, d_train, d_val, se_train, _ = score.accept(parent, clear)
+    assert d_train > 0.3 and se_train > 0 and d_val == 0.0
+
+
+def test_only_scenes_both_ran_are_compared():
+    parent = {"train": split(a=[1, 1]), "val": split(c=[3, 3])}
+    child = {"train": split(a=[3, 3], new=[0, 0]), "val": split(c=[3, 3])}
+    assert score.difference(parent["train"], child["train"])[0] > 0.6
+
 
 
 def test_quota_exhaustion_is_detected_in_collected_sessions(tmp_path):
@@ -66,9 +81,11 @@ def test_quota_exhaustion_is_detected_in_collected_sessions(tmp_path):
     assert score.quota_hit(tmp_path)
 
 
-def test_a_void_run_with_every_object_dropped_is_left_out(tmp_path):
-    for repeat, result in (("r0", {"stage": 3.0, "success": True}), ("r1", {"stage": None, "void": True})):
-        (tmp_path / "task" / repeat).mkdir(parents=True)
-        (tmp_path / "task" / repeat / "result.json").write_text(json.dumps(result))
-    runs = score.read_split(tmp_path)
-    assert [run.repeat for run in runs] == ["r0"] and score.summary(runs)["score"] == 1.0
+def test_family_success_is_reported_and_every_run_counts(tmp_path):
+    for task, repeat, result in (("train_00_shelf_return", "r0", {"stage": 3.0, "success": True}),
+                                 ("train_00_shelf_return", "r1", {"stage": 1.0, "success": False, "dropped": 1}),
+                                 ("src_kitchen", "r0", {"stage": 2.5, "success": False})):
+        (tmp_path / task / repeat).mkdir(parents=True)
+        (tmp_path / task / repeat / "result.json").write_text(json.dumps(result))
+    summary = score.summary(score.read_split(tmp_path))
+    assert summary["runs"] == 3 and summary["success_by_family"] == {"shelf_return": 0.5, "src_kitchen": 0.0}

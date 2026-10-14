@@ -3,8 +3,8 @@ session under an --output root) from physics.
 
 Each targeted object gets a stage: 0 untouched, 1 lifted by the robot, 2 ended inside its target
 region, 3 physics-verified placement (the frozen evaluator's verdict). An object the robot lifted
-that ends on the floor is "dropped": the robot cannot bend to pick it up again, so for now it is left
-out of the run's mean, and a run whose every object was dropped is void (left out of the score).
+that ends on the floor is flagged "dropped" and keeps stage 1 (lifted): the robot cannot bend to pick
+it up again, so a drop is not scored below an object never touched, and every run stays in the score.
 Writes nothing; prints the result JSON, with the session's step and coder-call counts.
 """
 import json
@@ -39,12 +39,12 @@ def main(session, targets_path, evaluate_py):
         dropped = lifted and not inside and end[2] < start[2] - FALL_M
         objects[name] = {"stage": 3 if reason is None else 2 if inside else 1 if lifted else 0, "reason": reason,
                          "dropped": bool(dropped)}
-    kept = [o["stage"] for o in objects.values() if not o["dropped"]]
     outcome = json.loads((physics.parent / "outcome.json").read_text()) if (physics.parent / "outcome.json").exists() else {}
     events = [json.loads(line) for line in (session / "events.jsonl").read_text().splitlines() if line.strip()]
     skills = [e["decision"]["skill"] for e in events if e.get("kind") == "decision"]
     print(json.dumps({"success": bool(verdict["success"]) and outcome.get("status") == "model_done",
-                      "stage": round(sum(kept) / len(kept), 3) if kept else None, "void": bool(objects) and not kept,
+                      "stage": round(sum(o["stage"] for o in objects.values()) / max(1, len(objects)), 3),
+                      "dropped": sum(o["dropped"] for o in objects.values()),
                       "objects": objects, "untargeted": verdict.get("untargeted"), "status": outcome.get("status"),
                       "steps": len(skills), "customizations": skills.count("call_coder"),
                       "wall_seconds": outcome.get("wall_seconds", 0.0)}, indent=1, default=str))
