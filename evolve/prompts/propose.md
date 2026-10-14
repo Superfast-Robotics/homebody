@@ -9,11 +9,13 @@ current version); do not read or write anything outside it and {workspace}.
 Make the smallest harness change that removes the mechanism, in the lowest tier that can. Keep it
 general: nothing tied to particular scenes, entity names, colours or coordinates. Keep
 src/homebody/harness/API.md in exact agreement with env.py (every documented call exists with the
-documented signature). Add or update unit tests under tests/harness/ for logic worth pinning. You
-cannot run the simulator or the test suite here (no MuJoCo), but before you finish, run
-`{ruff} check src tests` and fix every finding, and make sure every changed file parses
-(`python3 -m py_compile <file>`). If you change names other code uses (skills, ui, tests), keep
-their users working.
+documented signature). Add or update unit tests under tests/harness/ for logic worth pinning.
+Do basic testing of your change only (the simulator is not available, and the full suite runs
+later on the remote): run the unit tests you added or changed and the tests of the modules you
+touched, with `MUJOCO_GL=egl PYTHONPATH=src:vendor {python} -m pytest -q -x -p no:cacheprovider
+<test files>`, plus `tests/harness`; run `{ruff} check src tests`; fix every failure and finding.
+Compare floats with a tolerance, not equality. Do not run the whole suite or anything long. If you
+change names other code uses (skills, ui, tests), keep their users working.
 
 When done, reply with a short note in this form:
 Mechanism: <title>
