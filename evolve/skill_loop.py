@@ -1,0 +1,232 @@
+"""Skill-level optimisation: Astra improves one built-in skill (config [skill] name) on the skill
+benchmark (skill_bench.py episodes, no model at run time), round by round, from the version recorded
+as the skill baseline.
+
+    python3 -m evolve.skill_loop baseline COMMIT   measure COMMIT on every episode (p000)
+    python3 -m evolve.skill_loop run --rounds N    diagnose, patch, evaluate, accept (train + val)
+    python3 -m evolve.skill_loop status
+
+A patch may change only the skill's module and the shared code under it (EDITABLE); everything else
+is rejected unseen. Val episodes decide acceptance but are never shown to the proposer.
+"""
+import argparse
+import fnmatch
+import json
+import shutil
+import subprocess
+import time
+from pathlib import Path
+
+from . import astra, skill_score
+from .loop import Loop, git
+
+HERE = Path(__file__).resolve().parent
+COMPLETE = ".complete"
+EDITABLE = ("src/homebody/skills/{skill}.py", "src/homebody/motion/*", "src/homebody/helpers/*",
+            "src/homebody/toolkit/*", "tests/*")
+SPLITS = ("train", "val")
+
+
+class SkillLoop:
+    def __init__(self):
+        self.loop = Loop()
+        self.cfg = self.loop.cfg["skill"]
+        self.skill = self.cfg["name"]
+        self.work = self.loop.work / "skill" / self.skill
+        self.work.mkdir(parents=True, exist_ok=True)
+        self.archive_path = self.work / "archive.jsonl"
+        self.remote = self.loop.remote
+
+    # --- bookkeeping ---
+    def archive(self):
+        if not self.archive_path.exists():
+            return []
+        return [json.loads(line) for line in self.archive_path.read_text().splitlines() if line.strip()]
+
+    def record(self, entry):
+        stored = {k: v for k, v in entry.items() if k not in ("train", "val")}
+        stored.update({s: {k: v for k, v in entry[s].items() if k not in ("values", "seconds")} for s in SPLITS
+                       if s in entry})
+        with self.archive_path.open("a") as out:
+            out.write(json.dumps(stored) + "\n")
+        self.log(f"archive: {entry['id']} {entry['status']} {entry.get('reason', '')}")
+
+    def best(self):
+        accepted = [e for e in self.archive() if e["status"] in ("baseline", "accepted")]
+        if not accepted:
+            raise SystemExit("no skill baseline yet: run `python3 -m evolve.skill_loop baseline COMMIT`")
+        return accepted[-1]
+
+    def log(self, message):
+        line = f"[{time.strftime('%H:%M:%S')}] {message}"
+        print(line, flush=True)
+        with (self.work / "loop.log").open("a") as out:
+            out.write(line + "\n")
+
+    def summaries(self, cid):
+        return {s: skill_score.summary(skill_score.read(self.work / "results" / cid / s)) for s in SPLITS}
+
+    # --- running episodes ---
+    def episodes(self, split):
+        listing = self.remote.ssh(f"cd {self.remote.work} && ls {self.cfg['episodes']}/{split}/*.json")
+        return listing.split()
+
+    def evaluate(self, cid, checkout):
+        """Push CID's code and run every train and val episode on the remote; collect and summarise."""
+        local = self.work / "results" / cid
+        if all((local / s / COMPLETE).exists() for s in SPLITS):
+            return self.summaries(cid)
+        self.loop.remote.push_candidate(cid, checkout)
+        root = f"{self.remote.work}/skill/{self.skill}/{cid}"
+        lines = [f"{self.remote.work}/cands/{cid} {self.remote.work}/{episode} {root}/{split}/{Path(episode).stem}"
+                 for split in SPLITS for episode in self.episodes(split)]
+        jobs = f"{root}/jobs.txt"
+        self.remote.ssh(f"rm -rf {root} && mkdir -p {root} && cat > {jobs} << 'EOF'\n" + "\n".join(lines) + "\nEOF")
+        subprocess.run(["rsync", "-a", str(HERE / "skill_bench.py"), str(HERE / "run_skill_jobs.sh"),
+                        f"{self.remote.host}:{self.remote.work}/"], check=True)
+        started = time.monotonic()
+        self.remote.ssh(f"bash {self.remote.work}/run_skill_jobs.sh {self.remote.base} {self.cfg['parallel']} {jobs} "
+                        f"{self.remote.work}", timeout=4 * 3600)
+        if local.exists():
+            shutil.rmtree(local)
+        local.mkdir(parents=True)
+        subprocess.run(["rsync", "-a", "--include=*/", "--include=result.json", "--include=trace.json",
+                        "--include=run.log", "--exclude=*", "--prune-empty-dirs",
+                        f"{self.remote.host}:{root}/", f"{local}/"], check=True, capture_output=True)
+        for split in SPLITS:
+            (local / split).mkdir(exist_ok=True)
+            (local / split / COMPLETE).write_text("done\n")
+        summaries = self.summaries(cid)
+        self.log(f"{cid}: train success {summaries['train']['success_rate']:.2f} value {summaries['train']['value']:.3f}, "
+                 f"val success {summaries['val']['success_rate']:.2f} value {summaries['val']['value']:.3f} "
+                 f"({time.monotonic() - started:.0f} s)")
+        return summaries
+
+    # --- commands ---
+    def baseline(self, commit):
+        cid = "p000"
+        path = self.loop.worktree(f"{self.skill}-{cid}", git("rev-parse", commit))
+        summaries = self.evaluate(cid, path)
+        self.record({"id": cid, "round": 0, "commit": git("rev-parse", "HEAD", cwd=path), "status": "baseline",
+                     "reason": f"{self.skill} skill baseline", **summaries})
+
+    def workspace(self, round_dir, best):
+        ws = round_dir / "workspace"
+        if ws.exists():
+            shutil.rmtree(ws)
+        ws.mkdir(parents=True)
+        (ws / "BRIEF.md").write_text((HERE / "prompts" / "skill_brief.md").read_text().format(skill=self.skill))
+        train = skill_score.read(self.work / "results" / best["id"] / "train")
+        summary = skill_score.summary(train)
+        lines = [f"# {self.skill} on the train episodes with version {best['id']}", "",
+                 (f"Success {summary['success_rate']:.2f}, value {summary['value']:.3f} (stage / 2), "
+                  f"{summary['skill_seconds']} s per call."), "",
+                 f"Outcomes: {json.dumps(summary['outcomes'])}", f"Success by family: {json.dumps(summary['success_by_family'])}",
+                 "", "| episode | family | stage | refusal | message | lifted | held | s |", "|---|---|---|---|---|---|---|---|"]
+        for episode, row in sorted(train.items()):
+            pick = row.get("pick") or {}
+            lines.append(f"| {episode} | {row['family']} | {row['stage']} | {pick.get('code', row.get('error', '?'))} | "
+                         f"{(pick.get('message') or '')[:140]} | {row.get('lifted')} | {row.get('held')} | "
+                         f"{(row.get('timing') or {}).get('pick_wall', '')} |")
+        (ws / "results.md").write_text("\n".join(lines) + "\n")
+        for episode in train:
+            source = self.work / "results" / best["id"] / "train" / episode
+            target = ws / "episodes" / episode
+            target.mkdir(parents=True)
+            for name in ("result.json", "trace.json"):
+                if (source / name).exists():
+                    shutil.copy(source / name, target / name)
+        history = [f"## {e['id']} (round {e.get('round')}): {e['status']}\n{e.get('reason', '')}\n{(e.get('notes') or '')[:1500]}"
+                   for e in self.archive()]
+        (ws / "history.md").write_text("# Earlier versions of the skill\n\n" + "\n\n".join(history) + "\n")
+        return ws
+
+    def allowed(self, files):
+        patterns = [p.format(skill=self.skill) for p in EDITABLE]
+        return [f for f in files if not any(fnmatch.fnmatch(f, p) for p in patterns)]
+
+    def round(self, number):
+        best = self.best()
+        round_dir = self.work / "rounds" / f"s{number:03d}"
+        round_dir.mkdir(parents=True, exist_ok=True)
+        self.log(f"round {number}: improving {best['id']} (train {best['train']['value']:.3f}, val {best['val']['value']:.3f})")
+        ws = self.workspace(round_dir, best)
+        reader = self.loop.worktree(f"{self.skill}-s{number:03d}d", best["commit"])
+        prompt = (HERE / "prompts" / "skill_diagnose.md").read_text().format(workspace=ws, skill=self.skill)
+        diagnosis_path = round_dir / "diagnosis.md"
+        diagnosis = diagnosis_path.read_text() if diagnosis_path.exists() else astra.codex(prompt, reader, "read-only", diagnosis_path)
+        accepted = []
+        for index in range(1, self.loop.cfg["astra"]["proposals"] + 1):
+            cid = f"s{number:03d}c{index}"
+            path = self.loop.worktree(f"{self.skill}-{cid}", best["commit"])
+            note_path = round_dir / f"{cid}_note.md"
+            entry = {"id": cid, "round": number, "parent": best["id"], "mechanism": index}
+            if git("rev-parse", "HEAD", cwd=path) == best["commit"]:
+                prompt = (HERE / "prompts" / "skill_propose.md").read_text().format(
+                    workspace=ws, skill=self.skill, diagnosis=diagnosis, mechanism=index,
+                    ruff=astra.settings()["ruff"], python=astra.settings()["python"],
+                    editable=", ".join(p.format(skill=self.skill) for p in EDITABLE))
+                try:
+                    note = astra.codex(prompt, path, "workspace-write", note_path)
+                except Exception as error:  # noqa: BLE001 -- a failed proposal is recorded, not fatal
+                    self.record({**entry, "status": "failed", "reason": f"proposer error: {error}"})
+                    continue
+                subprocess.run([astra.settings()["ruff"], "check", "--fix", "--quiet", "src", "tests"], cwd=path,
+                               check=False, capture_output=True)
+                git("add", "-A", cwd=path)
+                if not git("status", "--porcelain", cwd=path):
+                    self.record({**entry, "status": "rejected", "reason": "no change", "notes": note})
+                    continue
+                git("-c", "user.name=astra", "-c", "user.email=astra@localhost", "commit", "-q", "-m",
+                    f"skill {self.skill} {cid}: mechanism {index}\n\n{note[:3000]}", cwd=path)
+            note = note_path.read_text() if note_path.exists() else ""
+            commit = git("rev-parse", "HEAD", cwd=path)
+            files = git("diff", "--name-only", best["commit"], commit).splitlines()
+            entry.update(commit=commit, files=files, notes=note)
+            outside = self.allowed(files)
+            if outside:
+                self.record({**entry, "status": "rejected", "reason": f"edits outside the skill: {outside}"})
+                continue
+            passed, output = self.loop.remote_checks(cid, path)
+            if not passed:
+                (round_dir / f"{cid}_checks.txt").write_text(output)
+                self.record({**entry, "status": "rejected", "reason": "lint or unit tests failed: " + output[-600:]})
+                continue
+            summaries = self.evaluate(cid, path)
+            verdict = skill_score.judge(self.summaries(best["id"]), summaries)
+            entry = {**entry, **summaries, "status": "accepted" if verdict["ok"] else "rejected",
+                     "reason": skill_score.describe(verdict), "verdict": verdict}
+            (accepted.append(entry) if verdict["ok"] else self.record(entry))
+        if accepted:
+            winner = max(accepted, key=lambda e: e["verdict"]["train"][0] + e["verdict"]["val"][0])
+            for entry in accepted:
+                self.record(entry if entry is winner else {**entry, "status": "rejected",
+                            "reason": entry["reason"] + "; passed, but another candidate scored higher"})
+        self.log(f"round {number}: done; best is now {self.best()['id']}")
+
+    def run(self, rounds):
+        done = max((int(e["round"]) for e in self.archive() if isinstance(e.get("round"), int)), default=0)
+        for number in range(done + 1, done + rounds + 1):
+            self.round(number)
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    sub = parser.add_subparsers(dest="command", required=True)
+    sub.add_parser("baseline").add_argument("commit")
+    sub.add_parser("run").add_argument("--rounds", type=int, required=True)
+    sub.add_parser("status")
+    args = parser.parse_args(argv)
+    loop = SkillLoop()
+    if args.command == "baseline":
+        loop.baseline(args.commit)
+    elif args.command == "run":
+        loop.run(args.rounds)
+    else:
+        for entry in loop.archive():
+            print(entry["id"], entry["status"], {s: (entry[s]["success_rate"], entry[s]["value"]) for s in SPLITS if s in entry},
+                  entry.get("reason", "")[:120])
+
+
+if __name__ == "__main__":
+    main()

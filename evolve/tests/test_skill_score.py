@@ -1,0 +1,43 @@
+"""Skill-benchmark scoring: episodes read from result.json, setup failures left out, versions
+compared episode by episode."""
+import json
+
+from evolve import skill_score
+
+
+def write(tmp_path, split, episode, **result):
+    folder = tmp_path / split / episode
+    folder.mkdir(parents=True)
+    (folder / "result.json").write_text(json.dumps({"episode": episode, "family": "bin", **result}))
+
+
+def test_setup_failures_are_left_out_and_outcomes_are_counted(tmp_path):
+    write(tmp_path, "train", "a", stage=2, success=True, pick={"code": "OK"}, timing={"pick_wall": 30})
+    write(tmp_path, "train", "b", stage=1, success=False, pick={"code": "OK"}, timing={"pick_wall": 50})
+    write(tmp_path, "train", "c", stage=0, success=False, pick={"code": "NO_GRASP"})
+    write(tmp_path, "train", "d", setup_failed="object not visible from the stance")
+    summary = skill_score.summary(skill_score.read(tmp_path / "train"))
+    assert summary["episodes"] == 3 and summary["value"] == 0.5
+    assert summary["outcomes"] == {"OK (held)": 1, "OK but dropped": 1, "NO_GRASP": 1}
+
+
+def summaries(values, seconds=None):
+    split = {"values": values, "seconds": seconds or dict.fromkeys(values, 30.0), "skill_seconds": 30.0}
+    return {"train": split, "val": split}
+
+
+def test_versions_are_compared_episode_by_episode():
+    parent = summaries({f"e{i}": 0.0 for i in range(20)})
+    better = summaries({f"e{i}": 1.0 if i < 12 else 0.0 for i in range(20)})
+    assert skill_score.judge(parent, better)["basis"] == "accuracy"
+    one_lucky = summaries({f"e{i}": 1.0 if i == 0 else 0.0 for i in range(20)})
+    assert not skill_score.judge(parent, one_lucky)["ok"]
+    worse = summaries({f"e{i}": 0.0 for i in range(20)})
+    assert skill_score.judge(better, worse)["basis"] == "accuracy dropped"
+
+
+def test_a_faster_skill_with_unchanged_accuracy_is_accepted():
+    values = {f"e{i}": 0.5 for i in range(10)}
+    parent = summaries(values, {f"e{i}": 40.0 + i % 3 for i in range(10)})
+    faster = summaries(values, {f"e{i}": 20.0 + i % 3 for i in range(10)})
+    assert skill_score.judge(parent, faster)["basis"] == "time (accuracy unchanged)"

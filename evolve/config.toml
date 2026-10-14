@@ -41,3 +41,10 @@ proposals = 2             # distinct patches per round
 timeout = 1800            # seconds per Codex call
 ruff = "/home/lohith/startup/homebody_claude/astra-evolve/bin/ruff"  # same version as the remote
 python = "/home/lohith/startup/homebody_claude/astra-evolve/testenv/bin/python"  # HomeBody's dependencies, for unit tests
+
+[skill]
+# Skill-level optimisation (skill_loop.py): the skill Astra improves, its benchmark episodes (under the
+# remote work dir; skill_episodes.py writes them) and how many run at once (no model, ~1 core each).
+name = "pick"
+episodes = "skillbench/pick_episodes"
+parallel = 28
