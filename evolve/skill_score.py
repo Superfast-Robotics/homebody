@@ -44,7 +44,7 @@ def summary(results):
         codes[code] = codes.get(code, 0) + 1
     coder = [r["coder"] for r in rows if r.get("coder")]
     return {"episodes": len(rows), "success_rate": round(sum(bool(r["success"]) for r in rows) / len(rows), 3),
-            "builtin_success_rate": round(sum(bool(r.get("builtin_success", r["success"])) for r in rows) / len(rows), 3),
+            "builtin_success_rate": round(sum(builtin(r) for r in rows) / len(rows), 3),
             "coder_calls": len(coder), "coder_ok": sum(c["code"] == "OK" for c in coder),
             "credits": round(sum(credits(r) for r in rows) / len(rows), 3),
             "value": round(sum(r["stage"] for r in rows) / 2 / len(rows), 3),
@@ -60,6 +60,11 @@ def seconds(row):
     """The skill's seconds in an episode, the coder's included."""
     timing = row.get("timing") or {}
     return timing.get("skill_wall", timing.get("pick_wall", 0))
+
+
+def builtin(row):
+    """Success by the skill alone: it returned OK and the episode ended in success, before any coder."""
+    return bool(row.get("success")) and call(row).get("code") == "OK"
 
 
 def call(row):
