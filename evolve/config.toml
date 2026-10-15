@@ -111,3 +111,20 @@ editable = ["src/homebody/toolkit/*", "src/homebody/motion/*", "src/homebody/hel
 model = "gpt-6.1-sol"
 effort = "medium"
 parallel = 10               # as many coder sessions as the GH200's KV cache holds without queueing
+
+[skills.pick-dynamic-luna]
+# pick plus one coder rescue by GPT-6 Luna (about 20x cheaper than GPT-6.1 Sol in plan credits), through the
+# LiteLLM proxy like the Sol coder; same 5-minute limit as Sol
+name = "pick"
+episodes = "skillbench/pick_episodes"
+coder = true
+coder_model = "gpt-6-luna"
+coder_rates = "2.5,0.25,12.5"
+workdir = "pick-dynamic-luna"
+prompts = "dynamic"
+editable = ["src/homebody/toolkit/*", "src/homebody/motion/*", "src/homebody/helpers/*",
+            "src/homebody/harness/coder_agents.md", "src/homebody/harness/coder.py",
+            "src/homebody/skills/pick.py", "tests/*"]
+model = "gpt-6.1-sol"
+effort = "medium"
+parallel = 24
