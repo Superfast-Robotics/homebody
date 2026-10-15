@@ -42,11 +42,37 @@ timeout = 1800            # seconds per Codex call
 ruff = "/home/lohith/startup/homebody_claude/astra-evolve/bin/ruff"  # same version as the remote
 python = "/home/lohith/startup/homebody_claude/astra-evolve/testenv/bin/python"  # HomeBody's dependencies, for unit tests
 
-[skill]
-# Skill-level optimisation (skill_loop.py): the skill Astra improves, its benchmark episodes (under the
-# remote work dir; skill_episodes.py writes them) and how many run at once (no model, ~1 core each).
+[skills]
+# Skill-level optimisation (skill_loop.py --profile NAME). A profile names the skill (a driver in
+# skill_bench.py), its benchmark episodes (under the remote work dir; skill_episodes.py writes them),
+# whether a failed call gets one coder rescue (the dynamic skill), which files a patch may change, the
+# prompt set (prompts/<prompts>_brief.md, _diagnose.md, _propose.md), the Codex model that diagnoses and
+# patches, and how many episodes run at once.
+default = "pick-dynamic"
+
+[skills.pick]
 name = "pick"
-model = "gpt-6.1-sol"     # diagnoses and patches the skill (Codex)
-effort = "medium"
 episodes = "skillbench/pick_episodes"
+coder = false
+workdir = "pick"
+prompts = "skill"
+editable = ["src/homebody/skills/pick.py", "src/homebody/motion/*", "src/homebody/helpers/*",
+            "src/homebody/toolkit/*", "tests/*"]
+model = "gpt-6.1-sol"
+effort = "medium"
 parallel = 28
+
+[skills.pick-dynamic]
+# pick plus one coder rescue; improved through helpers, the coder's instructions and reports, and pick's
+# structure, not by tuning pick's own decisions
+name = "pick"
+episodes = "skillbench/pick_episodes"
+coder = true
+workdir = "pick-dynamic"
+prompts = "dynamic"
+editable = ["src/homebody/toolkit/*", "src/homebody/motion/*", "src/homebody/helpers/*",
+            "src/homebody/harness/coder_agents.md", "src/homebody/harness/coder.py",
+            "src/homebody/skills/pick.py", "tests/*"]
+model = "gpt-6.1-sol"
+effort = "medium"
+parallel = 24

@@ -1,14 +1,23 @@
-"""skill_bench.py ROOT EPISODE OUT: one skill-benchmark episode, no model involved.
+"""skill_bench.py ROOT EPISODE OUT: one skill-benchmark episode.
+
+A skill takes part through a driver in DRIVERS (episode["skill"] picks it): run() sets the episode up,
+calls the skill once (with one coder rescue when enabled) and finishes the episode; score() reads the
+recorded physics into stage 0, 1 or 2 (2: success). Adding a skill to the benchmark means adding a
+driver here and an episode generator in skill_episodes.py.
 
 The pick episode stands the robot at the episode's stance (the scene's scripted stance plus the
 episode's offset), calls the candidate's pick once on the object (a click on its visible pixels, as
-the agent would give), carries it along the task's carry path and stands still for a moment. Scored
-from physics: 0 not lifted, 1 lifted but not held at the end (dropped in the pick or the carry),
-2 still held (success). An episode whose stance or view fails before the pick is a setup failure and
+the agent would give); if the pick fails and the episode allows it (coder: true), the coding
+assistant gets one call_coder to change pick and run it on the robot, as in a task. A held object is
+then carried along the task's carry path and the robot stands still for a moment. Scored from
+physics: 0 not lifted, 1 lifted but not held at the end (dropped in the pick or the carry), 2 still
+held (success); the record also keeps the built-in pick's own outcome, the coder's result, its
+credits and the seconds spent. An episode whose stance or view fails before the pick is a setup failure and
 is not scored. Writes OUT/result.json; the session evidence (events, physics) stays under OUT.
 """
 import importlib.util
 import json
+import os
 import sys
 import time
 import traceback
@@ -16,6 +25,8 @@ from dataclasses import asdict
 from pathlib import Path
 from types import SimpleNamespace
 
+SOL_RATES = (50.0, 2.5, 250.0)  # coder credits per 1M tokens: input, cached input, output
+UNMETERED_CREDITS = 8.2  # a full coder call (~120k uncached, ~480k cached, ~4k output tokens)
 LIFT_M = 0.05  # rise of the object's lowest corner that counts as lifted
 HELD_M = 0.03  # still at least this far above its start at the end, in hand and unsupported
 SETTLE_SECONDS = 2.0
@@ -54,21 +65,95 @@ def run_pick(cm, session, episode, step):
         return {"setup_failed": "object not visible from the stance"}
     u, v = click
     side = step.hand if step.hand != "auto" else ("left" if u < frame.rgb.shape[1] / 2 else "right")
-    started = time.monotonic()
-    result = session.runner.run("pick", {"point_normalized_1000": cm.normalized(frame, u, v), "hand": side}, frame)
-    timing["pick_wall"] = round(time.monotonic() - started, 1)
-    pick = {key: value for key, value in asdict(result).items() if key != "details"}
-    pick["details"] = {k: v for k, v in (result.details or {}).items() if k != "traceback"}
+    arguments = {"point_normalized_1000": cm.normalized(frame, u, v), "hand": side}
+    name = str(episode["step"]["label"]).replace("_", " ")
+    record = call_skill(session, episode, "pick", arguments, frame, request={
+        "goal": f"Pick up the {name} (the object under the click {arguments['point_normalized_1000']} on image 1) "
+                f"with the {side} hand and hold it.",
+        "success": "pick returns OK and the object stays in the hand, lifted off its support.",
+        "constraints": "Change only the pick skill; do not walk away from the object.",
+        "task": f"Pick up the {name} and hold it."})
+    held = record["ok"] and bool(session.context.carried)
+    side = next(iter(session.context.carried), side)
+    timing = record["timing"]
     carry = None
-    if result.ok and step.carry_goal is not None:
+    if held and step.carry_goal is not None:
         carried = execute("navigate", cm.navigate_arguments(step.carry_goal, step.carry_facing, side),
                           port.snapshot(), evidence_name="carry")
         carry = session.outcome["steps"][-1] if session.outcome["steps"] else {"code": "OK" if carried else "?"}
-    if result.ok:
+    if held:
         for _ in range(int(SETTLE_SECONDS / 0.02)):
             port.advance(port.epoch, 0.02)
-    return {"pick": pick, "carry": carry and {k: carry.get(k) for k in ("code", "message")}, "side": side,
-            "timing": timing}
+    return {**{k: v for k, v in record.items() if k != "ok"}, "carry": carry and {k: carry.get(k) for k in ("code", "message")},
+            "side": side, "timing": timing}
+
+
+def call_skill(session, episode, skill, arguments, frame, request):
+    """Call SKILL once from FRAME; if it refuses and the run enables the coder, one call_coder limited to
+    that skill (REQUEST: goal, success, constraints, task). Returns {ok, call, coder?, timing}: ok is the
+    skill's own OK, or the coder's when it rescued the call."""
+    started = time.monotonic()
+    result = session.runner.run(skill, arguments, frame)
+    timing = {"call_wall": round(time.monotonic() - started, 1)}
+    call = {key: value for key, value in asdict(result).items() if key != "details"}
+    call["details"] = {k: v for k, v in (result.details or {}).items() if k != "traceback"}
+    record = {"ok": result.ok, "call": call, "timing": timing}
+    if not result.ok and episode.get("coder", os.environ.get("HOMEBODY_BENCH_CODER") == "1"):
+        coder = rescue(session, skill, arguments, call, request)
+        record.update(coder=coder, ok=coder["code"] == "OK")
+        timing["coder_wall"] = coder["seconds"]
+    timing["skill_wall"] = round(timing["call_wall"] + timing.get("coder_wall", 0), 1)
+    return record
+
+
+def rescue(session, skill, arguments, call, request):
+    """One call_coder after a refused SKILL call, limited to that skill, as the agent would make it; its
+    result, seconds and credits."""
+    from dataclasses import replace
+
+    from homebody.session.coder import Coder
+
+    coder = Coder(replace(session.context.settings.coder, calls=1))
+    coder.reset(session.task)
+    history = [{"operator_task": request["task"]},
+               {"decision": {"text": f"Call {skill}.", "skill": skill, "arguments": arguments}, "result": call}]
+    agent = SimpleNamespace(history=history, observed=session.port, recorder=session.recorder,
+                            context=session.context, runner=session.runner)
+    ask = {"skill": skill, "goal": request["goal"], "success": request["success"],
+           "constraints": request["constraints"],
+           "tried": f"{skill} {json.dumps(arguments)} returned {call['code']}: {call['message']}"}
+    started = time.monotonic()
+    result = coder.call(ask, agent)
+    seconds = round(time.monotonic() - started, 1)
+    return {"code": result["code"], "message": result["message"][:400], "seconds": seconds,
+            "credits": coder_credits(session.task),
+            "executes": [{k: e.get(k) for k in ("code", "message")} for e in result.get("details", {}).get("executes", [])]}
+
+
+def coder_credits(task_dir):
+    """Credits of the task's coder calls from Codex's usage records (Sol's rates). A call cut off before
+    Codex reported its usage is charged UNMETERED_CREDITS, a typical full call."""
+    total = 0.0
+    for events in Path(task_dir).glob("coder/call-*/events.jsonl"):
+        turns = [json.loads(line)["usage"] for line in events.read_text(errors="replace").splitlines()
+                 if '"turn.completed"' in line]
+        if not turns:
+            total += UNMETERED_CREDITS
+        for usage in turns:
+            cached = usage.get("cached_input_tokens", 0)
+            total += ((usage["input_tokens"] - cached) * SOL_RATES[0] + cached * SOL_RATES[1]
+                      + usage["output_tokens"] * SOL_RATES[2]) / 1e6
+    return round(total, 3)
+
+
+def score_pick(rows, episode, record):
+    """Pick's stage from physics: 0 not lifted, 1 lifted but not held at the end, 2 held."""
+    lifted, held, rise = physics_verdict(rows, episode["step"]["fixture_id"])
+    return {"lifted": lifted, "held": held, "max_rise": round(rise, 3), "stage": 2 if held else 1 if lifted else 0}
+
+
+# skill name -> (run(cm, session, episode, step) -> record, score(rows, episode, record) -> {stage, ...})
+DRIVERS = {"pick": (run_pick, score_pick)}
 
 
 def write_trace(out):
@@ -119,7 +204,7 @@ def main(root, episode_path, out):
     recorder = Recorder(root, settings, out / "session")
     task = recorder.start_task(f"Skill benchmark: {episode['skill']} {episode['id']}", None)
     outcome = {"status": "error", "steps": [], "vlm_used": False}
-    args = SimpleNamespace(no_visuals=True, place_candidates=256, wall_timeout=episode.get("wall_timeout", 900))
+    args = SimpleNamespace(no_visuals=True, place_candidates=256, wall_timeout=episode.get("wall_timeout", 1500))
     start, session, record = time.monotonic(), None, {"episode": episode["id"], "skill": episode["skill"],
                                                     "scene": scene.name, "family": episode["family"]}
     try:
@@ -127,7 +212,7 @@ def main(root, episode_path, out):
         step = cm.resolved(cm.Step(**episode["step"]), backend.label_ids)
         session = cm.ScriptedSession(backend, recorder, task, outcome, root, settings, args, start)
         session.begin_cycle(0, step)
-        record.update(run_pick(cm, session, episode, step))
+        record.update(DRIVERS[episode["skill"]][0](cm, session, episode, step))
     except Exception as error:  # noqa: BLE001 -- an episode that crashes is recorded, not fatal
         record.update(error=f"{type(error).__name__}: {error}", traceback=traceback.format_exc()[-2000:])
     finally:
@@ -139,10 +224,10 @@ def main(root, episode_path, out):
     rows = [json.loads(line) for line in max((out / "session").rglob("physics.jsonl")).read_text().splitlines()
             if line.strip()]
     write_trace(out)
-    if rows and "setup_failed" not in record:
-        lifted, held, rise = physics_verdict(rows, episode["step"]["fixture_id"])
-        record.update(lifted=lifted, held=held, max_rise=round(rise, 3), stage=2 if held else 1 if lifted else 0,
-                      success=held)
+    if rows and "setup_failed" not in record and "error" not in record:
+        record.update(DRIVERS[episode["skill"]][1](rows, episode, record))
+        record.update(success=record["stage"] == 2,
+                      builtin_success=bool(record["stage"] == 2 and (record.get("call") or {}).get("code") == "OK"))
     record.update(wall_seconds=round(time.monotonic() - start, 1), simulation_seconds=round(rows[-1]["time"], 1) if rows else 0)
     (out / "result.json").write_text(json.dumps(record, indent=1, default=str))
     print(json.dumps({k: record.get(k) for k in ("episode", "stage", "success", "setup_failed", "error")}))

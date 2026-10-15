@@ -40,7 +40,7 @@ def test_a_faster_skill_with_unchanged_accuracy_is_accepted():
     values = {f"e{i}": 0.5 for i in range(10)}
     parent = summaries(values, {f"e{i}": 40.0 + i % 3 for i in range(10)})
     faster = summaries(values, {f"e{i}": 20.0 + i % 3 for i in range(10)})
-    assert skill_score.judge(parent, faster)["basis"] == "time (accuracy unchanged)"
+    assert skill_score.judge(parent, faster)["basis"] == "time (accuracy and cost unchanged)"
 
 
 def test_a_gain_on_both_splits_counts_pooled():
@@ -70,3 +70,13 @@ def test_a_much_slower_version_needs_a_stronger_gain():
     assert skill_score.judge(parent, side(True, 60.0))["ok"]
     verdict = skill_score.judge(parent, side(True, 100.0))
     assert not verdict["ok"] and "too small" in verdict["basis"] and verdict["time"] > 0.6
+
+
+def test_equal_accuracy_with_much_cheaper_coder_calls_is_accepted():
+    def side(credit):
+        values = {f"e{i}": 0.5 for i in range(20)}
+        split = {"values": values, "seconds": dict.fromkeys(values, 60.0),
+                 "credit_values": {f"e{i}": credit + i % 3 * 0.1 for i in range(20)}}
+        return {"train": split, "val": split}
+    assert skill_score.judge(side(5.0), side(2.0))["basis"] == "cost (accuracy unchanged)"
+    assert not skill_score.judge(side(5.0), side(4.8))["ok"]
