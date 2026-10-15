@@ -11,7 +11,7 @@ run_one() {
   MUJOCO_GL=egl HOMEBODY_BENCH_CODER="$CODER" HOMEBODY_CODER_CODEX="$W/coder-codex/codex" \
     HOMEBODY_CODER_MODEL="$CODER_MODEL" HOMEBODY_CODER_RATES="$CODER_RATES" HOMEBODY_CODER_SECONDS="$CODER_SECONDS" \
     LITELLM_BASE_URL=http://127.0.0.1:14000 LITELLM_API_KEY="$(cat ~/.litellm_key)" \
-    timeout 3600 "$BASE/.venv/bin/python" "$EVOLVE/skill_bench.py" "$cand" "$episode" "$out" \
+    timeout 5400 "$BASE/.venv/bin/python" "$EVOLVE/skill_bench.py" "$cand" "$episode" "$out" \
     > "$out/run.log" 2>&1
   echo "$?" > "$out/exit_code"
 }

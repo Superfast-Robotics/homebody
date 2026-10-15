@@ -212,7 +212,7 @@ def main(root, episode_path, out):
     recorder = Recorder(root, settings, out / "session")
     task = recorder.start_task(f"Skill benchmark: {episode['skill']} {episode['id']}", None)
     outcome = {"status": "error", "steps": [], "vlm_used": False}
-    args = SimpleNamespace(no_visuals=True, place_candidates=256, wall_timeout=episode.get("wall_timeout", 2700))
+    args = SimpleNamespace(no_visuals=True, place_candidates=256, wall_timeout=episode.get("wall_timeout", 3600))
     start, session, record = time.monotonic(), None, {"episode": episode["id"], "skill": episode["skill"],
                                                     "scene": scene.name, "family": episode["family"]}
     try:

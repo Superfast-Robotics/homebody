@@ -95,14 +95,14 @@ effort = "medium"
 parallel = 6
 
 [skills.pick-dynamic-qwen]
-# pick plus one coder rescue by Qwen3.8-27B (BF16) served by vLLM on the GH200, reached through the
-# LiteLLM proxy; no API credits
+# pick plus one coder rescue by Qwen3.8-27B (official FP8, FP8 KV cache, MTP speculative decoding) served by
+# vLLM on the GH200, reached through the LiteLLM proxy; no API credits
 name = "pick"
 episodes = "skillbench/pick_episodes"
 coder = true
 coder_model = "qwen3.8-27b"
 coder_rates = "0,0,0"
-coder_seconds = 900         # slower per step than Sol (served locally): 15 minutes per coder call
+coder_seconds = 1800        # slower per step than Sol (served locally): 30 minutes per coder call
 workdir = "pick-dynamic-qwen"
 prompts = "dynamic"
 editable = ["src/homebody/toolkit/*", "src/homebody/motion/*", "src/homebody/helpers/*",
@@ -110,4 +110,4 @@ editable = ["src/homebody/toolkit/*", "src/homebody/motion/*", "src/homebody/hel
             "src/homebody/skills/pick.py", "tests/*"]
 model = "gpt-6.1-sol"
 effort = "medium"
-parallel = 16
+parallel = 10               # as many coder sessions as the GH200's KV cache holds without queueing
