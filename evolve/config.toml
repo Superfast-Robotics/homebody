@@ -131,7 +131,7 @@ parallel = 24
 
 [skills.pick-dynamic-qwen36]
 # pick plus one coder rescue by Qwen3.6-35B-A3B (official FP8, FP8 KV cache, MTP speculative decoding) served by
-# SGLang (MTP) on the GH200, reached through the LiteLLM proxy; no API credits
+# vLLM (MTP) on the GH200, reached through the LiteLLM proxy; no API credits
 name = "pick"
 episodes = "skillbench/pick_episodes"
 coder = true
