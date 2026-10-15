@@ -21,12 +21,16 @@ import fnmatch
 import json
 import shutil
 import subprocess
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from . import astra, skill_score
 from .loop import Loop, git
 from .workspace import coder_call
+
+RECORDING = threading.Lock()
 
 HERE = Path(__file__).resolve().parent
 COMPLETE = ".complete"
@@ -93,7 +97,7 @@ class SkillLoop:
         stored = {k: v for k, v in entry.items() if k not in ("train", "val")}
         stored.update({s: {k: v for k, v in entry[s].items() if k not in ("values", "seconds")} for s in SPLITS
                        if s in entry})
-        with self.archive_path.open("a") as out:
+        with RECORDING, self.archive_path.open("a") as out:  # candidates of a round finish on parallel threads
             out.write(json.dumps(stored) + "\n")
         self.log(f"archive: {entry['id']} {entry['status']} {entry.get('reason', '')}")
 
@@ -236,6 +240,8 @@ class SkillLoop:
         return [f for f in files if not any(fnmatch.fnmatch(f, p) for p in patterns)]
 
     def round(self, number):
+        """Diagnose the best version, then write, screen and evaluate one candidate per ranked mechanism, all
+        candidates at once (they share one parent and one diagnosis); the largest accepted gain wins."""
         best = self.best()
         round_dir = self.work / "rounds" / f"s{number:03d}"
         round_dir.mkdir(parents=True, exist_ok=True)
@@ -248,52 +254,20 @@ class SkillLoop:
             diagnosis = diagnosis_path.read_text()
         else:
             diagnosis = astra.codex(prompt, reader, "read-only", diagnosis_path, **self.diagnoser())
+        indices = range(1, self.proposals + 1)
+        paths = {index: self.loop.worktree(self.cand(f"s{number:03d}c{index}"), best["commit"]) for index in indices}
+        with ThreadPoolExecutor(len(paths)) as pool:
+            ready = [entry for entry in pool.map(
+                lambda index: self.prepare(number, index, paths[index], best, ws, diagnosis, round_dir), indices) if entry]
         accepted = []
-        for index in range(1, self.proposals + 1):
-            cid = f"s{number:03d}c{index}"
-            path = self.loop.worktree(self.cand(f"{cid}"), best["commit"])
-            note_path = round_dir / f"{cid}_note.md"
-            entry = {"id": cid, "round": number, "parent": best["id"], "mechanism": index}
-            if git("rev-parse", "HEAD", cwd=path) == best["commit"]:
-                prompt = (HERE / "prompts" / f"{self.prompts}_propose.md").read_text().format(
-                    workspace=ws, skill=self.skill, diagnosis=diagnosis, mechanism=index,
-                    ruff=astra.settings()["ruff"], python=astra.settings()["python"],
-                    editable=", ".join(p.format(skill=self.skill) for p in self.editable))
-                try:
-                    note = astra.codex(prompt, path, "workspace-write", note_path, **self.proposer())
-                except Exception as error:  # noqa: BLE001 -- a failed proposal is recorded, not fatal
-                    self.record({**entry, "status": "failed", "reason": f"proposer error: {error}"})
-                    continue
-                subprocess.run([astra.settings()["ruff"], "check", "--fix", "--quiet", "src", "tests"], cwd=path,
-                               check=False, capture_output=True)
-                git("add", "-A", cwd=path)
-                if not git("status", "--porcelain", cwd=path):
-                    self.record({**entry, "status": "rejected", "reason": "no change", "notes": note})
-                    continue
-                git("-c", "user.name=astra", "-c", "user.email=astra@localhost", "commit", "-q", "-m",
-                    f"skill {self.skill} {cid}: mechanism {index}\n\n{note[:3000]}", cwd=path)
-            note = note_path.read_text() if note_path.exists() else ""
-            commit = git("rev-parse", "HEAD", cwd=path)
-            files = git("diff", "--name-only", best["commit"], commit).splitlines()
-            entry.update(commit=commit, files=files, notes=note)
-            outside = self.allowed(files)
-            if outside:
-                self.record({**entry, "status": "rejected", "reason": f"edits outside the skill: {outside}"})
-                continue
-            specific = self.specific(best["commit"], commit)
-            if specific:
-                self.record({**entry, "status": "rejected", "reason": f"not general: the source names {specific}"})
-                continue
-            passed, output = self.loop.remote_checks(self.cand(cid), path)
-            if not passed:
-                (round_dir / f"{cid}_checks.txt").write_text(output)
-                self.record({**entry, "status": "rejected", "reason": "lint or unit tests failed: " + output[-600:]})
-                continue
-            summaries = self.evaluate(cid, path)
-            verdict = skill_score.judge(self.summaries(best["id"]), summaries)
-            entry = {**entry, **summaries, "status": "accepted" if verdict["ok"] else "rejected",
-                     "reason": skill_score.describe(verdict), "verdict": verdict}
-            (accepted.append(entry) if verdict["ok"] else self.record(entry))
+        if ready:
+            with ThreadPoolExecutor(len(ready)) as pool:
+                evaluated = list(pool.map(lambda entry: (entry, self.evaluate(entry["id"], paths[entry["mechanism"]])), ready))
+            for entry, summaries in evaluated:
+                verdict = skill_score.judge(self.summaries(best["id"]), summaries)
+                entry = {**entry, **summaries, "status": "accepted" if verdict["ok"] else "rejected",
+                         "reason": skill_score.describe(verdict), "verdict": verdict}
+                (accepted.append(entry) if verdict["ok"] else self.record(entry))
         if accepted:
             winner = max(accepted, key=lambda e: e["verdict"]["pooled"][0])
             for entry in accepted:
@@ -301,6 +275,49 @@ class SkillLoop:
                             "reason": entry["reason"] + "; passed, but another candidate scored higher"})
         self.log(f"round {number}: done; best is now {self.best()['id']}; "
                  f"optimisation credits this round {astra.credits_in(round_dir)}")
+
+    def prepare(self, number, index, path, best, ws, diagnosis, round_dir):
+        """Write (or reuse) candidate INDEX of round NUMBER in PATH and screen it; its archive entry when it is
+        ready to evaluate, else None (the rejection is recorded)."""
+        cid = f"s{number:03d}c{index}"
+        note_path = round_dir / f"{cid}_note.md"
+        entry = {"id": cid, "round": number, "parent": best["id"], "mechanism": index}
+        if git("rev-parse", "HEAD", cwd=path) == best["commit"]:
+            prompt = (HERE / "prompts" / f"{self.prompts}_propose.md").read_text().format(
+                workspace=ws, skill=self.skill, diagnosis=diagnosis, mechanism=index,
+                ruff=astra.settings()["ruff"], python=astra.settings()["python"],
+                editable=", ".join(p.format(skill=self.skill) for p in self.editable))
+            try:
+                note = astra.codex(prompt, path, "workspace-write", note_path, **self.proposer())
+            except Exception as error:  # noqa: BLE001 -- a failed proposal is recorded, not fatal
+                self.record({**entry, "status": "failed", "reason": f"proposer error: {error}"})
+                return None
+            subprocess.run([astra.settings()["ruff"], "check", "--fix", "--quiet", "src", "tests"], cwd=path,
+                           check=False, capture_output=True)
+            git("add", "-A", cwd=path)
+            if not git("status", "--porcelain", cwd=path):
+                self.record({**entry, "status": "rejected", "reason": "no change", "notes": note})
+                return None
+            git("-c", "user.name=astra", "-c", "user.email=astra@localhost", "commit", "-q", "-m",
+                f"skill {self.skill} {cid}: mechanism {index}\n\n{note[:3000]}", cwd=path)
+        note = note_path.read_text() if note_path.exists() else ""
+        commit = git("rev-parse", "HEAD", cwd=path)
+        files = git("diff", "--name-only", best["commit"], commit).splitlines()
+        entry.update(commit=commit, files=files, notes=note)
+        outside = self.allowed(files)
+        if outside:
+            self.record({**entry, "status": "rejected", "reason": f"edits outside the skill: {outside}"})
+            return None
+        specific = self.specific(best["commit"], commit)
+        if specific:
+            self.record({**entry, "status": "rejected", "reason": f"not general: the source names {specific}"})
+            return None
+        passed, output = self.loop.remote_checks(self.cand(cid), path)
+        if not passed:
+            (round_dir / f"{cid}_checks.txt").write_text(output)
+            self.record({**entry, "status": "rejected", "reason": "lint or unit tests failed: " + output[-600:]})
+            return None
+        return entry
 
     def test(self, cid):
         """CID on the test episodes, which no round ever sees or judges by."""

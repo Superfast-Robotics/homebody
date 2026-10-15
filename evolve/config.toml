@@ -131,7 +131,7 @@ parallel = 24
 
 [skills.pick-dynamic-qwen36]
 # pick plus one coder rescue by Qwen3.6-35B-A3B (official FP8, FP8 KV cache, MTP speculative decoding) served by
-# vLLM on the GH200, reached through the LiteLLM proxy; no API credits
+# SGLang (MTP) on the GH200, reached through the LiteLLM proxy; no API credits
 name = "pick"
 episodes = "skillbench/pick_episodes"
 coder = true
@@ -146,4 +146,4 @@ editable = ["src/homebody/toolkit/*", "src/homebody/motion/*", "src/homebody/hel
 model = "gpt-6-astra"        # Astra diagnoses and proposes (the meta-optimizer)
 effort = "medium"
 proposals = 3               # per round: the diagnosis's three highest-impact mechanisms, in order
-parallel = 24               # the GH200's KV cache holds about 28 full-context sessions
+parallel = 18               # per candidate; a round evaluates its candidates at once (54 sessions on 30 cores)
