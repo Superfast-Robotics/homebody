@@ -220,6 +220,7 @@ class CoderCall:
         shutil.copytree(self.coder.library(), self.lib_dir)
         self.frozen_lib = {path.name: digest([path]) for path in self.lib_dir.glob("*.py")}
         (self.workspace / "AGENTS.md").write_text(harness.coder_instructions())
+        (self.workspace / "SOURCE_MAP.md").write_text(harness.source_map(self.target, source, source_root()))
         self.observe()
         recent = [entry for entry in self.session.history if "decision" in entry][-harness.CODER_HISTORY_STEPS:]
         (self.workspace / "REQUEST.md").write_text(harness.coder_request(
