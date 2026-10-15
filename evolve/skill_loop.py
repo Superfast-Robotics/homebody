@@ -136,7 +136,7 @@ class SkillLoop:
         started = time.monotonic()
         self.remote.ssh(f"bash {self.remote.work}/run_skill_jobs.sh {self.remote.base} {self.cfg['parallel']} {jobs} "
                         f"{self.remote.work} {int(self.coder)} '{self.cfg.get('coder_model', '')}' "
-                        f"'{self.cfg.get('coder_rates', '')}'", timeout=12 * 3600)
+                        f"'{self.cfg.get('coder_rates', '')}' '{self.cfg.get('coder_seconds', '')}'", timeout=24 * 3600)
         if local.exists():
             shutil.rmtree(local)
         local.mkdir(parents=True)

@@ -113,7 +113,12 @@ def rescue(session, skill, arguments, call, request):
 
     from homebody.session.coder import Coder
 
-    coder = Coder(replace(session.context.settings.coder, calls=1))
+    coder_settings = replace(session.context.settings.coder, calls=1)
+    if os.environ.get("HOMEBODY_CODER_MODEL"):  # the run's coder model, whatever the candidate's settings say
+        coder_settings = replace(coder_settings, model=os.environ["HOMEBODY_CODER_MODEL"])
+    if os.environ.get("HOMEBODY_CODER_SECONDS"):  # a slower (local) model may get a longer limit
+        coder_settings = replace(coder_settings, seconds=float(os.environ["HOMEBODY_CODER_SECONDS"]))
+    coder = Coder(coder_settings)
     coder.reset(session.task)
     history = [{"operator_task": request["task"]},
                {"decision": {"text": f"Call {skill}.", "skill": skill, "arguments": arguments}, "result": call}]
@@ -207,7 +212,7 @@ def main(root, episode_path, out):
     recorder = Recorder(root, settings, out / "session")
     task = recorder.start_task(f"Skill benchmark: {episode['skill']} {episode['id']}", None)
     outcome = {"status": "error", "steps": [], "vlm_used": False}
-    args = SimpleNamespace(no_visuals=True, place_candidates=256, wall_timeout=episode.get("wall_timeout", 1500))
+    args = SimpleNamespace(no_visuals=True, place_candidates=256, wall_timeout=episode.get("wall_timeout", 2700))
     start, session, record = time.monotonic(), None, {"episode": episode["id"], "skill": episode["skill"],
                                                     "scene": scene.name, "family": episode["family"]}
     try:

@@ -102,6 +102,7 @@ episodes = "skillbench/pick_episodes"
 coder = true
 coder_model = "qwen3.8-27b"
 coder_rates = "0,0,0"
+coder_seconds = 900         # slower per step than Sol (served locally): 15 minutes per coder call
 workdir = "pick-dynamic-qwen"
 prompts = "dynamic"
 editable = ["src/homebody/toolkit/*", "src/homebody/motion/*", "src/homebody/helpers/*",
