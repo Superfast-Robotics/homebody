@@ -255,8 +255,8 @@ class SkillLoop:
         return [f for f in files if not any(fnmatch.fnmatch(f, p) for p in patterns)]
 
     def round(self, number):
-        """Diagnose the best version, then write, screen and evaluate one candidate per ranked mechanism, all
-        candidates at once (they share one parent and one diagnosis); the largest accepted gain wins."""
+        """Diagnose the best version, write and screen one candidate per ranked mechanism at once (they share
+        one parent and one diagnosis), then evaluate them one by one; the largest accepted gain wins."""
         best = self.best()
         round_dir = self.work / "rounds" / f"s{number:03d}"
         round_dir.mkdir(parents=True, exist_ok=True)
@@ -275,14 +275,12 @@ class SkillLoop:
             ready = [entry for entry in pool.map(
                 lambda index: self.prepare(number, index, paths[index], best, ws, diagnosis, round_dir), indices) if entry]
         accepted = []
-        if ready:
-            with ThreadPoolExecutor(len(ready)) as pool:
-                evaluated = list(pool.map(lambda entry: (entry, self.evaluate(entry["id"], paths[entry["mechanism"]])), ready))
-            for entry, summaries in evaluated:
-                verdict = skill_score.judge(self.summaries(best["id"]), summaries)
-                entry = {**entry, **summaries, "status": "accepted" if verdict["ok"] else "rejected",
-                         "reason": skill_score.describe(verdict), "verdict": verdict}
-                (accepted.append(entry) if verdict["ok"] else self.record(entry))
+        for entry in ready:  # one at a time: the coder shares one GPU, and three evaluations at once starve it
+            summaries = self.evaluate(entry["id"], paths[entry["mechanism"]])
+            verdict = skill_score.judge(self.summaries(best["id"]), summaries)
+            entry = {**entry, **summaries, "status": "accepted" if verdict["ok"] else "rejected",
+                     "reason": skill_score.describe(verdict), "verdict": verdict}
+            (accepted.append(entry) if verdict["ok"] else self.record(entry))
         if accepted:
             winner = max(accepted, key=lambda e: e["verdict"]["pooled"][0])
             for entry in accepted:

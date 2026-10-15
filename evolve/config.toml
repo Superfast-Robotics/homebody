@@ -146,4 +146,4 @@ editable = ["src/homebody/toolkit/*", "src/homebody/motion/*", "src/homebody/hel
 model = "gpt-6-astra"        # Astra diagnoses and proposes (the meta-optimizer)
 effort = "medium"
 proposals = 3               # per round: the diagnosis's three highest-impact mechanisms, in order
-parallel = 18               # per candidate; a round evaluates its candidates at once (54 sessions on 30 cores)
+parallel = 24               # more concurrent coder sessions starve the GPU: at 54, nearly every call timed out
