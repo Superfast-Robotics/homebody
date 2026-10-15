@@ -143,6 +143,6 @@ prompts = "dynamic"
 editable = ["src/homebody/toolkit/*", "src/homebody/motion/*", "src/homebody/helpers/*",
             "src/homebody/harness/coder_agents.md", "src/homebody/harness/coder.py",
             "src/homebody/skills/pick.py", "tests/*"]
-model = "gpt-6.1-sol"
+model = "gpt-6-astra"        # Astra diagnoses and proposes (the meta-optimizer)
 effort = "medium"
 parallel = 24               # the GH200's KV cache holds about 28 full-context sessions
