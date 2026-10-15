@@ -16,6 +16,8 @@ how many episodes fixing them would likely turn into successes, and by how well 
 over to unseen scenes. Learn from history.md: do not re-propose what was rejected unless you say what
 differs.
 
-Answer in Markdown, with at most four sections titled exactly "## Mechanism N: <title>", each with:
+Answer in Markdown, with at most four sections titled exactly "## Mechanism N: <title>", numbered in
+order of expected impact (Mechanism 1 the highest): proposals are made for the first mechanisms
+only, so the order decides what gets fixed. Each section has:
 **Evidence** (episode ids, counts, quoted trace events and messages), **Cause** (file and function),
 **Fix direction** (the smallest change) and **Expected gain** (how many episodes, which families).

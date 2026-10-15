@@ -17,7 +17,9 @@ fixing them would turn into successes (or make much cheaper), and by how well th
 to unseen scenes. Learn from history.md: do not re-propose what was rejected unless you say what
 differs.
 
-Answer in Markdown, with at most four sections titled exactly "## Mechanism N: <title>", each with:
+Answer in Markdown, with at most four sections titled exactly "## Mechanism N: <title>", numbered in
+order of expected impact (Mechanism 1 the highest): proposals are made for the first mechanisms
+only, so the order decides what gets fixed. Each section has:
 **Evidence** (episode ids across families, counts, quotes from traces and assistant sessions), **Cause**
 (file and function, or the instruction or report at fault), **Fix direction** (a general helper,
 instruction, report or structural change; not tuning the skill's own decisions) and **Expected gain**.

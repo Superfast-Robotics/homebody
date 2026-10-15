@@ -77,6 +77,7 @@ class SkillLoop:
         self.editable = tuple(self.cfg.get("editable", EDITABLE))
         self.coder = bool(self.cfg.get("coder", False))
         self.prompts = self.cfg.get("prompts", "skill")
+        self.proposals = int(self.cfg.get("proposals", self.loop.cfg["astra"]["proposals"]))  # per round, by mechanism rank
         self.work.mkdir(parents=True, exist_ok=True)
         self.archive_path = self.work / "archive.jsonl"
         self.remote = self.loop.remote
@@ -248,7 +249,7 @@ class SkillLoop:
         else:
             diagnosis = astra.codex(prompt, reader, "read-only", diagnosis_path, **self.diagnoser())
         accepted = []
-        for index in range(1, self.loop.cfg["astra"]["proposals"] + 1):
+        for index in range(1, self.proposals + 1):
             cid = f"s{number:03d}c{index}"
             path = self.loop.worktree(self.cand(f"{cid}"), best["commit"])
             note_path = round_dir / f"{cid}_note.md"
