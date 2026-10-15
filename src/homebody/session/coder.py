@@ -100,13 +100,15 @@ def answer_json(text):
 def markdown_fields(text):
     """The final answer written as `**status:** ...` fields instead of JSON (a model whose output format is
     not enforced); None without a status field. A value runs to the next field, one wrapping backtick pair dropped."""
-    parts = re.split(r"^\s*\*\*(status|summary|state|usage):\*\*[ \t]*", text, flags=re.MULTILINE)
+    parts = re.split(r"^\s*\*\*(status|summary|state|usage)(?::\*\*|\*\*:|:)[ \t]*", text, flags=re.MULTILINE | re.IGNORECASE)
     fields = {}
     for name, value in zip(parts[1::2], parts[2::2]):
         value = value.strip()
+        if name.lower() == "status":
+            value = re.sub(r"[^a-z].*", "", value.strip("*` \n").lower(), flags=re.DOTALL)
         if len(value) > 1 and value.startswith("`") and value.endswith("`") and value.count("`") == 2:
             value = value[1:-1]
-        fields[name] = value
+        fields[name.lower()] = value
     return fields if "status" in fields else None
 
 

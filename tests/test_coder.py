@@ -107,3 +107,14 @@ def test_a_final_answer_written_as_markdown_fields_is_still_read():
     assert answer["summary"] == "Fixed `_admit_hidden` (line 451).\nIt now holds."
     assert answer["usage"] == 'pick {"hand": "right"}'
     assert answer_json("**summary:** no status given") is None
+
+
+def test_a_final_answer_with_the_value_inside_the_bold_label_is_still_read():
+    from homebody.session.coder import answer_json
+    text = "\n\nHere's my final answer:\n\n**Status: failed**\n\n**Summary:**\n- Widened the grasp range.\n"
+    answer = answer_json(text)
+    assert answer["status"] == "failed"
+    assert answer["summary"] == "- Widened the grasp range."
+    assert answer_json("## Final Result\n\n**Status: success**\n\nHeld.")["status"] == "success"
+    assert answer_json("**status**: `failed`\n\n**summary**: none")["status"] == "failed"
+    assert answer_json("**Status:** failed (ran out of checks)")["status"] == "failed"
