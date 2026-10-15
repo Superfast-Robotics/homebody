@@ -96,3 +96,14 @@ def test_a_final_answer_wrapped_in_prose_is_still_read():
     wrapped = 'Done.\n```json\n{"status": "success", "summary": "a {b}", "state": "", "usage": ""}\n```'
     assert answer_json(wrapped)["status"] == "success"
     assert answer_json("no answer here") is None
+
+
+def test_a_final_answer_written_as_markdown_fields_is_still_read():
+    from homebody.session.coder import answer_json
+    text = ("\n\n**status:** `success`\n\n**summary:** Fixed `_admit_hidden` (line 451).\nIt now holds.\n\n"
+            "**state:** Right hand holds the cup.\n\n**usage:** `pick {\"hand\": \"right\"}`")
+    answer = answer_json(text)
+    assert answer["status"] == "success"
+    assert answer["summary"] == "Fixed `_admit_hidden` (line 451).\nIt now holds."
+    assert answer["usage"] == 'pick {"hand": "right"}'
+    assert answer_json("**summary:** no status given") is None

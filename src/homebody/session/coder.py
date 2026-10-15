@@ -8,6 +8,7 @@ import dataclasses
 import inspect
 import json
 import os
+import re
 import select
 import shutil
 import signal
@@ -93,7 +94,20 @@ def answer_json(text):
             continue
         if isinstance(value, dict) and "status" in value:
             found = value
-    return found
+    return found or markdown_fields(text)
+
+
+def markdown_fields(text):
+    """The final answer written as `**status:** ...` fields instead of JSON (a model whose output format is
+    not enforced); None without a status field. A value runs to the next field, one wrapping backtick pair dropped."""
+    parts = re.split(r"^\s*\*\*(status|summary|state|usage):\*\*[ \t]*", text, flags=re.MULTILINE)
+    fields = {}
+    for name, value in zip(parts[1::2], parts[2::2]):
+        value = value.strip()
+        if len(value) > 1 and value.startswith("`") and value.endswith("`") and value.count("`") == 2:
+            value = value[1:-1]
+        fields[name] = value
+    return fields if "status" in fields else None
 
 
 def refusal(code, message, **details):
