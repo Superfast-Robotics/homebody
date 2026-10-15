@@ -11,6 +11,8 @@ from pathlib import Path
 Z_DROP = 2.0  # a split counts as worse only if it falls by more than this many standard errors
 Z_RISE = 1.5  # and as better only if it rises by more than this many
 TIME_CUT = 0.20  # with unchanged accuracy, the skill's wall time per call must fall by a fifth
+SLOWER = 0.30  # a version this much slower per call needs a stronger accuracy gain
+Z_RISE_SLOWER = 2.5
 
 
 def read(split_dir):
@@ -58,28 +60,46 @@ def paired(parent, child, key):
     return mean, (spread / len(diffs)) ** 0.5
 
 
+def pooled(side):
+    """One split-like summary of train and val together, episodes keyed split/id."""
+    return {key: {f"{split}/{episode}": value for split in ("train", "val")
+                  for episode, value in side[split].get(key, {}).items()} for key in ("values", "seconds")}
+
+
 def judge(parent, child):
-    """Accuracy first: no split's value may fall by more than Z_DROP standard errors; accepted when one
-    rises by more than Z_RISE; with accuracy unchanged, also when the skill's time per call falls by
-    TIME_CUT or more, significantly."""
+    """Accuracy first: no split's value may fall by more than Z_DROP standard errors; accepted when the
+    value over train and val pooled (every episode paired) rises by more than Z_RISE; with accuracy
+    unchanged, also when the skill's time per call falls by TIME_CUT or more, significantly."""
     out = {}
     for split in ("train", "val"):
         d, se = paired(parent[split], child[split], "values")
         out[split] = (round(d, 4), round(se, 4))
-    if any(d + Z_DROP * se < 0 for d, se in out.values()):
+    d, se = paired(pooled(parent), pooled(child), "values")
+    out["pooled"] = (round(d, 4), round(se, 4))
+    out["time"] = round(relative_time(parent, child), 3)
+    if any(d + Z_DROP * se < 0 for d, se in (out["train"], out["val"])):
         return {**out, "ok": False, "basis": "accuracy dropped"}
-    if any(d - Z_RISE * se > 0 for d, se in out.values()):
-        return {**out, "ok": True, "basis": "accuracy"}
-    base = sum(parent[s].get("skill_seconds", 0) for s in ("train", "val")) / 2
-    times = [paired(parent[s], child[s], "seconds") for s in ("train", "val")]
-    d_time = sum(d for d, _ in times) / 2
-    se_time = (sum(se ** 2 for _, se in times) ** 0.5) / 2
-    if base > 0 and d_time / base <= -TIME_CUT and d_time + Z_RISE * se_time < 0:
-        return {**out, "ok": True, "basis": "time (accuracy unchanged)", "time": round(d_time / base, 3)}
+    needed = Z_RISE_SLOWER if out["time"] > SLOWER else Z_RISE
+    if out["pooled"][0] - needed * out["pooled"][1] > 0:
+        return {**out, "ok": True, "basis": "accuracy" if needed == Z_RISE else "accuracy (enough to outweigh the slowdown)"}
+    if out["pooled"][0] - Z_RISE * out["pooled"][1] > 0:
+        return {**out, "ok": False, "basis": f"accuracy gain too small for {out['time']:+.0%} time per call"}
+    d_time, se_time = paired(pooled(parent), pooled(child), "seconds")
+    if out["time"] <= -TIME_CUT and d_time + Z_RISE * se_time < 0:
+        return {**out, "ok": True, "basis": "time (accuracy unchanged)"}
     return {**out, "ok": False, "basis": "no clear gain"}
 
 
+def relative_time(parent, child):
+    """Relative change of the skill's seconds per call over the episodes both ran (pooled)."""
+    a, b = pooled(parent)["seconds"], pooled(child)["seconds"]
+    shared = [e for e in a if e in b]
+    base = sum(a[e] for e in shared)
+    return (sum(b[e] for e in shared) - base) / base if shared and base > 0 else 0.0
+
+
 def describe(verdict):
-    t, v = verdict["train"], verdict["val"]
-    extra = f", time {verdict['time']:+.0%}" if "time" in verdict else ""
-    return f"{verdict['basis']}: value train {t[0]:+.3f} (se {t[1]:.3f}), val {v[0]:+.3f} (se {v[1]:.3f}){extra}"
+    t, v, p = verdict["train"], verdict["val"], verdict["pooled"]
+    extra = f"; time per call {verdict['time']:+.0%}" if "time" in verdict else ""
+    return (f"{verdict['basis']}: value pooled {p[0]:+.3f} (se {p[1]:.3f}); train {t[0]:+.3f} (se {t[1]:.3f}), "
+            f"val {v[0]:+.3f} (se {v[1]:.3f}){extra}")

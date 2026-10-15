@@ -23,8 +23,8 @@ entered, its plan outline (`skill_prepared`), its tracking and recovery events a
 ## How a version is judged
 
 On held-out episodes you never see as well as the train episodes, compared episode by episode with the
-current version: accepted when neither split's value falls by more than two standard errors and at
-least one rises by more than one and a half; with value unchanged, also when the skill's seconds per
+current version: accepted when neither split's value falls by more than two standard errors and the
+value over train and val together rises by more than one and a half; with value unchanged, also when the skill's seconds per
 call fall by a fifth. So fix failure mechanisms that recur across many episodes, in general ways:
 never add anything about particular scenes, objects, colours or coordinates.
 

@@ -41,3 +41,32 @@ def test_a_faster_skill_with_unchanged_accuracy_is_accepted():
     parent = summaries(values, {f"e{i}": 40.0 + i % 3 for i in range(10)})
     faster = summaries(values, {f"e{i}": 20.0 + i % 3 for i in range(10)})
     assert skill_score.judge(parent, faster)["basis"] == "time (accuracy unchanged)"
+
+
+def test_a_gain_on_both_splits_counts_pooled():
+    def mixed(prefix, count, gained, lost):  # GAINED episodes go 0 -> 1, LOST ones 1 -> 0
+        before = {f"{prefix}{i}": 1.0 if gained <= i < gained + lost else 0.0 for i in range(count)}
+        after = {f"{prefix}{i}": 1.0 if i < gained else 0.0 for i in range(count)}
+        return before, after
+    (t0, t1), (v0, v1) = mixed("t", 40, 6, 2), mixed("v", 20, 3, 1)
+    parent = {"train": {"values": t0, "seconds": {}}, "val": {"values": v0, "seconds": {}}}
+    child = {"train": {"values": t1, "seconds": {}}, "val": {"values": v1, "seconds": {}}}
+    verdict = skill_score.judge(parent, child)
+    assert verdict["train"][0] - 1.5 * verdict["train"][1] < 0  # too small on train alone
+    assert verdict["ok"] and verdict["basis"] == "accuracy"  # but clear over all 60 episodes
+
+
+def test_a_much_slower_version_needs_a_stronger_gain():
+    def side(changed, seconds):
+        train = {f"t{i}": 0.0 for i in range(40)}
+        if changed:  # six episodes gained, one lost: about 1.9 standard errors pooled
+            train.update({f"t{i}": 1.0 for i in range(6)}, t39=0.0)
+        else:
+            train["t39"] = 1.0
+        val = {f"v{i}": 0.0 for i in range(40)}
+        return {"train": {"values": train, "seconds": dict.fromkeys(train, seconds)},
+                "val": {"values": val, "seconds": dict.fromkeys(val, seconds)}}
+    parent = side(False, 60.0)
+    assert skill_score.judge(parent, side(True, 60.0))["ok"]
+    verdict = skill_score.judge(parent, side(True, 100.0))
+    assert not verdict["ok"] and "too small" in verdict["basis"] and verdict["time"] > 0.6

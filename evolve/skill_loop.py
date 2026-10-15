@@ -210,11 +210,12 @@ class SkillLoop:
                      "reason": skill_score.describe(verdict), "verdict": verdict}
             (accepted.append(entry) if verdict["ok"] else self.record(entry))
         if accepted:
-            winner = max(accepted, key=lambda e: e["verdict"]["train"][0] + e["verdict"]["val"][0])
+            winner = max(accepted, key=lambda e: e["verdict"]["pooled"][0])
             for entry in accepted:
                 self.record(entry if entry is winner else {**entry, "status": "rejected",
                             "reason": entry["reason"] + "; passed, but another candidate scored higher"})
-        self.log(f"round {number}: done; best is now {self.best()['id']}")
+        self.log(f"round {number}: done; best is now {self.best()['id']}; "
+                 f"optimisation credits this round {astra.credits_in(round_dir)}")
 
     def run(self, rounds):
         done = max((int(e["round"]) for e in self.archive() if isinstance(e.get("round"), int)), default=0)
