@@ -304,7 +304,8 @@ class CoderCall:
                   f'tool_timeout_sec={int(s.seconds)}, startup_timeout_sec=30, default_tools_approval_mode="approve"}}')
         command = [os.environ.get("HOMEBODY_CODER_CODEX", s.codex), "exec", "--ignore-user-config", "--ignore-rules",
                    "--skip-git-repo-check", "--ephemeral", "--json", "-s", "workspace-write",
-                   "-C", str(self.workspace), "-m", s.model, "-c", f"model_reasoning_effort={s.effort}",
+                   "-C", str(self.workspace), "-m", os.environ.get("HOMEBODY_CODER_MODEL") or s.model,
+                   "-c", f"model_reasoning_effort={s.effort}",
                    "-c", "model_provider=coder", "-c", f"model_providers.coder={provider}",
                    "-c", f"mcp_servers.robot={server}",
                    "-c", "sandbox_workspace_write.exclude_slash_tmp=true",

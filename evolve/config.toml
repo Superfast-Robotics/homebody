@@ -76,3 +76,20 @@ editable = ["src/homebody/toolkit/*", "src/homebody/motion/*", "src/homebody/hel
 model = "gpt-6.1-sol"
 effort = "medium"
 parallel = 24
+
+[skills.pick-dynamic-bonsai]
+# pick plus one coder rescue by a local model: Ternary-Bonsai-2-27B (PQ2_0) served on the A10 by
+# Prism's llama.cpp, reached through the LiteLLM proxy; no API credits, few sessions at once
+name = "pick"
+episodes = "skillbench/pick_episodes"
+coder = true
+coder_model = "bonsai-27b"
+coder_rates = "0,0,0"
+workdir = "pick-dynamic-bonsai"
+prompts = "dynamic"
+editable = ["src/homebody/toolkit/*", "src/homebody/motion/*", "src/homebody/helpers/*",
+            "src/homebody/harness/coder_agents.md", "src/homebody/harness/coder.py",
+            "src/homebody/skills/pick.py", "tests/*"]
+model = "gpt-6.1-sol"
+effort = "medium"
+parallel = 6

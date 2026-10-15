@@ -131,18 +131,21 @@ def rescue(session, skill, arguments, call, request):
 
 
 def coder_credits(task_dir):
-    """Credits of the task's coder calls from Codex's usage records (Sol's rates). A call cut off before
-    Codex reported its usage is charged UNMETERED_CREDITS, a typical full call."""
+    """Credits of the task's coder calls from Codex's usage records, at Sol's rates or HOMEBODY_CODER_RATES
+    ("input,cached,output" per 1M tokens; 0,0,0 for a local model). A call cut off before Codex
+    reported its usage is charged a typical full call."""
+    rates = tuple(float(x) for x in os.environ["HOMEBODY_CODER_RATES"].split(",")) if os.environ.get(
+        "HOMEBODY_CODER_RATES") else SOL_RATES
     total = 0.0
     for events in Path(task_dir).glob("coder/call-*/events.jsonl"):
         turns = [json.loads(line)["usage"] for line in events.read_text(errors="replace").splitlines()
                  if '"turn.completed"' in line]
         if not turns:
-            total += UNMETERED_CREDITS
+            total += UNMETERED_CREDITS * (rates[0] / SOL_RATES[0])
         for usage in turns:
             cached = usage.get("cached_input_tokens", 0)
-            total += ((usage["input_tokens"] - cached) * SOL_RATES[0] + cached * SOL_RATES[1]
-                      + usage["output_tokens"] * SOL_RATES[2]) / 1e6
+            total += ((usage["input_tokens"] - cached) * rates[0] + cached * rates[1]
+                      + usage["output_tokens"] * rates[2]) / 1e6
     return round(total, 3)
 
 
