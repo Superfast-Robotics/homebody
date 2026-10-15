@@ -9,9 +9,6 @@ the robot as real: every execute moves it, and what it changes in the world stay
 - `skills/<target>.py`: the skill you deliver. It starts as the current version (the built-in
   skill, the task's latest version, or a template for a new skill). Edit it in place and prefer
   the smallest change that fixes the problem.
-- `SOURCE_MAP.md`: an outline of `skills/<target>.py` as it starts (each definition's line and
-  first docstring line, where each failure code is returned) and of the source it imports (file,
-  line, signature). Use it to open just the lines you need instead of reading whole files.
 - `lib/`: this task's shared helper modules. Files already there are read-only, because other
   skills of this task may import them; to change one, add a new file (`lib/<name>_v2.py`) and
   import that. A skill imports them as `from lib.<name> import ...`.
