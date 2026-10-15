@@ -41,17 +41,22 @@ SPLITS = ("train", "val")
 
 def coder_digest(split_dir):
     """What the coder changed across a split's episodes: per edited function of the skill, how often and
-    how often that call ended OK, and the diffs of the calls that did."""
+    how often that call ended OK, the diffs of the calls that did, and the recurring fixes: functions changed
+    in two or more episodes that ended successfully (the call OK or the object held), as helper candidates."""
     import difflib
     import re
-    edits, wins, diffs = {}, {}, []
-    for call_dir in sorted(Path(split_dir).rglob("coder/call-*")):
+    split_dir = Path(split_dir)
+    edits, wins, diffs, fixed = {}, {}, [], {}
+    for call_dir in sorted(split_dir.rglob("coder/call-*")):
         start = next(call_dir.glob("start_*.py"), None)
         final = call_dir / "workspace" / "skills" / start.name.removeprefix("start_") if start else None
         if not start or not final.exists():
             continue
         before, after = start.read_text().splitlines(), final.read_text().splitlines()
         result = json.loads((call_dir / "result.json").read_text()) if (call_dir / "result.json").exists() else {}
+        episode = call_dir.relative_to(split_dir).parts[0]
+        outcome = split_dir / episode / "result.json"
+        held = outcome.exists() and bool(json.loads(outcome.read_text()).get("success"))
         defs = [(i, m.group(1)) for i, line in enumerate(before) if (m := re.match(r"\s*def (\w+)", line))]
         touched = set()
         for tag, i1, _, _, _ in difflib.SequenceMatcher(None, before, after).get_opcodes():
@@ -60,12 +65,20 @@ def coder_digest(split_dir):
         for name in touched:
             edits[name] = edits.get(name, 0) + 1
             wins[name] = wins.get(name, 0) + (result.get("code") == "OK")
+            if result.get("code") == "OK" or held:
+                fixed.setdefault(name, []).append(episode)
         if result.get("code") == "OK":
             diffs.append(f"### {call_dir.relative_to(split_dir)}\n{result.get('message', '')}\n```diff\n"
                          + "\n".join(difflib.unified_diff(before, after, "before", "after", lineterm="", n=1))[:6000] + "\n```")
+    recurring = sorted(((n, e) for n, e in fixed.items() if len(set(e)) >= 2), key=lambda kv: -len(set(kv[1])))
     lines = ["# What the coder changed in the skill, across the train episodes", "",
              "| function | calls that edited it | of those, ended OK |", "|---|---|---|"]
     lines += [f"| {name} | {count} | {wins[name]} |" for name, count in sorted(edits.items(), key=lambda kv: -kv[1])]
+    lines += ["", "## Recurring fixes (helper candidates)", "",
+              "Functions the coder changed in two or more episodes that ended successfully (its call OK, or the "
+              "object held at the end). Compare their edits in the episodes' coder-call-1.md: a fix the coder keeps "
+              "rewriting by hand is a candidate for a tested helper or an extension point.", ""]
+    lines += [f"- `{name}`: {len(set(eps))} successful episodes ({', '.join(sorted(set(eps)))})" for name, eps in recurring] or ["none yet"]
     lines += ["", "## The edits of the calls that ended OK", ""] + (diffs or ["none"])
     return "\n".join(lines) + "\n"
 
@@ -174,7 +187,9 @@ class SkillLoop:
         if ws.exists():
             shutil.rmtree(ws)
         ws.mkdir(parents=True)
-        (ws / "BRIEF.md").write_text((HERE / "prompts" / f"{self.prompts}_brief.md").read_text().format(skill=self.skill))
+        (ws / "BRIEF.md").write_text((HERE / "prompts" / f"{self.prompts}_brief.md").read_text().format(
+            skill=self.skill, coder_model=self.cfg.get("coder_model", "Sol"),
+            coder_minutes=f"{int(self.cfg.get('coder_seconds', 300)) / 60:g}"))
         train = skill_score.read(self.work / "results" / best["id"] / "train")
         summary = skill_score.summary(train)
         lines = [f"# {self.skill} on the train episodes with version {best['id']}", "",

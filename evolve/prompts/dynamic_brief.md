@@ -2,7 +2,7 @@
 
 HomeBody drives a simulated Unitree G1 humanoid (MuJoCo; Dex3 three-finger hands; a head RGB-D
 camera). The **dynamic `{skill}`** is the built-in `{skill}` skill plus a coding assistant: when the
-skill refuses, the assistant (Sol, in Codex) gets one call to change the skill's code and run it on the
+skill refuses, the assistant ({coder_model}, in Codex) gets one call to change the skill's code and run it on the
 robot itself (`src/homebody/harness/coder_agents.md` is its standing instructions; its request and the
 reports of its `check`/`execute` tools come from `src/homebody/harness/coder.py`; it builds on
 `src/homebody/toolkit/` (reference: `toolkit/API.md`), `motion/` and `helpers/`). You are improving
@@ -14,14 +14,16 @@ and time.
 Each episode is one generated scene (three families: an object in an open bin; a cup, plate or tray on
 a counter; an object near a backsplash beside a basket). A scripted driver stands the robot at the
 scene's stance (some episodes shifted by up to 8 cm), calls `{skill}` once on a click on the object; if
-it refuses, the assistant gets one call (5 minutes, a few checks, two executes) limited to `{skill}`.
+it refuses, the assistant gets one call ({coder_minutes} minutes, a few checks, two executes) limited to `{skill}`.
 A held object is then carried along the task's carry path. Scored from physics: 0 not lifted, 1 lifted
 but not held at the end, 2 held: success. The physics is deterministic, so every version runs exactly
 the same episodes.
 
 `results.md` lists every train episode: the skill's own result, the assistant's result and message,
 the final stage and the seconds. `coder_edits.md` summarises what the assistant changed across
-episodes and which changes worked, with the diffs of those that did. `episodes/<id>/` holds each
+episodes and which changes worked, with the diffs of those that did, and lists the **recurring fixes**:
+functions the assistant changed in several episodes that ended successfully. A fix it keeps rewriting by
+hand is a strong candidate for a tested helper or an extension point. `episodes/<id>/` holds each
 episode's result.json, the skill's trace.json and one `coder-call-1.md` per assistant session (its
 request, actions, tool calls, code change and answer). `history.md` lists earlier versions and
 their verdicts.
@@ -54,3 +56,19 @@ about particular scenes, objects, colours, coordinates or episodes (a screen rej
 the benchmark's scenes, objects or episodes), and every change must address a mechanism seen across
 several episodes and families. The skill reaches the robot only through the skill `Context`; never use
 simulator ground truth. The contact model and the robot are fixed.
+
+## Directions worth considering
+
+These come from published work on coding agents for robot manipulation. They are options to weigh
+against the evidence in this round's episodes, not requirements; propose one only where the episodes
+show the mechanism it addresses.
+- **Say what changed, in text.** After each execute the assistant sees raw images, and judging the
+  outcome from them is error-prone. A report that states, from the robot's own sensing, what changed
+  (what each hand holds, how far the object rose, contacts, whether the target is still in view) has
+  helped coding agents more than raw images.
+- **Expire stale observations.** A target reference, click or plan taken from one frame should stop being
+  usable once the robot has moved or after a while, failing with a clear message rather than acting on a
+  stale view; this guards retries against acting on the wrong target or branch.
+- **Promote recurring fixes.** Turn a fix from the recurring-fixes list into a tested helper or an
+  extension point, so the assistant calls it instead of rewriting it.
+
