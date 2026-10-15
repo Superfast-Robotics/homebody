@@ -88,3 +88,11 @@ def test_mcp_bridge_lists_tools_and_forwards_calls(tmp_path, monkeypatch):
     assert [tool["name"] for tool in replies[1]["result"]["tools"]] == ["check", "execute"]
     assert received == [{"tool": "check", "arguments": {"hand": "left"}}]
     assert json.loads(replies[2]["result"]["content"][0]["text"]) == {"prepare": {"code": "OK"}}
+
+
+def test_a_final_answer_wrapped_in_prose_is_still_read():
+    from homebody.session.coder import answer_json
+    assert answer_json('{"status": "failed", "summary": "s"}')["status"] == "failed"
+    wrapped = 'Done.\n```json\n{"status": "success", "summary": "a {b}", "state": "", "usage": ""}\n```'
+    assert answer_json(wrapped)["status"] == "success"
+    assert answer_json("no answer here") is None

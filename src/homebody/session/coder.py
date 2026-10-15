@@ -77,6 +77,25 @@ def failed_skill(history):
                for entry in history[start + 1:])
 
 
+def answer_json(text):
+    """The coder's final answer as a dict: the whole text as JSON, else the last JSON object in it (a model
+    whose output format is not enforced may wrap the object in prose or a code fence); None if neither."""
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+    decoder = json.JSONDecoder()
+    found = None
+    for start in (i for i, ch in enumerate(text) if ch == "{"):
+        try:
+            value, _ = decoder.raw_decode(text[start:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict) and "status" in value:
+            found = value
+    return found
+
+
 def refusal(code, message, **details):
     return {"skill": CALL, "code": code, "message": message, "details": details}
 
@@ -410,8 +429,8 @@ class CoderCall:
     def final_message(self):
         path = self.call_dir / "last_message.json"
         try:
-            report = json.loads(path.read_text())
-        except (OSError, json.JSONDecodeError):
+            report = answer_json(path.read_text())
+        except OSError:
             return None
         if not isinstance(report, dict) or report.get("status") not in STATUSES:
             return None
