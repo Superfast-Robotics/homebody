@@ -48,3 +48,15 @@ def test_execute_refuses_a_check_made_before_the_robot_moved():
 def test_execute_refuses_arguments_other_than_the_checked_ones():
     answer = call(checked={"digest": "d", "view": 1, "arguments": {"hand": "left"}}).execute({"hand": "right"})
     assert "arguments you checked" in answer["error"]
+
+
+def test_a_check_stops_planning_when_the_call_runs_out_of_time():
+    import time
+
+    from homebody.session.coder import until
+    from homebody.skills.contract import Planning
+    planning = Planning(arms={}, jaw_samples=None, settings=None, carried={}, cancelled=lambda: False)
+    assert not until(planning, time.monotonic() + 60).cancelled()
+    assert until(planning, time.monotonic() - 1).cancelled()
+    operator = Planning(arms={}, jaw_samples=None, settings=None, carried={}, cancelled=lambda: True)
+    assert until(operator, time.monotonic() + 60).cancelled()  # an operator cancel still counts
