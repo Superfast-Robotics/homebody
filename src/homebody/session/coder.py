@@ -209,6 +209,7 @@ class CoderCall:
         self.registered = None
         self.physics_error = None
         self.frame = None
+        self.view = 0  # numbers the robot's current view; it changes whenever the robot moves
         self.deadline = 0.0
 
     # --- workspace ---
@@ -234,6 +235,7 @@ class CoderCall:
     def observe(self):
         """Capture the current frame and show it in observation/ (what clicks in arguments refer to)."""
         self.frame = self.session.observed.snapshot()
+        self.view += 1
         folder = self.workspace / "observation"
         shutil.rmtree(folder, ignore_errors=True)
         folder.mkdir(parents=True)
@@ -279,8 +281,8 @@ class CoderCall:
         else:
             outcome = {"code": "OK", "plan": short(plan)}
         self.checked = {"digest": self.code_digest(), "module": module, "source": self.skill_path.read_text(),
-                        "version": self.versions}
-        return harness.check_report({"loaded": True, "version": self.versions, "prepare": outcome,
+                        "version": self.versions, "view": self.view, "arguments": arguments}
+        return harness.check_report({"loaded": True, "version": self.versions, "view": self.view, "prepare": outcome,
                                      "checks_left": self.settings.checks - self.checks})
 
     def execute(self, arguments):
@@ -288,9 +290,15 @@ class CoderCall:
             return {"error": f"no executes left ({self.settings.executes} per call)"}
         if self.checked is None or self.checked["digest"] != self.code_digest():
             return {"error": "call check on this exact code first (the files changed since the last check)"}
+        if self.checked["view"] != self.view:
+            return {"error": "the robot moved since your last check, so its clicks and plan refer to an old view: "
+                             "look at observation/ again, then check the arguments on the current view"}
+        if self.checked["arguments"] != arguments:
+            return {"error": "execute the arguments you checked (check these arguments first)"}
         if self.deadline - time.monotonic() < MIN_EXECUTE_SECONDS:
             return {"error": "too little of this call's time is left to run the skill"}
         module, version = self.checked["module"], self.checked["version"]
+        before, carried_before = self.frame, {side: dict(c) for side, c in self.session.context.carried.items()}
         try:
             result = asdict(self.session.runner.run(self.target, arguments, self.frame, skill=module))
         except PhysicsInvalid as error:
@@ -304,11 +312,13 @@ class CoderCall:
                               "message": result["message"][:300]})
         if result["code"] == "OK":
             self.registered = (module, version, self.checked["source"])
+        changed = []
         if self.physics_error is None:
             self.observe()
+            changed = harness.change_report(before, self.frame, carried_before, self.session.context.carried)
         details = {key: value for key, value in result.get("details", {}).items() if key != "traceback"}
         return harness.execute_report({"version": version, "code": result["code"], "message": result["message"],
-                                       "details": short(details, 800),
+                                       "details": short(details, 800), "what_changed": changed, "view": self.view,
                                        "executes_left": self.settings.executes - len(self.executes)})
 
     def where(self, error):

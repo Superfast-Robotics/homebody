@@ -34,9 +34,13 @@ No files, processes, network or simulator.
 ## Tools (MCP server `robot`)
 
 - `check(arguments)`: loads the skill and runs `prepare` on the current view without moving.
-  Use it to catch load errors and refusals. Required before `execute`, on the exact current code.
-- `execute(arguments)`: runs the checked skill on the robot and returns its result. Look at
-  `observation/` again afterwards.
+  Use it to catch load errors and refusals. Required before `execute`, on the exact current code,
+  the current view and the same arguments: every motion starts a new view (its number is in each
+  answer), and clicks and plans from an older view are refused.
+- `execute(arguments)`: runs the checked skill on the robot and returns its result, with
+  `what_changed`: how far the base moved, each hand's closure and finger effort before and after, and
+  what each hand now holds by the skill's own grasp check. Use it with the new `observation/` to judge
+  the outcome.
 
 You may run Python (the interpreter in REQUEST.md, with `PYTHONPATH` set to the source tree) for
 pure computations; it cannot reach the robot. The limits in REQUEST.md are hard: wall time

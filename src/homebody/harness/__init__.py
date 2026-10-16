@@ -14,6 +14,7 @@ from .coder import (
     coder_request,
     execute_report,
 )
+from .change_report import change_report
 from .env import Env, Target
 
 HERE = Path(__file__).resolve().parent
@@ -29,4 +30,4 @@ def agent_instructions(settings):
 
 
 __all__ = ["CODER_HISTORY_STEPS", "CODER_START", "Env", "Target", "agent_instructions", "api_doc", "check_report",
-           "coder_instructions", "coder_request", "execute_report"]
+           "change_report", "coder_instructions", "coder_request", "execute_report"]
