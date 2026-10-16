@@ -89,3 +89,23 @@ def test_a_round_is_promising_only_with_an_accepted_or_clearly_positive_candidat
     assert not promising([{"status": "rejected", "verdict": {"pooled": (0.014, 0.030)}},
                           {"status": "rejected", "reason": "edits outside the skill"}])
     assert not promising([])
+
+
+def test_a_crashed_episode_counts_as_a_failure_not_a_skip(tmp_path):
+    write(tmp_path, "train", "a", stage=2, success=True, call={"code": "OK"})
+    write(tmp_path, "train", "b", error="TypeError: boom")
+    write(tmp_path, "train", "c", setup_failed="stance navigation refused")
+    results = skill_score.read(tmp_path / "train")
+    assert set(results) == {"a", "b"} and results["b"]["stage"] == 0 and not results["b"]["success"]
+    assert skill_score.summary(results)["errors"] == 1
+
+
+def test_a_candidate_that_crashes_in_many_episodes_is_rejected():
+    def side(values, errors):
+        split = {"values": values, "seconds": {k: 10.0 for k in values}, "credit_values": {k: 1.0 for k in values},
+                 "episodes": len(values), "errors": errors}
+        return {"train": split, "val": {**split, "errors": 0}}
+    parent = side({f"e{i}": 1.0 for i in range(20)}, 0)
+    child = side({f"e{i}": 1.0 if i < 2 else 0.0 for i in range(20)}, 18)
+    verdict = skill_score.judge(parent, child)
+    assert not verdict["ok"] and "crashed" in verdict["basis"]

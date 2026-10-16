@@ -15,16 +15,22 @@ TIME_CUT = 0.20  # with unchanged accuracy, credits or time per episode must fal
 COST_SLACK = 0.10  # a time win may not cost more than this fraction extra
 SLOWER = 0.30  # a version this much slower or costlier per episode needs a stronger accuracy gain
 Z_RISE_SLOWER = 2.5
+CRASH_SHARE = 0.05  # a candidate whose code crashes in more than this share of its episodes is rejected
 Z_PROMISING = 1.0  # a first round with no candidate this far up (pooled) or accepted ends the run
 
 
 def read(split_dir):
-    """episode id -> result dict for every scored episode under SPLIT_DIR (setup failures excluded)."""
+    """episode id -> result dict for every scored episode under SPLIT_DIR. Setup failures are left out; an
+    episode the candidate's code crashed counts as a failure (stage 0), so crashing never looks cheaper."""
     results = {}
     for path in sorted(Path(split_dir).glob("*/result.json")):
         result = json.loads(path.read_text())
-        if result.get("setup_failed") or "stage" not in result:
+        if result.get("setup_failed"):
             continue
+        if "stage" not in result:
+            if not result.get("error"):
+                continue
+            result = {**result, "stage": 0, "success": False, "crashed": True}
         results[result["episode"]] = result
     return results
 
@@ -44,7 +50,8 @@ def summary(results):
             code = "OK but dropped"
         codes[code] = codes.get(code, 0) + 1
     coder = [r["coder"] for r in rows if r.get("coder")]
-    return {"episodes": len(rows), "success_rate": round(sum(bool(r["success"]) for r in rows) / len(rows), 3),
+    return {"episodes": len(rows), "errors": sum(bool(r.get("crashed")) for r in rows),
+            "success_rate": round(sum(bool(r["success"]) for r in rows) / len(rows), 3),
             "builtin_success_rate": round(sum(builtin(r) for r in rows) / len(rows), 3),
             "coder_calls": len(coder), "coder_ok": sum(c["code"] == "OK" for c in coder),
             "credits": round(sum(credits(r) for r in rows) / len(rows), 3),
@@ -107,6 +114,9 @@ def judge(parent, child):
     out["pooled"] = (round(d, 4), round(se, 4))
     out["time"] = round(relative(parent, child, "seconds"), 3)
     out["cost"] = round(relative(parent, child, "credit_values"), 3)
+    crashed = sum(child[s].get("errors", 0) for s in ("train", "val"))
+    if crashed > CRASH_SHARE * max(1, sum(child[s].get("episodes", 0) for s in ("train", "val"))):
+        return {**out, "ok": False, "basis": f"crashed in {crashed} episodes"}
     if any(d + Z_DROP * se < 0 for d, se in (out["train"], out["val"])):
         return {**out, "ok": False, "basis": "accuracy dropped"}
     heavier = out["time"] > SLOWER or out["cost"] > SLOWER

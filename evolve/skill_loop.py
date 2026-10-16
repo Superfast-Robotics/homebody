@@ -122,7 +122,9 @@ class SkillLoop:
         self.log(f"archive: {entry['id']} {entry['status']} {entry.get('reason', '')}")
 
     def best(self):
-        accepted = [e for e in self.archive() if e["status"] in ("baseline", "accepted")]
+        archive = self.archive()
+        latest = {e["id"]: e for e in archive}  # a later verdict on the same id (a correction) wins
+        accepted = [e for e in archive if latest[e["id"]] is e and e["status"] in ("baseline", "accepted")]
         if not accepted:
             raise SystemExit("no skill baseline yet: run `python3 -m evolve.skill_loop baseline COMMIT`")
         return accepted[-1]
