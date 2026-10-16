@@ -36,6 +36,7 @@ UNMETERED_CREDITS = 8.2  # a full coder call (~120k uncached, ~480k cached, ~4k 
 LIFT_M = 0.05  # rise of the object's lowest corner that counts as lifted
 HELD_M = 0.03  # still at least this far above its start at the end, in hand and unsupported
 SETTLE_SECONDS = 2.0
+CARRY_RECHECKS = 2  # pick rechecks of an uncertain grasp during a place episode's carry
 
 
 def load_check_manipulation(root):
@@ -197,10 +198,12 @@ def run_place(cm, session, episode, step):
             or not session.context.carried:
         return {"setup_failed": "the built-in pick did not hold the object"}
     side = next(iter(session.context.carried))
-    if step.carry_goal is not None and not execute(
-            "navigate", cm.navigate_arguments(step.carry_goal, step.carry_facing, side), port.snapshot(),
-            evidence_name="carry"):
-        return {"setup_failed": "carry navigation refused"}
+    goals = [(via, None) for via in step.carry_via_goals]
+    if step.carry_goal is not None:
+        goals.append((step.carry_goal, step.carry_facing))
+    for index, (goal, facing) in enumerate(goals):
+        if not carry_to(cm, session, step, side, goal, facing, f"carry_{index}"):
+            return {"setup_failed": "carry navigation refused"}
     if not session.context.carried:
         return {"setup_failed": "the object was dropped during the carry"}
     frame = port.snapshot()
@@ -217,6 +220,25 @@ def run_place(cm, session, episode, step):
     for _ in range(int(SETTLE_SECONDS / 0.02)):
         port.advance(port.epoch, 0.02)
     return {**{k: v for k, v in record.items() if k != "ok"}, "side": side}
+
+
+def carry_to(cm, session, step, side, goal, facing, name, rechecks=CARRY_RECHECKS):
+    """Walk the held object to GOAL; when navigate stops to recheck the grasp (HOLD_UNCERTAIN), repeat pick on
+    the object to re-verify it and walk on, as the agent would. Whether it arrived still holding."""
+    port, execute = session.port, session.execute
+    for attempt in range(rechecks + 1):
+        if execute("navigate", cm.navigate_arguments(goal, facing, side), port.snapshot(),
+                   evidence_name=f"{name}_{attempt}" if attempt else name):
+            return True
+        last = session.outcome["steps"][-1] if session.outcome["steps"] else {}
+        frame = port.snapshot()
+        click = cm.target_click(frame, step.label)
+        if last.get("code") != "HOLD_UNCERTAIN" or click is None or attempt == rechecks:
+            return False
+        if not execute("pick", {"point_normalized_1000": cm.normalized(frame, *click), "hand": side}, frame,
+                       evidence_name=f"{name}_recheck_{attempt}") or side not in session.context.carried:
+            return False
+    return False
 
 
 def score_place(rows, episode, record):
