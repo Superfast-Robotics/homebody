@@ -56,7 +56,11 @@ Never add anything
 about particular scenes, objects, colours, coordinates or episodes (a screen rejects source that names
 the benchmark's scenes, objects or episodes), and every change must address a mechanism seen across
 several episodes and families. The skill reaches the robot only through the skill `Context`; never use
-simulator ground truth. The contact model and the robot are fixed.
+simulator ground truth. The contact model and the robot are fixed. Skill code (`skills/{skill}.py` and
+what it imports) is also loaded as a customised skill under an import allowlist (see
+`session/skill_module.py`: numpy, scipy, math and other pure standard modules, and `homebody` skills, motion,
+helpers, toolkit, harness, primitives); `time`, `os` and similar are refused, and `tests/test_coder.py`
+checks that the built-in skills still load that way.
 
 ## Already in place, and a direction worth considering
 
