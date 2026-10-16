@@ -8,6 +8,8 @@ Three families, each randomised in layout, sizes, heights, colours and robot sta
   counter_clutter objects close to a backsplash and to each other, to move into a side basket
   place_variety  one easy pick and a short walk, then a varied place (carton, tray, mat or raised stand,
                  random size, depth, height and clutter, release anywhere over the opening): place robustness
+  move_variety   one easy pick and an easy place on a second table 1.8-3.2 m away in any direction, with floor
+                 obstacles and sometimes a narrow gap on the way (routable at the robot's clearance): walk robustness
 Every scene folder is a full package (scene.xml, map.npz, semantics.json, physics.json,
 task_scene.json, source.json) plus sequence.json: one transfer step per moved object in the
 format of configs/continuous_four.json, with the evaluator target it is scored against.
@@ -394,8 +396,107 @@ def place_variety(name, rng):
     return scene
 
 
+ROUTE_CLEARANCE = 0.34  # m: the robot's radius (0.28) and a margin, for the route check of move_variety
+
+
+def routable(scene, start_xy, goal_xy, clearance=ROUTE_CLEARANCE):
+    """Whether a path at CLEARANCE from all static geometry joins START_XY and GOAL_XY on the floor grid."""
+    from collections import deque
+
+    from scipy.ndimage import binary_dilation
+    occupied, T = occupancy(scene)
+    radius = int(math.ceil(clearance / RESOLUTION))
+    yy, xx = np.mgrid[-radius:radius + 1, -radius:radius + 1]
+    blocked = binary_dilation(occupied, structure=xx ** 2 + yy ** 2 <= radius ** 2)
+    inv = np.linalg.inv(T)
+
+    def cell(xy):
+        u, v, _ = inv @ np.array([*xy, 1.0])
+        return int(round(v)), int(round(u))
+    start, goal = cell(start_xy), cell(goal_xy)
+    if blocked[start] or blocked[goal]:
+        return False
+    seen, queue = {start}, deque([start])
+    while queue:
+        r, c = queue.popleft()
+        if (r, c) == goal:
+            return True
+        for nr, nc in ((r + 1, c), (r - 1, c), (r, c + 1), (r, c - 1)):
+            if 0 <= nr < blocked.shape[0] and 0 <= nc < blocked.shape[1] and not blocked[nr, nc] and (nr, nc) not in seen:
+                seen.add((nr, nc))
+                queue.append((nr, nc))
+    return False
+
+
+def move_variety(name, rng):
+    """One easy pick (a lone object near the front edge of table A) and an easy place (a large open tray on
+    table B), with a varied walk between them: B 1.8-3.2 m away in any direction and facing any way, and
+    floor obstacles on the way, sometimes leaving only a narrow gap. Rejected unless a route exists."""
+    scene = Scene(name, "move_variety")
+    half_a = rng.uniform(0.3, 0.36)
+    top = table(scene, "pick_table", (0.0, 0.0), rng.uniform(0.74, 0.88), (rng.uniform(0.45, 0.6), half_a))
+    scene.descriptions["pick_table"] = ("Pick table", "Table in front of the robot.")
+    item_colour, item_rgba = colour(rng)
+    kind = rng.choice(("bottle", "packet"))
+    identity, label = f"{item_colour}_{kind}", f"{item_colour.capitalize()} {'bottle' if kind == 'bottle' else 'box'}"
+    item = (bottle if kind == "bottle" else packet)(identity, (rng.uniform(-0.1, 0.1), -half_a + rng.uniform(0.11, 0.15)),
+                                                   top, rng, item_rgba, label)
+    scene.items.append(item)
+    scene.descriptions[identity] = (label, "Alone near the front edge of the pick table.")
+    pick_stance = np.array(stance((0.0, -half_a), (0, 1), item.position[:2]))
+    angle = rng.uniform(-math.pi, math.pi)
+    distance = rng.uniform(1.8, 3.2)
+    b_xy = pick_stance + distance * np.array([math.cos(angle), math.sin(angle)])
+    if np.any(np.abs(b_xy) > ROOM_HALF - 0.7):
+        raise RuntimeError("place table outside the room")
+    yaw = angle - math.pi / 2 + rng.uniform(-2.2, 2.2)  # front edge toward the pick table, or turned up to ~125 deg
+    rot = np.array([[math.cos(yaw), -math.sin(yaw)], [math.sin(yaw), math.cos(yaw)]])
+    half_b = np.array([rng.uniform(0.35, 0.45), rng.uniform(0.28, 0.33)])
+    top_b = table(scene, "place_table", b_xy, rng.uniform(0.72, 0.86), half_b, yaw=yaw, rgba=(0.5, 0.5, 0.55, 1.0))
+    tray_colour, tray_rgba = colour(rng, (item_colour,))
+    tray_xy = b_xy + rot @ np.array([0.0, -half_b[1] + 0.17])
+    tray_inner = np.array([0.15, 0.12])
+    tray_floor = container(scene, "tray", tray_xy, top_b, tray_inner, 0.04, tray_rgba, yaw=yaw)
+    scene.descriptions["place_table"] = ("Place table", "Second table across the room.")
+    scene.descriptions["tray"] = (f"Large {tray_colour} tray", "On the place table.")
+    front_b, normal_b = b_xy + rot @ np.array([0.0, -half_b[1]]), rot @ np.array([0.0, 1.0])
+    place_stance = np.array(stance(front_b, normal_b, tray_xy))
+    route = place_stance - pick_stance
+    across = np.array([-route[1], route[0]]) / np.linalg.norm(route)
+    for i in range(int(rng.integers(1, 4))):  # obstacles near the straight route
+        at = pick_stance + route * rng.uniform(0.3, 0.7) + across * rng.uniform(-0.6, 0.6)
+        if min(np.linalg.norm(at), np.linalg.norm(at - b_xy)) < 0.75:  # not on or against a table
+            continue
+        half = np.array([rng.uniform(0.12, 0.3), rng.uniform(0.12, 0.3), rng.uniform(0.2, 0.5)])
+        scene.statics.append(Box(f"obstacle_{i}", "body", np.array([*at, half[2]]), half, rng.uniform(0, math.pi),
+                                 (0.4, 0.35, 0.3, 1.0)))
+        scene.descriptions[f"obstacle_{i}"] = ("Floor obstacle", "On the floor between the tables.")
+    mid = pick_stance + route * rng.uniform(0.4, 0.6)
+    clear_of_tables = min(np.linalg.norm(mid), np.linalg.norm(mid - b_xy)) > 1.1
+    if clear_of_tables and rng.random() < 0.5:  # a narrow gap across the route, away from both tables
+        gap = rng.uniform(0.75, 0.95)
+        for j, sign in enumerate((-1, 1)):
+            centre = mid + sign * across * (gap / 2 + 0.6)
+            scene.statics.append(Box(f"partition_{j}", "panel", np.array([*centre, 0.6]), np.array([0.6, 0.04, 0.6]),
+                                     math.atan2(across[1], across[0]), (0.85, 0.85, 0.82, 1.0)))
+            scene.descriptions[f"partition_{j}"] = ("Partition", "Panel standing on the floor.")
+    if not routable(scene, pick_stance, place_stance):
+        raise RuntimeError("no route at the robot's clearance")
+    target = interior_target("tray", tray_xy, tray_inner, tray_floor, 0.2)
+    scene.steps.append({
+        "goal": [*pick_stance.round(4), 0.0], "facing": item.position[:2].round(4).tolist(), "hand": "right",
+        "label": identity, "fixture_id": identity,
+        "carry_goal": [*place_stance.round(4), 0.0], "carry_facing": tray_xy.round(4).tolist(),
+        "destination_label": "tray", "release_map_xy_m": tray_xy.round(4).tolist(), "release_delta_z_m": 0.0,
+        "evaluator_target": target})
+    scene.task = f"Carry the {label.lower()} to the {tray_colour} tray on the other table."
+    scene.robot_start = [float(pick_stance[0] + rng.uniform(-0.2, 0.2)), float(pick_stance[1] - rng.uniform(0.4, 0.7)),
+                         math.pi / 2]
+    return scene
+
+
 FAMILIES = {"bin_to_carton": bin_to_carton, "shelf_return": shelf_return, "counter_clutter": counter_clutter,
-            "place_variety": place_variety}
+            "place_variety": place_variety, "move_variety": move_variety}
 
 
 # --- package writer ---
@@ -448,7 +549,8 @@ def write_package(scene, out):
     (out / "sequence.json").write_text(json.dumps({"schema_version": 1, "steps": scene.steps}, indent=1))
 
 
-def write_map(scene, out, floor_z):
+def occupancy(scene, floor_z=0.0):
+    """The static geometry's floor occupancy grid and its pixel-to-map transform."""
     cols = rows = math.ceil(2 * ROOM_HALF / RESOLUTION)
     T = np.array([[RESOLUTION, 0, -ROOM_HALF + RESOLUTION / 2], [0, -RESOLUTION, ROOM_HALF - RESOLUTION / 2], [0, 0, 1]])
     gx, gy = np.meshgrid(T[0, 0] * np.arange(cols) + T[0, 2], T[1, 1] * np.arange(rows) + T[1, 2])
@@ -462,6 +564,11 @@ def write_map(scene, out, floor_z):
         inside = np.all(hull.equations[:, :2] @ np.stack([gx.ravel(), gy.ravel()]) + hull.equations[:, 2:3]
                         <= RESOLUTION, axis=0)
         occupied |= inside.reshape(rows, cols)
+    return occupied, T
+
+
+def write_map(scene, out, floor_z):
+    occupied, T = occupancy(scene, floor_z)
     raster = np.where(occupied[..., None], 60, 220).astype(np.uint8).repeat(3, axis=2)
     np.savez(out / "map.npz", occupancy=occupied, T_map_px=T, raster=raster,
              provenance=json.dumps({"floor_z": floor_z, "metres_per_pixel": RESOLUTION, "frame": "world",
@@ -498,7 +605,7 @@ def main(argv=None):
     for index in range(args.count):
         family = args.families[index % len(args.families)]
         name = f"{args.split}_{index:02d}_{family}"
-        for _ in range(20):
+        for _ in range(200):
             try:
                 scene = FAMILIES[family](name, rng)
                 break
