@@ -78,6 +78,12 @@ def failed_skill(history):
                for entry in history[start + 1:])
 
 
+def until(planning, deadline):
+    """PLANNING whose cancelled() also turns true at DEADLINE (time.monotonic()), so a check's search stops
+    when the call's time runs out instead of holding the episode after the coder has left."""
+    return dataclasses.replace(planning, cancelled=lambda: planning.cancelled() or time.monotonic() > deadline)
+
+
 def answer_json(text):
     """The coder's final answer as a dict: the whole text as JSON, else the last JSON object in it (a model
     whose output format is not enforced may wrap the object in prose or a code fence); None if neither."""
@@ -271,12 +277,14 @@ class CoderCall:
             module = self.loader.load(self.target, self.skill_path, self.versions)
         except SkillLoadError as error:
             return {"loaded": False, "error": str(error)}
-        planning = self.session.context.planning()
+        planning = until(self.session.context.planning(), self.deadline)
         try:
             current = self.session.context.observe(self.frame.epoch)
             plan = module.prepare(arguments, self.frame, current, planning)
         except SkillFailure as failure:
             outcome = {"code": failure.code, "message": str(failure)}
+            if failure.code == "CANCELLED" and time.monotonic() > self.deadline:
+                outcome["message"] = "this call's time ran out while prepare was still searching"
         except Exception as error:  # noqa: BLE001 -- the skill's own failure is the report
             outcome = {"code": "ERROR", "message": f"{type(error).__name__}: {error}", "where": self.where(error)}
         else:
