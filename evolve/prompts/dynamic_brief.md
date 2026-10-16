@@ -57,18 +57,12 @@ the benchmark's scenes, objects or episodes), and every change must address a me
 several episodes and families. The skill reaches the robot only through the skill `Context`; never use
 simulator ground truth. The contact model and the robot are fixed.
 
-## Directions worth considering
+## Already in place, and a direction worth considering
 
-These come from published work on coding agents for robot manipulation. They are options to weigh
-against the evidence in this round's episodes, not requirements; propose one only where the episodes
-show the mechanism it addresses.
-- **Say what changed, in text.** After each execute the assistant sees raw images, and judging the
-  outcome from them is error-prone. A report that states, from the robot's own sensing, what changed
-  (what each hand holds, how far the object rose, contacts, whether the target is still in view) has
-  helped coding agents more than raw images.
-- **Expire stale observations.** A target reference, click or plan taken from one frame should stop being
-  usable once the robot has moved or after a while, failing with a clear message rather than acting on a
-  stale view; this guards retries against acting on the wrong target or branch.
-- **Promote recurring fixes.** Turn a fix from the recurring-fixes list into a tested helper or an
-  extension point, so the assistant calls it instead of rewriting it.
-
+From published work on coding agents for robot manipulation, two ideas are already built into the
+harness: every execute answer has `what_changed` (base motion, each hand's closure and finger effort
+before and after, and what each hand holds), and an execute is refused unless it repeats the checked
+arguments on the current view (every motion starts a new view). Build on them rather than re-adding
+them. One direction remains to weigh against the evidence: **promote recurring fixes**: turn a fix
+from the recurring-fixes list into a tested helper or an extension point, so the assistant calls it
+instead of rewriting it.
