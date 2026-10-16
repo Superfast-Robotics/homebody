@@ -13,8 +13,9 @@ hand, 1 released but not placed in the target, 2 placed (inside, released, suppo
 
 The navigate episode stands the robot at the stance and picks the object with the built-in pick (setup),
 then calls the candidate's navigate once to carry it to the place stance across the room, around floor
-obstacles (with one coder rescue). Scored from the final base pose and physics: 2 arrived and still
-holding, upright; 1 holding but not arrived, or arrived without the object; 0 neither, or fallen.
+obstacles (with one coder rescue). Scored from the final base pose and physics: 2 arrived (the tray within
+placing reach) and still holding, upright; 1 holding but not arrived, or arrived without the object; 0
+neither, or fallen.
 
 The pick episode stands the robot at the episode's stance (the scene's scripted stance plus the
 episode's offset), calls the candidate's pick once on the object (a click on its visible pixels, as
@@ -37,7 +38,6 @@ from dataclasses import asdict
 from pathlib import Path
 from types import SimpleNamespace
 
-import numpy as np
 
 SOL_RATES = (50.0, 2.5, 250.0)  # coder credits per 1M tokens: input, cached input, output
 UNMETERED_CREDITS = 8.2  # a full coder call (~120k uncached, ~480k cached, ~4k output tokens)
@@ -46,8 +46,8 @@ HELD_M = 0.03  # still at least this far above its start at the end, in hand and
 SETTLE_SECONDS = 2.0
 CARRY_RECHECKS = 2  # navigate stops to recheck an uncertain grasp during a place episode's carry
 RECHECK_REPEATS = 3  # pick repeats per stop while it still reports HOLD_UNCERTAIN
-ARRIVE_M = 0.25  # a navigate episode arrives within this of the stance (navigate may snap its goal)
-ARRIVE_RAD = 0.35  # and facing its target within this
+REACH_AHEAD_M = (0.25, 0.65)  # a navigate episode arrives when the release point lies this far ahead of the base
+REACH_SIDE_M = 0.35  # and within this to either side (built-in navigate leaves it 0.37-0.49 ahead, 0.09-0.22 aside)
 
 
 def load_check_manipulation(root):
@@ -311,21 +311,20 @@ def run_move(cm, session, episode, step):
 
 
 def score_move(rows, episode, record):
-    """Navigate's stage from the final base pose and the physics: 2 arrived (within ARRIVE_M and ARRIVE_RAD of
-    the stance, facing its target) still holding the object and upright, 1 holding but not arrived or arrived
-    without it, 0 neither or fallen."""
+    """Navigate's stage from the final base pose and the physics: arrived means the release point over the tray
+    lies within placing reach of the final pose (REACH_AHEAD_M ahead, within REACH_SIDE_M to either side), so the
+    robot can place from where it stands. 2 arrived still holding the object and upright, 1 holding but not
+    arrived or arrived without it, 0 neither or fallen."""
     step = episode["step"]
-    pose = np.asarray(record.get("final_pose") or [np.inf, np.inf, 0.0])
-    goal = np.asarray(step["carry_goal"][:2])
-    facing = math.atan2(step["carry_facing"][1] - pose[1], step["carry_facing"][0] - pose[0])
-    distance = float(np.linalg.norm(pose[:2] - goal))
-    heading = abs(math.remainder(float(pose[2]) - facing, math.tau))
-    arrived = distance <= ARRIVE_M and heading <= ARRIVE_RAD
+    x, y, yaw = record.get("final_pose") or (math.inf, math.inf, 0.0)
+    dx, dy = step["release_map_xy_m"][0] - x, step["release_map_xy_m"][1] - y
+    ahead, left = math.cos(yaw) * dx + math.sin(yaw) * dy, -math.sin(yaw) * dx + math.cos(yaw) * dy
+    arrived = bool(REACH_AHEAD_M[0] <= ahead <= REACH_AHEAD_M[1] and abs(left) <= REACH_SIDE_M)
     _, held, _ = physics_verdict(rows, step["fixture_id"])
     upright = all(r.get("robot_upright", True) for r in rows)
     stage = 0 if not upright else 2 if arrived and held else 1 if arrived or held else 0
-    return {"arrived": arrived, "held": held, "upright": upright, "distance_m": round(distance, 3),
-            "heading_rad": round(heading, 3), "stage": stage}
+    return {"arrived": arrived, "held": held, "upright": upright, "target_ahead_m": round(ahead, 3),
+            "target_left_m": round(left, 3), "stage": stage}
 
 
 def load_evaluator():

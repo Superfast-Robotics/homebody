@@ -5,7 +5,8 @@ leaving a narrow gap (a route at the robot's clearance always exists). A scripte
 the pick stance and picks the object with the built-in pick (setup: an episode whose setup fails is not
 scored), then calls `{skill}` once to carry it to the stance in front of the tray; if it refuses, the
 assistant gets one call ({coder_minutes} minutes, a few checks, two executes) limited to `{skill}`. Scored from
-the final base pose and the physics: 2 arrived (within 0.25 m of the stance, facing the tray within 0.35
-rad) still holding the object and upright (success), 1 holding but not arrived or arrived without the
+the final base pose and the physics: 2 arrived (the release point over the tray 0.25-0.65 m ahead of the
+base and within 0.35 m to either side, so the robot can place from there) still holding the object and
+upright (success), 1 holding but not arrived or arrived without the
 object, 0 neither or the robot fell. The physics is deterministic, so every version runs exactly the same
 episodes.
