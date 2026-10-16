@@ -226,7 +226,8 @@ class CoderCall:
         (self.workspace / "REQUEST.md").write_text(harness.coder_request(
             target=self.target, origin=origin, request=self.arguments,
             task=next((entry["operator_task"] for entry in reversed(self.session.history) if "operator_task" in entry), ""),
-            recent=[json.dumps(rounded({k: entry[k] for k in ("decision", "result") if k in entry})) for entry in recent],
+            recent=[json.dumps(rounded({k: entry[k] for k in ("decision", "result", "what_changed") if k in entry}))
+                    for entry in recent],
             source_root=str(source_root()), python=sys.executable,
             limits={"seconds": self.settings.seconds, "checks": self.settings.checks, "executes": self.settings.executes},
             library=sorted(self.frozen_lib)))

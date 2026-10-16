@@ -949,6 +949,8 @@ def test_call_coder_registers_the_version_that_executed_for_the_task(build, tmp_
     assert "lift: height in metres." in provider.prompts[2] and "1 call left" in provider.prompts[2]
     call = next(session.recorder.path.glob("tasks/*/coder/call-1"))
     assert (call / "workspace" / "AGENTS.md").is_file() and (call / "workspace" / "REQUEST.md").is_file()
+    request = (call / "workspace" / "REQUEST.md").read_text()
+    assert '"what_changed": ["base: ' in request  # what the earlier skill call did to the robot
     assert max(path.name for path in (call / "workspace" / "observation").iterdir()) == "state.json"
     checked = json.loads((call / "tools.json").read_text())[0]
     assert checked["prepare"] == {"code": "OK", "plan": "{'height': 0.1}"} and 0 < checked["seconds_left"] <= 60

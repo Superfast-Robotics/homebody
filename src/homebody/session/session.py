@@ -278,6 +278,7 @@ class Session:
                     break
                 if decision.arguments.get("hand") in ("left", "right"):
                     self.view_side = decision.arguments["hand"]
+                carried_before = {side: dict(carry) for side, carry in self.context.carried.items()}
                 if decision.skill == CALL:
                     result = self.coder.call(decision.arguments, self)
                 elif decision.skill in self.coder.skills:
@@ -285,9 +286,12 @@ class Session:
                                                     skill=self.coder.module(decision.skill)))
                 else:
                     result = asdict(self.runner.run(decision.skill, decision.arguments, frame))
-                self.history.append({"base_pose": frame.base_pose.tolist(), "decision": asdict(decision),
-                                     "epoch": frame.epoch,
-                                     "frame_sequence": frame.sequence, "result": prompted(result)})
+                entry = {"base_pose": frame.base_pose.tolist(), "decision": asdict(decision), "epoch": frame.epoch,
+                         "frame_sequence": frame.sequence, "result": prompted(result)}
+                if decision.skill != CALL and result["code"] != "PHYSICS_INVALID":  # for the coder's request
+                    entry["what_changed"] = harness.change_report(frame, self.observed.snapshot(), carried_before,
+                                                                  self.context.carried)
+                self.history.append(entry)
                 self.recorder.event("result", step=step, simulation_time=self.backend.time, result=result)
                 if result["code"] == "PHYSICS_INVALID":
                     raise PhysicsInvalid(result["message"])

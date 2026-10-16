@@ -93,20 +93,32 @@ def call_skill(session, episode, skill, arguments, frame, request):
     that skill (REQUEST: goal, success, constraints, task). Returns {ok, call, coder?, timing}: ok is the
     skill's own OK, or the coder's when it rescued the call."""
     started = time.monotonic()
+    carried_before = {side: dict(carry) for side, carry in session.context.carried.items()}
     result = session.runner.run(skill, arguments, frame)
     timing = {"call_wall": round(time.monotonic() - started, 1)}
     call = {key: value for key, value in asdict(result).items() if key != "details"}
     call["details"] = {k: v for k, v in (result.details or {}).items() if k != "traceback"}
-    record = {"ok": result.ok, "call": call, "timing": timing}
+    changed = harness_changes(frame, session.port.snapshot(), carried_before, session.context.carried)
+    record = {"ok": result.ok, "call": call, "what_changed": changed, "timing": timing}
     if not result.ok and episode.get("coder", os.environ.get("HOMEBODY_BENCH_CODER") == "1"):
-        coder = rescue(session, skill, arguments, call, request)
+        coder = rescue(session, skill, arguments, call, request, changed)
         record.update(coder=coder, ok=coder["code"] == "OK")
         timing["coder_wall"] = coder["seconds"]
     timing["skill_wall"] = round(timing["call_wall"] + timing.get("coder_wall", 0), 1)
     return record
 
 
-def rescue(session, skill, arguments, call, request):
+def harness_changes(before, after, carried_before, carried_after):
+    """What the skill call did to the robot, as the coder's request shows it (none when the candidate's
+    harness has no change_report)."""
+    try:
+        from homebody.harness import change_report
+    except ImportError:
+        return None
+    return change_report(before, after, carried_before, carried_after)
+
+
+def rescue(session, skill, arguments, call, request, changed=None):
     """One call_coder after a refused SKILL call, limited to that skill, as the agent would make it; its
     result, seconds and credits."""
     from dataclasses import replace
@@ -121,7 +133,8 @@ def rescue(session, skill, arguments, call, request):
     coder = Coder(coder_settings)
     coder.reset(session.task)
     history = [{"operator_task": request["task"]},
-               {"decision": {"text": f"Call {skill}.", "skill": skill, "arguments": arguments}, "result": call}]
+               {"decision": {"text": f"Call {skill}.", "skill": skill, "arguments": arguments}, "result": call,
+                **({"what_changed": changed} if changed else {})}]
     agent = SimpleNamespace(history=history, observed=session.port, recorder=session.recorder,
                             context=session.context, runner=session.runner)
     ask = {"skill": skill, "goal": request["goal"], "success": request["success"],

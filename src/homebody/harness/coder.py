@@ -25,7 +25,7 @@ def coder_request(*, target, origin, request, task, recent, source_root, python,
         "",
         f"The operator's task: {task}",
         "",
-        "The agent's recent steps, oldest first (decision and result):",
+        "The agent's recent steps, oldest first (decision, result, and what_changed: what the step did to the robot):",
         *(f"- {line}" for line in recent or ["none yet"]),
         "",
         (f"Limits for this call: {limits['seconds']:g} s of wall time including motion, "
