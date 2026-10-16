@@ -1,5 +1,5 @@
 """skill_episodes.py SCENES_DIR OUT_DIR SKILL [OFFSETS]: write one episode file per scored step of every
-generated scene under SCENES_DIR (pktrain_* -> train, pkval_* -> val, pktest_* -> test), each at the scene's scripted
+generated scene under SCENES_DIR (<prefix>train_* -> train, <prefix>val_* -> val, <prefix>test_* -> test), each at the scene's scripted
 stance and at OFFSETS-1 more stances shifted by up to 8 cm (seeded per episode, so reproducible)."""
 import json
 import random
@@ -13,7 +13,8 @@ def main(scenes_dir, out_dir, skill, offsets="2"):
     scenes_dir, out_dir = Path(scenes_dir), Path(out_dir)
     count = 0
     for scene in sorted(p for p in scenes_dir.iterdir() if (p / "sequence.json").exists()):
-        split = {"pktrain": "train", "pkval": "val", "pktest": "test"}.get(scene.name.split("_")[0])
+        prefix = scene.name.split("_")[0]  # pktrain_*, pltrain_* ... -> train, val, test
+        split = next((name for name in ("train", "val", "test") if prefix.endswith(name)), None)
         if split is None:
             continue
         family = scene.name.split("_", 2)[2]

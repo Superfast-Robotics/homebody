@@ -6,6 +6,8 @@ Three families, each randomised in layout, sizes, heights, colours and robot sta
   bin_to_carton  objects standing in an open bin on a table, to load into an open carton
   shelf_return   cups and plates on a counter or tray, to return to a shelf unit's levels
   counter_clutter objects close to a backsplash and to each other, to move into a side basket
+  place_variety  one easy pick and a short walk, then a varied place (carton, tray, mat or raised stand,
+                 random size, depth, height and clutter, release anywhere over the opening): place robustness
 Every scene folder is a full package (scene.xml, map.npz, semantics.json, physics.json,
 task_scene.json, source.json) plus sequence.json: one transfer step per moved object in the
 format of configs/continuous_four.json, with the evaluator target it is scored against.
@@ -331,7 +333,69 @@ def counter_clutter(name, rng):
     return scene
 
 
-FAMILIES = {"bin_to_carton": bin_to_carton, "shelf_return": shelf_return, "counter_clutter": counter_clutter}
+def place_variety(name, rng):
+    """One easy pick (a lone object near the front edge of an open table) and a short walk along the edge,
+    then a varied place: a carton, low tray, flat mat or raised stand of random size, depth and height,
+    sometimes with clutter beside it, and a release point anywhere over its opening."""
+    scene = Scene(name, "place_variety")
+    half_y = rng.uniform(0.3, 0.36)
+    top = table(scene, "worktable", (0.0, 0.0), rng.uniform(0.74, 0.9), (rng.uniform(0.8, 1.0), half_y))
+    scene.descriptions["worktable"] = ("Work table", "Table in front of the robot.")
+    side = rng.choice((-1, 1))
+    item_colour, item_rgba = colour(rng)
+    kind = rng.choice(("bottle", "packet"))
+    identity = f"{item_colour}_{kind}"
+    label = f"{item_colour.capitalize()} {'bottle' if kind == 'bottle' else 'box'}"
+    maker = bottle if kind == "bottle" else packet
+    item = maker(identity, (side * -rng.uniform(0.0, 0.15), -half_y + rng.uniform(0.11, 0.15)), top, rng, item_rgba, label)
+    scene.items.append(item)
+    scene.descriptions[identity] = (label, "Alone near the front edge of the work table.")
+    dest_kind = rng.choice(("carton", "tray", "mat", "stand"))
+    inner = np.array([rng.uniform(0.07, 0.16), rng.uniform(0.07, 0.13)])
+    dest_xy = np.array([side * rng.uniform(0.35, 0.6), -half_y + inner[1] + rng.uniform(0.04, 0.16)])
+    dest_colour, dest_rgba = colour(rng, (item_colour,))
+    if dest_kind in ("carton", "tray"):
+        wall = rng.uniform(0.1, 0.22) if dest_kind == "carton" else rng.uniform(0.02, 0.045)
+        floor = container(scene, "destination", dest_xy, top, inner, wall, dest_rgba)
+        target = interior_target("destination", dest_xy, inner, floor, wall + 0.15)
+        text = f"Open {dest_colour} {'carton' if dest_kind == 'carton' else 'tray'}"
+    else:
+        height = 0.006 if dest_kind == "mat" else rng.uniform(0.08, 0.25)
+        scene.statics.append(Box("destination", "surface", np.array([*dest_xy, top + height / 2]),
+                                 np.array([*inner, height / 2]), 0.0, dest_rgba))
+        target = interior_target("destination", dest_xy, inner, top + height, 0.25)
+        text = f"{dest_colour.capitalize()} {'mat' if dest_kind == 'mat' else 'stand'}"
+    scene.descriptions["destination"] = (text, f"{'Left' if side > 0 else 'Right'} part of the work table.")
+    if rng.random() < 0.5:  # clutter beside the destination, on its far side from the object
+        used, makers = {item_colour, dest_colour}, []
+        for _ in range(int(rng.integers(1, 4))):
+            cname, rgba = colour(rng, used)
+            used.add(cname)
+            ckind = rng.choice(("bottle", "packet"))
+            cmaker = bottle if ckind == "bottle" else packet
+            makers.append(lambda xy, m=cmaker, i=f"{cname}_{ckind}", r=rgba,
+                          lab=f"{cname.capitalize()} {'bottle' if ckind == 'bottle' else 'box'}": m(i, xy, top, rng, r, lab))
+        outer = dest_xy[0] + side * (inner[0] + 0.06)
+        lo = np.array([min(outer, outer + side * 0.22), -half_y + 0.04])
+        hi = np.array([max(outer, outer + side * 0.22), half_y - 0.04])
+        for clutter in pack(rng, lo, hi, makers):
+            scene.items.append(clutter)
+            scene.descriptions[clutter.identity] = (clutter.label, f"Beside the {text.lower()}.")
+    release = dest_xy + rng.uniform(-0.6, 0.6, 2) * inner
+    front = (0.0, -half_y)
+    scene.steps.append({
+        "goal": [*stance(front, (0, 1), item.position[:2]), 0.0], "facing": item.position[:2].round(4).tolist(),
+        "hand": "right", "label": identity, "fixture_id": identity,
+        "carry_goal": [*stance(front, (0, 1), dest_xy), 0.0], "carry_facing": dest_xy.round(4).tolist(),
+        "destination_label": "destination", "release_map_xy_m": release.round(4).tolist(), "release_delta_z_m": 0.0,
+        "evaluator_target": target})
+    scene.task = f"Put the {label.lower()} {'in' if dest_kind in ('carton', 'tray') else 'on'} the {text.lower()}."
+    scene.robot_start = [float(rng.uniform(-0.3, 0.3)), float(-rng.uniform(1.2, 1.6)), math.pi / 2]
+    return scene
+
+
+FAMILIES = {"bin_to_carton": bin_to_carton, "shelf_return": shelf_return, "counter_clutter": counter_clutter,
+            "place_variety": place_variety}
 
 
 # --- package writer ---
