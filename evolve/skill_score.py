@@ -15,6 +15,7 @@ TIME_CUT = 0.20  # with unchanged accuracy, credits or time per episode must fal
 COST_SLACK = 0.10  # a time win may not cost more than this fraction extra
 SLOWER = 0.30  # a version this much slower or costlier per episode needs a stronger accuracy gain
 Z_RISE_SLOWER = 2.5
+Z_PROMISING = 1.0  # a first round with no candidate this far up (pooled) or accepted ends the run
 
 
 def read(split_dir):
@@ -136,3 +137,15 @@ def describe(verdict):
     extra = f"; time {verdict['time']:+.0%}, cost {verdict.get('cost', 0):+.0%} per episode"
     return (f"{verdict['basis']}: value pooled {p[0]:+.3f} (se {p[1]:.3f}); train {t[0]:+.3f} (se {t[1]:.3f}), "
             f"val {v[0]:+.3f} (se {v[1]:.3f}){extra}")
+
+
+
+def promising(entries):
+    """Whether a round produced a reasonable candidate: one accepted, or one whose pooled value rose by more
+    than Z_PROMISING standard errors. A first round without one is not worth following with more."""
+    for entry in entries:
+        d, se = (entry.get("verdict") or {}).get("pooled", (0.0, 0.0))
+        if entry.get("status") == "accepted" or d - Z_PROMISING * se > 0:
+            return True
+    return False
+

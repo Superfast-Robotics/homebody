@@ -80,3 +80,12 @@ def test_equal_accuracy_with_much_cheaper_coder_calls_is_accepted():
         return {"train": split, "val": split}
     assert skill_score.judge(side(5.0), side(2.0))["basis"] == "cost (accuracy unchanged)"
     assert not skill_score.judge(side(5.0), side(4.8))["ok"]
+
+
+def test_a_round_is_promising_only_with_an_accepted_or_clearly_positive_candidate():
+    from evolve.skill_score import promising
+    assert promising([{"status": "accepted", "verdict": {"pooled": (0.01, 0.03)}}])
+    assert promising([{"status": "rejected", "verdict": {"pooled": (0.032, 0.030)}}])  # more than one se up
+    assert not promising([{"status": "rejected", "verdict": {"pooled": (0.014, 0.030)}},
+                          {"status": "rejected", "reason": "edits outside the skill"}])
+    assert not promising([])

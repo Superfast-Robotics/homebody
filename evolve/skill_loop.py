@@ -345,6 +345,10 @@ class SkillLoop:
         done = max((int(e["round"]) for e in self.archive() if isinstance(e.get("round"), int)), default=0)
         for number in range(done + 1, done + rounds + 1):
             self.round(number)
+            if number == 1 and not skill_score.promising([e for e in self.archive() if e.get("round") == 1]):
+                self.log("round 1 produced no reasonable candidate (none accepted or more than one standard "
+                         "error up); stopping instead of running more rounds")
+                return
 
 
 def main(argv=None):
