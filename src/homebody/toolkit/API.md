@@ -40,3 +40,22 @@ follow with `move_path(ctx, epoch, side, rows, planned=True)`.
 
 Poses are 4x4 numpy arrays. Torso frame: x forward, y left, z up, metres. Palm frame: column 0
 the finger direction, column 1 the closing axis.
+
+### Bounded planning
+
+`from homebody.toolkit.search import SearchBudget` works in customized skills without a
+`time` import. `SearchBudget(seconds, reserve=0, cancelled=planning.cancelled)` is a callable
+stop gate; `child(seconds)` bounds one stage or branch within its parent's deadline.
+`report()` returns elapsed seconds, budget exhaustion and cancellation. Pass the gate into
+cooperative searches such as `approach_path`; it cannot interrupt an outstanding IK call.
+Reserve time for motion, verification and the final report before starting another search.
+
+Pick's `plan_target(..., budget=budget)` is a current-stance feasibility probe using calibrated
+width, exact pre/closing IK, descent clearance and approach routing. `NO_GRASP` includes gate
+counts, representative endpoint reach deficits, route blockers, work completed and search
+completeness. An incomplete search is not proof of physical infeasibility. The default planning
+allowance is 60 seconds (180 seconds less a 120-second motion/verification reserve); preparation
+first spends at most 15 seconds probing before considering base motion. Route branches receive
+at most 3 seconds each; feasible endpoints route immediately in candidate generation order
+instead of waiting for a global ranking. These are scheduling limits, not geometric tolerances. Pass a smaller
+budget based on remaining session time; the default does not know the caller's session deadline.
