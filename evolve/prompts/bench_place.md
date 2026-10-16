@@ -9,3 +9,10 @@ it refuses, the assistant gets one call ({coder_minutes} minutes, a few checks, 
 volume: 0 still in hand, 1 released but not placed in the target (outside it, unsupported or still
 moving), 2 placed: inside the target, released, supported and still (success). The physics is
 deterministic, so every version runs exactly the same episodes.
+
+What the baseline shows: the largest group of failures is place returning OK while the object lands
+outside the target (in about a third of the train episodes that were not placed). The assistant is
+called only when the skill refuses, so these are never rescued. A place that verifies its own result
+from what the robot senses (where the object came to rest relative to the destination it aimed for)
+and refuses when it missed would both report honestly and hand those episodes to the assistant;
+better targeting of the release would avoid the miss in the first place.
