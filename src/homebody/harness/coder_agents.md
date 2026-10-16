@@ -53,13 +53,35 @@ at least 30 seconds remain, even if you are still exploring (status failed, with
 1. Read REQUEST.md, the observation and the skill's current source. Work out why the earlier
    attempts failed from their results.
 2. Change as little as needed; reuse the built-in skills' helpers instead of rewriting them.
-3. `check` until `prepare` returns OK with the arguments you intend, then `execute`.
+3. Make a targeted change, `check` it with the intended arguments, then `execute` when OK.
 4. Judge the result against the success criteria with the execute result and the new observation.
 5. Stop as soon as one holds:
    - success: an execute returned OK and the success criteria are met;
    - failed: you could not reach the goal within the limits; say what you learned;
    - infeasible: no skill can reach the goal from here (say why), so no execute is worth it.
    Do not spend an execute on code you do not expect to work.
+
+For a pick reach or search refusal, distinguish the preferred stance heuristic from exact
+pre-grasp IK, closing IK, descent clearance and route clearance. Use `plan_target(..., budget=...)`
+and `toolkit.search.SearchBudget` (see toolkit/API.md) for bounded current-stance probing.
+Set the planning allowance from `seconds_left`, reserving time for execution, verification and
+at least 30 seconds for your answer; never start a check that can consume the remaining call.
+Read gate counts, endpoint deficits, route blockers and `alternatives_unexplored` before changing
+candidate generation. Failed IK or an incomplete search does not prove all grasps impossible.
+Do not repeatedly expand candidates while the same gate remains limiting. Use `diagnose_ik`
+on a representative endpoint if orientation versus positional reach remains uncertain.
+After an execution-only failure, an unchanged baseline check cannot diagnose the live failure:
+inspect the execution report and make a targeted correction before spending another check.
+A passing planning check still requires execution and fresh verification to establish success.
+
+For a pick tracking refusal, diagnose the initial approach failure separately from a later
+reset/replanning failure. `tracking` reports the preceding mode, age of the last supported or
+partial view, camera freshness allowance, remaining distance, visibility and measured occlusion
+fractions. A supported view may become arm-occluded directly; preserve ray evidence, the final
+approach corridor and the cumulative travel/time bounds. Do not extend blind motion merely because
+reset failed. Replanning keeps the target label and capture anchor but requires fresh supported
+geometry. An old click is not a target reference in a changed view: if the target is absent, do not
+substitute a background click or plan from stored geometry alone.
 
 ## Final answer
 
