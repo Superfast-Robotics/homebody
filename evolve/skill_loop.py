@@ -27,10 +27,17 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from . import astra, skill_score
-from .loop import Loop, git
+from .loop import REPO, Loop, git
 from .workspace import coder_call
 
 RECORDING = threading.Lock()
+SPLIT_PREFIXES = {f"{family}{split}" for family in ("pk", "pl", "pl2", "mv") for split in ("train", "val", "test")}
+
+
+def in_source(commit, word):
+    """Whether WORD already occurs (as a whole word) in COMMIT's src tree."""
+    return subprocess.run(["git", "grep", "-q", "-w", word, commit, "--", "src"], cwd=REPO,
+                          capture_output=True).returncode == 0
 
 HERE = Path(__file__).resolve().parent
 COMPLETE = ".complete"
@@ -252,8 +259,9 @@ class SkillLoop:
         """Benchmark names (scenes, objects, episodes, split prefixes) in the source lines a patch adds."""
         added = [line[1:] for line in git("diff", base, commit, "--", "src").splitlines()
                  if line.startswith("+") and not line.startswith("+++")]
-        names = {n for n in self.benchmark_names() if len(n) > 3} | {"pktrain", "pkval", "pktest"}
-        return sorted({n for n in names for line in added if n in line})
+        names = {n for n in self.benchmark_names() if len(n) > 3}
+        names = {n for n in names if not in_source(base, n)} | SPLIT_PREFIXES  # words the code already uses are not
+        return sorted({n for n in names for line in added if n in line})          # benchmark-specific
 
     def allowed(self, files):
         patterns = [p.format(skill=self.skill) for p in self.editable]

@@ -34,3 +34,11 @@ def test_a_function_fixed_in_several_successful_episodes_is_listed_as_a_helper_c
 def test_no_recurring_fixes_says_so(tmp_path):
     call(tmp_path, "bin_a", BASE.replace("return h", "return 2 * h"), code="OK", held=True)
     assert "none yet" in coder_digest(tmp_path).split("## Recurring fixes")[1]
+
+
+def test_the_generality_screen_ignores_words_the_parent_code_already_uses():
+    from evolve.loop import git
+    from evolve.skill_loop import in_source
+    head = git("rev-parse", "HEAD")
+    assert in_source(head, "destination")  # place.py's own vocabulary
+    assert not in_source(head, "pltrain_00_place_variety")
