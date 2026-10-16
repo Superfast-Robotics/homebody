@@ -94,6 +94,17 @@ reset failed. Replanning keeps the target label and capture anchor but requires 
 geometry. An old click is not a target reference in a changed view: if the target is absent, do not
 substitute a background click or plan from stored geometry alone.
 
+For place, preserve `Plan.point` as the original world destination. `Plan.palm` is the
+selected wrist pose; compute its payload centre with `palm_to_payload`, not the wrist
+translation. The carry's `place_target` retains the original metric goal for identical
+arguments across an execution retry; changing arguments deliberately selects a new goal.
+Keep that anchor when repairing a failed approach. Before increasing pullback, use
+`toolkit.release.release_alternatives` to test payload-centred tilt/height alternatives;
+its depth ranking is only a preference, and still requires loaded collision checks.
+Compare the measured payload to the selected release before opening. A search displacement
+must not redefine the verification goal. Empty-hand evidence alone establishes release,
+not destination containment; judge the observed landing against the original destination.
+
 ## Final answer
 
 A JSON object: `status` (success, failed or infeasible); `summary` (what you changed, what

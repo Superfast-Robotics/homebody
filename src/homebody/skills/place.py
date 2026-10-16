@@ -27,6 +27,7 @@ from homebody.motion.carry import (
     recovery_result,
 )
 from homebody.primitives.observations import FreshEvidence
+from homebody.toolkit.release import release_alternatives
 from homebody.vlm.topdown import normalized_click
 
 from . import navigate
@@ -50,8 +51,8 @@ PROMPT = ('place: hand, the holding hand, and one destination. release_point_100
 
 @dataclass(frozen=True)
 class Plan:
-    """One checked release. `pre_joints` is None beyond reach, `point` is where the landing is
-    verified (world), and `released` is the let-go object's (centre, footprint radius, top)."""
+    """One checked release. `pre_joints` is None beyond reach, `point` is the original destination used to
+    verify landing (world), and `released` is the let-go object's (centre, footprint radius, top)."""
     epoch: int
     side: str
     label: int
@@ -61,7 +62,10 @@ class Plan:
     palm: np.ndarray
     support: bool = True
     released: tuple | None = None
-    short_m: float = 0.0  # how far short of the requested point a beyond-reach release was
+    short_m: float = 0.0  # selected/measured XY displacement from the original goal
+    target_key: tuple | None = None
+    measured: np.ndarray | None = None
+    selected_point: np.ndarray | None = None
 
 
 def prepare(arguments, selected, current, planning):
@@ -80,10 +84,14 @@ def prepare(arguments, selected, current, planning):
         raise SkillFailure("INVALID_ARGUMENT",
                            "The support click selects the carried object; click the surface to place it on")
 
-    return plan_release(side, surface, point, height, selected, current, planning)
+    key = (tuple(point), height) if surface is None else None
+    saved = carried.get("place_target")
+    target = saved[1] if key is not None and saved is not None and saved[0] == key else None
+    return replace(plan_release(side, surface, point, height, selected, current, planning,
+                                target_world=target), target_key=key)
 
 
-def plan_release(side, surface, point, height, selected, current, planning):
+def plan_release(side, surface, point, height, selected, current, planning, target_world=None):
     """The checked release for a destination: a reachable pose, its pre-pose and a clear arm path."""
     carried, arm, settings = planning.carried[side], planning.arms[side], planning.settings
     withdraw = current.palm(arm, side)
@@ -92,15 +100,26 @@ def plan_release(side, surface, point, height, selected, current, planning):
         search = ReleaseSearch.support_click(settings)
     else:
         palm = drop_palm(selected, point, height, carried, withdraw)
+        if target_world is not None:
+            palm[:3, 3] = target_world - payload_offset(carried, palm[:3, :3])[0]
+        release = (palm @ carried["palm_to_payload"])[:3, 3].copy()
         search = ReleaseSearch.metric_drop(settings)
 
     seed = current.arm_joints(side)
     center_offset = payload_offset(carried, withdraw[:3, :3])[0]
-    pre, palm, pre_q, grasp_q = release_pose(arm, current.world_torso, palm, center_offset, seed, search)
-    if surface is None:
-        release = palm[:3, 3] + palm[:3, :3] @ carried["palm_to_payload"][:3, 3]
     clearance = Clearance(current, planning.arms, side, settings.collision, (carried["label"],), carried,
                           exempt_start=True)
+    def alternatives():
+        if surface is None:
+            points = points_in(current.world_torso, clearance.observed_points)
+            yield from release_alternatives(
+                palm, carried, points, max(abs(t) for t in search.twists),
+                max(abs(d) for d in search.drops), settings.collision.cloud_margin)
+
+    pre, palm, pre_q, grasp_q = release_pose(
+        arm, current.world_torso, palm, center_offset, seed, search, alternatives())
+    selected_center = (palm @ carried["palm_to_payload"])[:3, 3]
+    short = float(np.linalg.norm(selected_center[:2] - release[:2]))
     blocked = None if grasp_q is None else (clearance.path_violation(seed, pre_q) or
                                             clearance.path_violation(pre_q, grasp_q))
     if blocked:
@@ -108,7 +127,8 @@ def plan_release(side, surface, point, height, selected, current, planning):
     if grasp_q is None:  # beyond reach: let go where the arm gets
         pre = palm.copy()
         pre[2, 3] += search.approach_lift
-    return Plan(current.epoch, side, carried["label"], release, pre_q, pre, palm, surface is not None)
+    return Plan(current.epoch, side, carried["label"], release, pre_q, pre, palm, surface is not None,
+                short_m=short, selected_point=selected_center.copy())
 
 
 def execute(plan, ctx):
@@ -119,6 +139,8 @@ def execute(plan, ctx):
         return replace(recovery_result("place", status), details={"hand": plan.side})
     epoch, side, held, settings = plan.epoch, plan.side, (plan.label,), ctx.settings
 
+    if plan.target_key is not None:
+        ctx.carried[side]["place_target"] = (plan.target_key, plan.point.copy())
     ctx.stage("Approaching support" if plan.support else "Approaching release point")
     reach = servo if plan.pre_joints is not None else partial(servo_best_effort, position_only=True)
     if plan.pre_joints is not None:
@@ -128,10 +150,13 @@ def execute(plan, ctx):
         ctx.stage("Lowering")
         reach(ctx, epoch, side, plan.palm, exclude_labels=held)
     center_in_palm = attached_center(plan, ctx)
-    if plan.pre_joints is None:  # verify the landing under where the arm got
-        released = points_in(ctx.observe(epoch).palm(ctx.arms[side], side), center_in_palm)
-        plan = replace(plan, point=np.r_[released[:2], plan.point[2]],
-                       short_m=float(np.linalg.norm(released[:2] - plan.point[:2])))
+    measured = points_in(ctx.observe(epoch).palm(ctx.arms[side], side), center_in_palm)
+    expected = points_in(plan.palm, ctx.carried[side]["palm_to_payload"][:3, 3])
+    error = float(np.linalg.norm(measured[:2] - expected[:2]))
+    if plan.pre_joints is not None and error > settings.placement.xy_tolerance:
+        raise SkillFailure("ARM_NOT_REACHED", f"Payload XY differs from selected release by {error:.3f} m")
+    plan = replace(plan, measured=measured,
+                   short_m=float(np.linalg.norm(measured[:2] - plan.point[:2])))
 
     ctx.carried[side]["state"] = CarryState.UNCERTAIN
     ctx.stage("Releasing")
@@ -258,12 +283,26 @@ class ReleaseSearch:
                    placement.reach_margin_steps * placement.pull_step, 0.)
 
 
-def release_pose(arm, world_torso, palm, center_offset, seed, search):
+def release_pose(arm, world_torso, palm, center_offset, seed, search, alternatives=()):
     """The first solvable (pre, palm, pre_q, grasp_q) of the search, or (palm, palm, None, None).
-    CENTER_OFFSET is palm to object centre."""
+    CENTER_OFFSET is palm to object centre in world axes. ALTERNATIVES are tried
+    after unshifted yaw/drop candidates, before any pullback, without an outward probe."""
     toward = world_torso[:2, 3] - palm[:2, 3]
     toward /= max(np.linalg.norm(toward), 1e-9)
-    for pull, drop, twist in product(search.pulls, search.drops, search.twists):
+
+    def candidates():
+        for pull, drop, twist in product(search.pulls, search.drops, search.twists):
+            if pull > 0:
+                break
+            yield pose(pull, drop, twist), search.margin
+        # The outward robustness probe must not force a reachable target to move.
+        for candidate in alternatives:
+            yield candidate, 0.
+        for pull, drop, twist in product(search.pulls, search.drops, search.twists):
+            if pull > 0:
+                yield pose(pull, drop, twist), search.margin
+
+    def pose(pull, drop, twist):
         c, s = np.cos(twist), np.sin(twist)
         turned = np.array([[c, -s, 0.], [s, c, 0.], [0., 0., 1.]])
         candidate = palm.copy()
@@ -271,9 +310,12 @@ def release_pose(arm, world_torso, palm, center_offset, seed, search):
         candidate[:3, 3] = palm[:3, 3] + center_offset - turned @ center_offset
         candidate[:2, 3] += pull * toward
         candidate[2, 3] -= drop
+        return candidate
+
+    for candidate, margin in candidates():
         pre, probe = candidate.copy(), candidate.copy()
         pre[2, 3] += search.approach_lift
-        probe[:2, 3] -= search.margin * toward
+        probe[:2, 3] -= margin * toward
         pre_q = arm.solve(inverse(world_torso) @ pre, seed)
         grasp_q = None if pre_q is None else arm.solve(inverse(world_torso) @ candidate, pre_q)
         if grasp_q is not None and arm.solve(inverse(world_torso) @ probe, grasp_q) is not None:
@@ -322,8 +364,8 @@ def verify_settled(plan, ctx, center_in_palm):
             if failed is not None:
                 return failed
             if plan.support:
-                return placed(plan, "it settled on the support")
-            return placed(plan, "it settled below the release point")
+                return placed(plan, "it settled on the support", settling.previous)
+            return placed(plan, "it settled below the release point", settling.previous)
     if not settling.seen:
         return unseen_release(plan, ctx, settling.open_hand.count)
     raise SkillFailure("PLACEMENT_NOT_VERIFIED",
@@ -395,11 +437,15 @@ def unseen_release(plan, ctx, open_count):
     return placed(plan, "the hand opened and is empty")
 
 
-def placed(plan, message):
+def placed(plan, message, landing=None):
     """An OK result saying what was verified."""
-    short = f", {plan.short_m:.2f} m short of the requested point, as far as the arm reached" if plan.short_m else ""
+    short = f", {plan.short_m:.2f} m XY displacement from the requested point" if plan.short_m else ""
     return Result("place", "OK", f"Released from the {plan.side} hand; {message}{short}.",
-                  {"hand": plan.side, "short_of_point_m": round(plan.short_m, 3)})
+                  {"hand": plan.side, "short_of_point_m": round(plan.short_m, 3),
+                   "target_world": plan.point.tolist(),
+                   "selected_payload_world": None if plan.selected_point is None else plan.selected_point.tolist(),
+                   "observed_landing_world": None if landing is None else landing.tolist(),
+                   "measured_payload_world": None if plan.measured is None else plan.measured.tolist()})
 
 
 def complete_return(plan, ctx):

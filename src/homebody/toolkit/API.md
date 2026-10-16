@@ -91,3 +91,11 @@ first spends at most 15 seconds probing before considering base motion. Route br
 at most 3 seconds each; feasible endpoints route immediately in candidate generation order
 instead of waiting for a global ranking. These are scheduling limits, not geometric tolerances. Pass a smaller
 budget based on remaining session time; the default does not know the caller's session deadline.
+
+`toolkit.release.release_alternatives(palm, record, points, angle, height, margin)` returns
+at most twelve world palm poses with unchanged payload XY, tilted about the attached payload
+centre at the original height and ±height. Supply world depth excluding the held label;
+use the existing angular/height search allowances. Visible geometry under each footprint
+ranks poses by intrusion above the payload bottom, then height change. Missing depth is
+neutral evidence, not proof of clearance or a refusal. Callers must still check IK and
+loaded collision clearance. The place skill invokes this bounded search before pullback.
