@@ -1,7 +1,8 @@
 """The pick skill: walk in when needed, plan a grasp from visible depth, approach, close, lift,
 verify the hold and stow the carry."""
+import json
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 
 import numpy as np
 from scipy.spatial import cKDTree
@@ -307,7 +308,12 @@ def approach_or_replan(plan, ctx):
         except SkillFailure as error:
             if error.code not in RETRIED_APPROACH_FAILURES or attempt == attempts:
                 raise
-            plan, target = replan(plan, ctx, target, error, attempt + 1)
+            try:
+                plan, target = replan(plan, ctx, target, error, attempt + 1)
+            except SkillFailure as recovery_error:
+                raise SkillFailure(recovery_error.code,
+                                   f"Initial approach failure [{error.code}]: {error}; "
+                                   f"recovery failure [{recovery_error.code}]: {recovery_error}") from recovery_error
     return plan, target, frame
 
 
@@ -381,6 +387,7 @@ class PickTarget:
         self.last_supported_time = None
         self.window = None
         self.shift = np.zeros(3)
+        self.occlusion = None
 
     def begin_descent(self):
         """Enter the descent, where a partial view is bounded rather than refused."""
@@ -443,15 +450,31 @@ class PickTarget:
     def _admit_hidden(self, frame, points, palm, goal):
         """Allow a blind finish only when the arm hides the target, the palm is close and the
         target was seen recently. Otherwise TARGET_LOST."""
-        if not self._arm_hides(frame, points):
-            raise SkillFailure("TARGET_LOST", "Current target is not explained by measured arm occlusion")
-        if self.mode == "occluded":
-            return
-        remaining = np.linalg.norm(palm[:3, 3] - goal[:3, 3])
-        recent = (self.mode == "partial" and
-                  frame.time - self.last_supported_time <= self.limits.occluded_recency)
-        if not (remaining <= self.limits.occluded_reach and recent):
-            raise SkillFailure("TARGET_LOST", "Current visible surfaces do not support the captured target pose")
+        hides = self._arm_hides(frame, points)
+        remaining = float(np.linalg.norm(palm[:3, 3] - goal[:3, 3]))
+        age = None if self.last_supported_time is None else frame.time - self.last_supported_time
+        # Reads.next schedules images at perception_period; recency is the allowance
+        # for sampling jitter, not a demand for an image between scheduled reads.
+        freshness_limit = self.ctx.settings.servo.perception_period + self.limits.occluded_recency
+        reason = None
+        if not hides:
+            reason = "Current target is not explained by measured arm occlusion"
+        elif self.mode != "occluded" and not (
+                self.mode in ("supported", "partial") and age is not None and
+                0 <= age <= freshness_limit and remaining <= self.limits.occluded_reach):
+            reason = "Current visible surfaces do not support the captured target pose"
+        if reason is None:
+            try:
+                self._require_corridor(palm, goal)
+            except SkillFailure as error:
+                reason = str(error)
+        if reason is not None:
+            details = {"preceding_mode": self.mode, "observation_age_s": age,
+                       "freshness_limit_s": freshness_limit, "remaining_distance_m": remaining,
+                       "target_visible": bool(len(points)), "label": self.plan.label,
+                       "occlusion": self.occlusion}
+            self.ctx.emit({"type": "target_tracking_failure", "reason": reason, **details})
+            raise SkillFailure("TARGET_LOST", f"{reason}; tracking={json.dumps(details)}")
         if self.window is None:
             self.window = PartialWindow.opened(frame, palm, remaining + self.limits.travel_margin)
 
@@ -464,6 +487,7 @@ class PickTarget:
                  arm.collision.hand_boxes(arm, joints, frame.hands[side].joints))
         occlusion = arm_occlusion_evidence(self.track.last_supported_points, points, frame, boxes,
                                            grasp.target_surface_tolerance)
+        self.occlusion = asdict(occlusion)
         blocked = (occlusion.measured_fraction >= grasp.occlusion_min_rays and
                    occlusion.explained_missing_fraction >= grasp.occlusion_missing_explained and
                    occlusion.exposed_missing_fraction <= grasp.occlusion_exposed_missing_max)

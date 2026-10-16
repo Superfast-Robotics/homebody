@@ -61,6 +61,15 @@ at least 30 seconds remain, even if you are still exploring (status failed, with
    - infeasible: no skill can reach the goal from here (say why), so no execute is worth it.
    Do not spend an execute on code you do not expect to work.
 
+For a pick tracking refusal, diagnose the initial approach failure separately from a later
+reset/replanning failure. `tracking` reports the preceding mode, age of the last supported or
+partial view, camera freshness allowance, remaining distance, visibility and measured occlusion
+fractions. A supported view may become arm-occluded directly; preserve ray evidence, the final
+approach corridor and the cumulative travel/time bounds. Do not extend blind motion merely because
+reset failed. Replanning keeps the target label and capture anchor but requires fresh supported
+geometry. An old click is not a target reference in a changed view: if the target is absent, do not
+substitute a background click or plan from stored geometry alone.
+
 ## Final answer
 
 A JSON object: `status` (success, failed or infeasible); `summary` (what you changed, what
