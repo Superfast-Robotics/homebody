@@ -187,9 +187,12 @@ class SkillLoop:
         if ws.exists():
             shutil.rmtree(ws)
         ws.mkdir(parents=True)
+        minutes = f"{int(self.cfg.get('coder_seconds', 300)) / 60:g}"
+        bench = HERE / "prompts" / f"bench_{self.skill}.md"
+        benchmark = bench.read_text().format(skill=self.skill, coder_minutes=minutes) if bench.exists() else ""
         (ws / "BRIEF.md").write_text((HERE / "prompts" / f"{self.prompts}_brief.md").read_text().format(
-            skill=self.skill, coder_model=self.cfg.get("coder_model", "Sol"),
-            coder_minutes=f"{int(self.cfg.get('coder_seconds', 300)) / 60:g}"))
+            skill=self.skill, coder_model=self.cfg.get("coder_model", "Sol"), coder_minutes=minutes,
+            benchmark=benchmark))
         train = skill_score.read(self.work / "results" / best["id"] / "train")
         summary = skill_score.summary(train)
         lines = [f"# {self.skill} on the train episodes with version {best['id']}", "",
@@ -241,6 +244,8 @@ class SkillLoop:
             episode = json.loads(path.read_text())
             names.update([episode["id"], Path(episode["scene"]).name, str(episode["step"]["label"]),
                           str(episode["step"]["fixture_id"])])
+            if episode["step"].get("destination_label") is not None:
+                names.add(str(episode["step"]["destination_label"]))
         return names
 
     def specific(self, base, commit):

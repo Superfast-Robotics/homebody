@@ -5,6 +5,12 @@ calls the skill once (with one coder rescue when enabled) and finishes the episo
 recorded physics into stage 0, 1 or 2 (2: success). Adding a skill to the benchmark means adding a
 driver here and an episode generator in skill_episodes.py.
 
+The place episode stands the robot at the stance, picks the object with the built-in pick and carries
+it to the step's place stance (a failure in that setup is not scored), then calls the candidate's place
+once with the release the scripted sequence would give, over the destination (with one coder rescue
+when enabled). Scored by the evaluator's own placement test against the step's target: 0 still in
+hand, 1 released but not placed in the target, 2 placed (inside, released, supported and still).
+
 The pick episode stands the robot at the episode's stance (the scene's scripted stance plus the
 episode's offset), calls the candidate's pick once on the object (a click on its visible pixels, as
 the agent would give); if the pick fails and the episode allows it (coder: true), the coding
@@ -173,8 +179,73 @@ def score_pick(rows, episode, record):
     return {"lifted": lifted, "held": held, "max_rise": round(rise, 3), "stage": 2 if held else 1 if lifted else 0}
 
 
+def run_place(cm, session, episode, step):
+    """Stand at the stance, pick the object with the built-in pick and carry it to the step's place stance
+    (setup: a failure there is not scored), then call the candidate's place once with the arguments the
+    scripted sequence would give (a release over the destination), with one coder rescue if it refuses."""
+    port, execute = session.port, session.execute
+    if not execute("navigate", cm.navigate_arguments(episode["stance"], step.facing, step.hand), port.snapshot(),
+                   evidence_name="stance"):
+        return {"setup_failed": "stance navigation refused"}
+    frame = port.snapshot()
+    click = cm.target_click(frame, step.label)
+    if click is None:
+        return {"setup_failed": "object not visible from the stance"}
+    u, v = click
+    side = step.hand if step.hand != "auto" else ("left" if u < frame.rgb.shape[1] / 2 else "right")
+    if not execute("pick", {"point_normalized_1000": cm.normalized(frame, u, v), "hand": side}, frame) \
+            or not session.context.carried:
+        return {"setup_failed": "the built-in pick did not hold the object"}
+    side = next(iter(session.context.carried))
+    if step.carry_goal is not None and not execute(
+            "navigate", cm.navigate_arguments(step.carry_goal, step.carry_facing, side), port.snapshot(),
+            evidence_name="carry"):
+        return {"setup_failed": "carry navigation refused"}
+    if not session.context.carried:
+        return {"setup_failed": "the object was dropped during the carry"}
+    frame = port.snapshot()
+    palm = frame.palm(session.context.arms[side], side)
+    arguments = cm.drop_arguments(frame, palm, step.release_map_xy_m, side, step.release_delta_z_m)
+    session.record("target.json", {"schema_version": 1, "frame": "ws_map", "objects": {step.fixture_id: step.evaluator_target}})
+    name, destination = (str(value).replace("_", " ") for value in (episode["step"]["label"], step.destination_label))
+    record = call_skill(session, episode, "place", arguments, frame, request={
+        "goal": f"Place the {name} held in the {side} hand into the {destination} "
+                f"(release {json.dumps({k: round(v, 3) for k, v in arguments.items() if k != 'hand'})}).",
+        "success": f"place returns OK and the {name} rests inside the {destination}, released and still.",
+        "constraints": "Change only the place skill; keep holding the object until the release.",
+        "task": f"Put the {name} in the {destination}."})
+    for _ in range(int(SETTLE_SECONDS / 0.02)):
+        port.advance(port.epoch, 0.02)
+    return {**{k: v for k, v in record.items() if k != "ok"}, "side": side}
+
+
+def score_place(rows, episode, record):
+    """Place's stage from physics, by the evaluator's own placement test against the step's target: 2 placed
+    (inside the target, released, supported and still), 1 released but not placed there, 0 still in hand."""
+    evaluate = load_evaluator()
+    name, goal = episode["step"]["fixture_id"], episode["step"]["evaluator_target"]
+    end = rows[-1]
+    earlier = next((r for r in reversed(rows) if end["time"] - r["time"] >= 0.5), rows[0])  # speeds over 0.5 s
+    state = end["objects"][name]
+    seconds = max(1e-6, end["time"] - earlier["time"])
+    reason = evaluate.object_reason(state, goal, speeds=evaluate.pose_speeds(state, earlier["objects"][name], seconds),
+                                    require_still=True)
+    released = not state["hand_contacts"]
+    return {"placed": reason is None, "released": released, "place_reason": reason,
+            "stage": 2 if reason is None else 1 if released else 0}
+
+
+def load_evaluator():
+    """evaluation/evaluate.py of the episode's code root (the scorer is frozen, so every candidate has the same)."""
+    path = Path(os.environ["HOMEBODY_BENCH_ROOT"]) / "evaluation/evaluate.py"
+    spec = importlib.util.spec_from_file_location("homebody_evaluate", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 # skill name -> (run(cm, session, episode, step) -> record, score(rows, episode, record) -> {stage, ...})
-DRIVERS = {"pick": (run_pick, score_pick)}
+DRIVERS = {"pick": (run_pick, score_pick), "place": (run_place, score_place)}
 
 
 def write_trace(out):
@@ -212,6 +283,7 @@ def shorten(value, depth=0):
 
 def main(root, episode_path, out):
     root, out = Path(root).resolve(), Path(out)
+    os.environ["HOMEBODY_BENCH_ROOT"] = str(root)
     episode = json.loads(Path(episode_path).read_text())
     out.mkdir(parents=True, exist_ok=True)
     sys.path[:0] = [str(root / "src"), str(root / "vendor")]
