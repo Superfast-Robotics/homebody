@@ -158,7 +158,7 @@ class SkillLoop:
                  for split in splits for episode in self.episodes(split)]
         jobs = f"{root}/jobs.txt"
         self.remote.ssh(f"rm -rf {root} && mkdir -p {root} && cat > {jobs} << 'EOF'\n" + "\n".join(lines) + "\nEOF")
-        subprocess.run(["rsync", "-a", str(HERE / "skill_bench.py"), str(HERE / "run_skill_jobs.sh"),
+        subprocess.run(["rsync", "-a", str(HERE / "skill_bench.py"), str(HERE / "skill_bench_tasks.py"), str(HERE / "run_skill_jobs.sh"),
                         f"{self.remote.host}:{self.remote.work}/"], check=True)
         started = time.monotonic()
         self.remote.ssh(f"bash {self.remote.work}/run_skill_jobs.sh {self.remote.base} {self.cfg['parallel']} {jobs} "

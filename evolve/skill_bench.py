@@ -27,6 +27,7 @@ held (success); the record also keeps the built-in pick's own outcome, the coder
 credits and the seconds spent. An episode whose stance or view fails before the pick is a setup failure and
 is not scored. Writes OUT/result.json; the session evidence (events, physics) stays under OUT.
 """
+import dataclasses
 import importlib.util
 import json
 import math
@@ -139,6 +140,17 @@ def harness_changes(before, after, carried_before, carried_after):
 def rescue(session, skill, arguments, call, request, changed=None):
     """One call_coder after a refused SKILL call, limited to that skill, as the agent would make it; its
     result, seconds and credits."""
+    history = [{"operator_task": request["task"]},
+               {"decision": {"text": f"Call {skill}.", "skill": skill, "arguments": arguments}, "result": call,
+                **({"what_changed": changed} if changed else {})}]
+    ask = {"skill": skill, "goal": request["goal"], "success": request["success"],
+           "constraints": request["constraints"],
+           "tried": f"{skill} {json.dumps(arguments)} returned {call['code']}: {call['message']}"}
+    return consult(session, ask, history)
+
+
+def consult(session, ask, history):
+    """One call_coder with ASK on the session's robot, after HISTORY; its result, seconds and credits."""
     from dataclasses import replace
 
     from homebody.session.coder import Coder
@@ -146,18 +158,12 @@ def rescue(session, skill, arguments, call, request, changed=None):
     coder_settings = replace(session.context.settings.coder, calls=1)
     if os.environ.get("HOMEBODY_CODER_MODEL"):  # the run's coder model, whatever the candidate's settings say
         coder_settings = replace(coder_settings, model=os.environ["HOMEBODY_CODER_MODEL"])
-    if os.environ.get("HOMEBODY_CODER_SECONDS"):  # a slower (local) model may get a longer limit
+    if os.environ.get("HOMEBODY_CODER_SECONDS"):  # a slower model or a harder request may get a longer limit
         coder_settings = replace(coder_settings, seconds=float(os.environ["HOMEBODY_CODER_SECONDS"]))
     coder = Coder(coder_settings)
     coder.reset(session.task)
-    history = [{"operator_task": request["task"]},
-               {"decision": {"text": f"Call {skill}.", "skill": skill, "arguments": arguments}, "result": call,
-                **({"what_changed": changed} if changed else {})}]
     agent = SimpleNamespace(history=history, observed=session.port, recorder=session.recorder,
                             context=session.context, runner=session.runner)
-    ask = {"skill": skill, "goal": request["goal"], "success": request["success"],
-           "constraints": request["constraints"],
-           "tried": f"{skill} {json.dumps(arguments)} returned {call['code']}: {call['message']}"}
     started = time.monotonic()
     result = coder.call(ask, agent)
     seconds = round(time.monotonic() - started, 1)
@@ -340,6 +346,20 @@ def load_evaluator():
 DRIVERS = {"pick": (run_pick, score_pick), "place": (run_place, score_place), "navigate": (run_move, score_move)}
 
 
+def load_task_drivers():
+    """The new-skill driver (skill_bench_tasks.py beside this file), registered as DRIVERS["newskill"]."""
+    spec = importlib.util.spec_from_file_location("skill_bench_tasks", Path(__file__).resolve().parent / "skill_bench_tasks.py")
+    if spec is None or spec.loader is None or not Path(spec.origin).exists():
+        return
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    module.bench = SimpleNamespace(consult=consult, SETTLE_SECONDS=SETTLE_SECONDS)
+    DRIVERS["newskill"] = (module.run_newskill, module.score_newskill)
+
+
+load_task_drivers()
+
+
 def write_trace(out):
     """OUT/trace.json: the skill's own events (start, stages, traces, finish) and the scripted requests,
     without the per-tick commands, for diagnosis."""
@@ -394,7 +414,8 @@ def main(root, episode_path, out):
                                                     "scene": scene.name, "family": episode["family"]}
     try:
         backend = MujocoBackend(root, settings, scene=scene)
-        step = cm.resolved(cm.Step(**episode["step"]), backend.label_ids)
+        fields = {f.name for f in dataclasses.fields(cm.Step)}  # a task step's extra block stays in the episode
+        step = cm.resolved(cm.Step(**{k: v for k, v in episode["step"].items() if k in fields}), backend.label_ids)
         session = cm.ScriptedSession(backend, recorder, task, outcome, root, settings, args, start)
         session.begin_cycle(0, step)
         record.update(DRIVERS[episode["skill"]][0](cm, session, episode, step))
