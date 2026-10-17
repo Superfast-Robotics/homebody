@@ -134,3 +134,18 @@ def test_lower_cost_never_buys_an_accuracy_drop():
     parent = priced([10, 11, 9, 10], [20, 21, 19, 20], stages=(3, 3, 3, 3))
     worse = priced([2, 2, 2, 2], [5, 5, 5, 5], stages=(0, 0, 0, 0))
     assert score.judge(parent, worse)["basis"] == "accuracy dropped"
+
+
+def test_a_first_round_counts_as_reasonable_only_with_a_promising_candidate():
+    from types import SimpleNamespace
+
+    from evolve.loop import Loop
+    parent = {"id": "v002", "status": "baseline", **priced([10] * 4, [20] * 4, stages=(1, 1, 1, 1))}
+    better = {"id": "r001c1", "parent": "v002", "round": 1, "status": "rejected",
+              **priced([10] * 4, [20] * 4, stages=(3, 1, 3, 1))}
+    flat = {"id": "r001c2", "parent": "v002", "round": 1, "status": "rejected", **priced([10] * 4, [20] * 4)}
+    failed = {"id": "r001c3", "parent": "v002", "round": 1, "status": "failed", "reason": "proposer error"}
+    stub = lambda *entries: SimpleNamespace(archive=lambda: [parent, *entries])
+    assert Loop.reasonable(stub(better, flat), 1)
+    assert not Loop.reasonable(stub(flat, failed), 1)
+    assert Loop.reasonable(stub(flat, {**flat, "id": "r001c4", "status": "accepted"}), 1)

@@ -133,20 +133,20 @@ class Loop:
                 for split, runs in second.items()}
 
     # --- commands ---
-    def baseline(self, passes=3):
+    def baseline(self, passes=3, cid="v000"):
         commit = git("rev-parse", "HEAD")
-        checkout = self.worktree("v000", commit)
-        passed, output = self.remote_checks("v000", checkout)
+        checkout = self.worktree(cid, commit)
+        passed, output = self.remote_checks(cid, checkout)
         if not passed:
             raise SystemExit(f"the baseline fails its own checks:\n{output}")
-        self.evaluate("v000", checkout, 0)
+        self.evaluate(cid, checkout, 0)
         repeats = self.cfg["gates"]["0"]["repeats"]
-        runs = {s: score.read_split(self.work / "results" / "v000" / s) for s in ("train", "val")}
+        runs = {s: score.read_split(self.work / "results" / cid / s) for s in ("train", "val")}
         for index in range(2, passes + 1):  # more passes than a candidate gets: a steadier reference
-            for split, extra in self.both_splits("v000", repeats, f"_pass{index}").items():
+            for split, extra in self.both_splits(cid, repeats, f"_pass{index}").items():
                 runs[split] = runs[split] + extra
         summaries = {split: score.summary(r) for split, r in runs.items()}
-        self.record({"id": "v000", "parent": None, "round": 0, "commit": commit, "status": "baseline",
+        self.record({"id": cid, "parent": None, "round": 0, "commit": commit, "status": "baseline",
                      "passes": passes, **summaries})
 
     def rebaseline(self):
@@ -189,6 +189,17 @@ class Loop:
         self.remote.push_candidate(cid, checkout)
         return self.remote.static_checks(cid)
 
+    def smoke(self, cid):
+        """One session of the first train task with the pushed candidate: a crash rejects it before the
+        full evaluation is spent. Returns the crash, or None."""
+        local = self.work / "results" / cid / "smoke"
+        results = self.remote.run_suite(cid, self.tasks("train")[:1], 1, "smoke", self.cfg["agent"]["model"])
+        self.remote.collect(results, local)
+        if score.quota_hit(local):
+            raise QuotaExhausted(f"usage limit hit while smoke-testing {cid}; resume the round once it resets")
+        crashes = [f for run in score.read_split(local) for f in run.failures if f.startswith("session crashed")]
+        return crashes[0] if crashes else None
+
     def round(self):
         best = self.best()
         unfinished = sorted(p for p in (self.work / "rounds").glob("r[0-9][0-9][0-9]") if not (p / DONE).exists())
@@ -225,6 +236,10 @@ class Loop:
                 (round_dir / f"{cand['cid']}_checks.txt").write_text(output)
                 self.record({**entry, "status": "rejected", "reason": "lint or unit tests failed: " + output[-600:]})
                 continue
+            crash = self.smoke(cand["cid"])
+            if crash:
+                self.record({**entry, "status": "rejected", "reason": "smoke run crashed: " + crash[-600:]})
+                continue
             summaries = self.evaluate(cand["cid"], cand["path"], entry["tier"])
             ok, d_train, d_val, _, _ = score.accept(best, summaries)
             if ok:  # noise check: accept only if the pooled first and confirming runs still pass
@@ -246,6 +261,22 @@ class Loop:
                 self.record(entry)
         (round_dir / DONE).write_text("done\n")
         self.log(f"round {number}: done; best is now {self.best()['id']}")
+        return number
+
+    def reasonable(self, number):
+        """Whether round NUMBER gave a candidate worth building on: accepted, or up by more than one
+        standard error on a split without dropping on the other."""
+        archive = self.archive()
+        by_id = {e["id"]: e for e in archive}  # latest verdict per id
+        for entry in (e for e in by_id.values() if e.get("round") == number and e["status"] != "baseline"):
+            if entry["status"] == "accepted":
+                return True
+            parent = by_id.get(entry.get("parent"))
+            if parent and entry.get("train") and entry.get("val"):
+                j = score.judge(parent, entry)
+                if j["basis"] != "accuracy dropped" and (j["d_train"] > j["se_train"] or j["d_val"] > j["se_val"]):
+                    return True
+        return False
 
     def propose(self, cid, mechanism, best, ws, diagnosis, round_dir):
         path = self.worktree(cid, best["commit"])
@@ -257,9 +288,12 @@ class Loop:
             note = astra.propose(path, ws, diagnosis, mechanism, note_path)
         except Exception as error:  # noqa: BLE001 -- a failed proposal is recorded, not fatal
             return {"cid": cid, "path": path, "meta": {"status": "failed", "reason": f"proposer error: {error}"}}
-        # Safe lint fixes first, so a style rule does not cost a whole proposal.
-        subprocess.run(["uvx", "--quiet", "ruff", "check", "--fix", "--quiet", "src", "tests"], cwd=path,
-                       check=False, capture_output=True)
+        git("add", "-A", cwd=path)
+        changed = [f for f in git("diff", "--cached", "--name-only", "--diff-filter=AM", cwd=path).splitlines()
+                   if f.endswith(".py")]
+        if changed:  # safe lint fixes on what the proposal touched only, so no other file is swept into its diff
+            subprocess.run([astra.settings()["ruff"], "check", "--fix", "--quiet", *changed], cwd=path,
+                           check=False, capture_output=True)
         git("add", "-A", cwd=path)
         if not git("status", "--porcelain", cwd=path):
             return {"cid": cid, "path": path, "meta": {"status": "rejected", "reason": "no change", "notes": note}}
@@ -293,6 +327,7 @@ def main(argv=None):
     sub = parser.add_subparsers(dest="command", required=True)
     baseline = sub.add_parser("baseline")
     baseline.add_argument("--passes", type=int, default=3, help="evaluations pooled into the baseline")
+    baseline.add_argument("--id", default="v000", help="the archive id to record it under")
     sub.add_parser("round")
     run = sub.add_parser("run")
     run.add_argument("--rounds", type=int, required=True)
@@ -303,7 +338,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     loop = Loop()
     if args.command == "baseline":
-        loop.baseline(args.passes)
+        loop.baseline(args.passes, args.id)
     elif args.command == "round":
         loop.round()
     elif args.command == "rebaseline":
@@ -311,8 +346,11 @@ def main(argv=None):
     elif args.command == "rejudge":
         loop.rejudge(args.round)
     elif args.command == "run":
-        for _ in range(args.rounds):
-            loop.round()
+        for index in range(args.rounds):
+            number = loop.round()
+            if index == 0 and not loop.reasonable(number):
+                loop.log(f"round {number} gave no reasonable candidate; stopping (more rounds are not worth it)")
+                break
     else:
         loop.status()
 

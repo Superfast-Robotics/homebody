@@ -26,8 +26,10 @@ change (the same refusal again for the same cause, a motion it cannot make, a ch
 call call_coder, which hands that skill to a coding assistant that edits its code and runs it on the
 robot itself: give skill (the skill to change, or a new name), goal (what the robot must achieve
 now), tried (the calls and the results that show why the skill must change), success (what you will
-accept as done) and constraints (anything it must not do, or ""). It is refused until a skill call
-this task has failed. It returns OK once its version achieved the goal, or a failure with the reason,
+accept as done) and constraints (anything it must not do, or ""). For a built-in skill it is refused
+until a skill call this task has failed. Ask for a new name only when no skill here can do the
+step at all, however it is called (pushing, turning or sliding an object, say); that needs no failed
+call first. It returns OK once its version achieved the goal, or a failure with the reason,
 plus the state it left the world in and how to call the skill; a version that worked replaces that
 skill for the rest of this task. The robot may have moved during the call, so look again before the
 next step. Each call takes minutes and costs far more than a skill call: do not call it for what a
