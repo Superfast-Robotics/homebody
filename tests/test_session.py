@@ -973,7 +973,7 @@ def test_call_coder_refuses_forbidden_imports_and_unchecked_executes(build, tmp_
 
 def test_call_coder_validates_its_request_and_its_budget(build, tmp_path, monkeypatch):
     session, _ = coder_session(build, tmp_path, monkeypatch, [
-        Decision("Too early", "call_coder", REQUEST), Decision("Try", "navigate", {}),
+        Decision("Too early", "call_coder", {**REQUEST, "skill": "pick"}), Decision("Try", "navigate", {}),
         Decision("Bad", "call_coder", {"skill": "Lift!", "goal": "g", "success": "s"}),
         Decision("Ask", "call_coder", REQUEST), Decision("Again", "call_coder", REQUEST),
         Decision("Third", "call_coder", REQUEST), Decision("Finished", "done", {})],
@@ -982,6 +982,15 @@ def test_call_coder_validates_its_request_and_its_budget(build, tmp_path, monkey
     codes = [entry["result"]["code"] for entry in session.history if "result" in entry]
     assert codes == ["CODER_NOT_YET", "INVALID_ARGUMENT", "INVALID_ARGUMENT", "CODER_INFEASIBLE",
                      "CODER_INFEASIBLE", "CODER_LIMIT"]
+
+
+def test_a_new_skill_may_be_requested_before_any_skill_failed(build, tmp_path, monkeypatch):
+    session, _ = coder_session(build, tmp_path, monkeypatch, [
+        Decision("Create", "call_coder", REQUEST), Decision("Finished", "done", {})],
+        tools=("check",), status="infeasible")
+    assert session.run_task("Lift")["status"] == "model_done"
+    codes = [entry["result"]["code"] for entry in session.history if "result" in entry]
+    assert codes == ["CODER_INFEASIBLE"]  # "lift" is not a built-in skill, so there was nothing to try first
 
 
 def test_older_steps_drop_result_details_but_keep_code_and_message():

@@ -185,7 +185,7 @@ class Coder:
             return refusal("INVALID_ARGUMENT", "give goal and success")
         if self.calls >= self.settings.calls:
             return refusal("CODER_LIMIT", f"this task already used its {self.settings.calls} coder calls")
-        if not failed_skill(session.history):
+        if target in REGISTRY and not failed_skill(session.history):  # a new skill has nothing to try first
             return refusal("CODER_NOT_YET", "use the built-in skills first; call the coder only after a skill call "
                                             "this task failed and its result shows the skill itself must change")
         self.calls += 1
