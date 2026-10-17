@@ -11,7 +11,7 @@ requests or reports in coder.py. Never name particular scenes, objects, colours,
 benchmark's skill names. Keep the built-in skills working. Add or update unit tests for logic worth pinning. Do basic
 testing of your change only (the simulator is not available here): run the unit tests you added or changed and the
 tests of the modules you touched, with `MUJOCO_GL=egl PYTHONPATH=src:vendor {python} -m pytest -q -x -p
-no:cacheprovider <test files>`, plus tests/harness and tests/test_coder.py, and `{ruff} check src tests`; fix every
+no:cacheprovider <test files>`, plus tests/harness, tests/test_coder.py and tests/test_session.py, and `{ruff} check src tests`; fix every
 failure and finding. Compare floats with a tolerance. Do not run the whole suite or anything long.
 
 When done, reply with a short note in this form:

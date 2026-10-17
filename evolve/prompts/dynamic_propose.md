@@ -14,7 +14,7 @@ coordinates or episodes. Keep the other skills that use shared code working. Add
 for logic worth pinning. Do basic testing of your change only (the simulator is not available here, and
 the full suite runs later on the remote): run the unit tests you added or changed and the tests of the
 modules you touched, with `MUJOCO_GL=egl PYTHONPATH=src:vendor {python} -m pytest -q -x -p no:cacheprovider
-<test files>`, plus tests/harness, and `{ruff} check src tests`; fix every failure and finding.
+<test files>`, plus tests/harness, tests/test_coder.py and tests/test_session.py, and `{ruff} check src tests`; fix every failure and finding.
 Compare floats with a tolerance. Do not run the whole suite or anything long.
 
 When done, reply with a short note in this form:
