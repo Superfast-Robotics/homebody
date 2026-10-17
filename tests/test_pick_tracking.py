@@ -159,3 +159,12 @@ def test_a_wrist_camera_that_cannot_see_leaves_the_head_verdict(tracking):
     state.visible = lambda label: False
     target._see(state, palm)
     assert target.mode == "occluded"
+
+
+def test_rebased_tracker_preserves_collision_history(tracking):
+    target, _, _, _ = tracking
+    target.blocked.append((target.plan, 'descent'))
+    rebased = target.rebased(target.plan)
+    assert rebased.blocked == target.blocked
+    assert rebased.blocked is not target.blocked
+    assert not rebased.descending

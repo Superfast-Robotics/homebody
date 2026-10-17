@@ -11,7 +11,7 @@ from homebody.helpers.collision import HAND_END_LINKS, Clearance
 from homebody.helpers.geometry import inverse, points_in, rotation_error, wrap
 from homebody.helpers.grasp import Shape, candidates, visible_shape
 from homebody.helpers.target import TargetTrack, arm_occlusion_evidence
-from homebody.helpers.trajectory import approach_path
+from homebody.helpers.trajectory import approach_path, servo_step
 from homebody.motion.arm import close_or_open, move_path, reset_arm, servo
 from homebody.motion.carry import (
     RECOVERY_FAILURES,
@@ -193,7 +193,7 @@ def walk_in(plan, ctx):
     return result
 
 
-def plan_target(side, label, current, planning):
+def plan_target(side, label, current, planning, blocked=()):
     """The best routable grasp of the captured target from visible geometry."""
     if side in planning.carried:
         raise SkillFailure("HAND_OCCUPIED", "The selected hand has unresolved grasp ownership")
@@ -203,7 +203,7 @@ def plan_target(side, label, current, planning):
     if not samples:
         raise SkillFailure("CALIBRATION_MISSING", "Robot-only jaw calibration is required")
     points = current.target_points(label)
-    search = GraspSearch(side, label, current, planning)
+    search = GraspSearch(side, label, current, planning, blocked)
     fitted = _width_fitted_candidates(points, samples, planning.settings.grasp, planning.cancelled)
     best = search.best(list(search.reachable(fitted)))
     if planning.cancelled():
@@ -231,6 +231,7 @@ class ReachableGrasp:
     """A candidate the arm reaches with a clear descent."""
     candidate: GraspCandidate
     pre_joints: np.ndarray
+    clearance: float = 0.0
 
 
 def _width_fitted_candidates(points, samples, settings, cancelled):
@@ -252,12 +253,15 @@ class GraspSearch:
     and the blockers met."""
     GATES = ("width", "pre_reachable", "grasp_reachable", "descent_clear", "approach_clear")
 
-    def __init__(self, side, label, current, planning):
+    def __init__(self, side, label, current, planning, blocked=()):
         self.arm, self.seed = planning.arms[side], current.arm_joints(side)
         self.settings, self.cancelled = planning.settings.grasp, planning.cancelled
+        self.control = planning.settings
+        self.blocked = blocked
         self.torso = inverse(current.world_torso)
         collision = planning.settings.collision
-        opened = np.zeros_like(current.hands[side].joints)  # the hand opens before it moves
+        # Recovery runs after opening, so use the measured fingers in that case.
+        opened = current.hands[side].joints if blocked else np.zeros_like(current.hands[side].joints)
         self.descent = Clearance(current, planning.arms, side, collision, (label,), fingers=opened)
         self.approach = Clearance(current, planning.arms, side, collision, exempt_start=True, fingers=opened)
         self.counts = dict.fromkeys(self.GATES, 0)
@@ -266,6 +270,11 @@ class GraspSearch:
     def reachable(self, candidates):
         for candidate in candidates:
             self.counts["width"] += 1
+            if self.cancelled():
+                return
+            if any(self.equivalent(candidate, plan, phase) for plan, phase in self.blocked):
+                self.blockers["equivalent blocked grasp"] += 1
+                continue
             pre_joints = self.arm.solve(self.torso @ candidate.pre, self.seed)
             if pre_joints is None:
                 continue
@@ -278,16 +287,74 @@ class GraspSearch:
             if obstruction is not None:
                 self.blockers[obstruction] += 1
                 continue
+            # Keep the cheap joint-path gate, then check the actual servo reference model.
+            margin = self.servo_descent(pre_joints, candidate.palm) if self.blocked else 0.0
+            if margin is None:
+                continue
+            if self.blocked and any(phase == "approach" for _, phase in self.blocked):
+                margin = min(margin, self.finger_margin(self.approach, pre_joints))
             self.counts["descent_clear"] += 1
-            yield ReachableGrasp(candidate, pre_joints)
+            yield ReachableGrasp(candidate, pre_joints, margin)
+
+    def equivalent(self, candidate, plan, phase):
+        """Do not retry poses indistinguishable at the controller's spatial resolution."""
+        names = ("palm",) if phase == "descent" else ("pre", "palm")
+        return all(np.linalg.norm(getattr(candidate, name)[:3, 3] - getattr(plan, name)[:3, 3])
+                   <= self.control.motion.palm_tolerance and
+                   np.linalg.norm(rotation_error(getattr(candidate, name)[:3, :3],
+                                                 getattr(plan, name)[:3, :3]))
+                   <= self.control.servo.rotation_tolerance for name in names)
+
+    def finger_margin(self, clearance, joints):
+        """Extra visible-depth padding tolerated by every finger, capped at two cloud margins.
+
+        This is a ranking signal, not a replacement for the full collision gate.
+        """
+        boxes = clearance.geometry.hand_boxes(self.arm, joints, clearance.fingers)
+        unit = clearance.settings.cloud_margin
+        for extra in (unit, 2 * unit):
+            if any(clearance.blocked(clearance.hits(box, unit + extra)) for box in boxes):
+                return extra - unit
+        return 2 * unit
+
+    def servo_descent(self, start, palm):
+        """Nominal measured=commanded rollout; live checks still guard tracking/depth changes."""
+        settings = self.control
+        joints = np.array(start, copy=True)
+        margin = np.inf if self.blocked else 0.0
+        for _ in range(int(np.ceil(settings.motion.arm_timeout / settings.servo.tick))):
+            if self.cancelled():
+                return None
+            command, distance, angle = servo_step(self.arm, joints, joints, self.torso @ palm,
+                                                  settings.physics.arm_rate, settings.servo)
+            if self.blocked:
+                margin = min(margin, self.finger_margin(self.descent, joints))
+            if distance < settings.motion.palm_tolerance and angle < settings.servo.rotation_tolerance:
+                return margin
+            obstruction = self.descent.path_violation(joints, command)
+            if obstruction is not None:
+                self.blockers[obstruction] += 1
+                return None
+            if np.allclose(command, joints, atol=1e-8, rtol=0):
+                break
+            joints = command
+        self.blockers["descent servo did not converge"] += 1
+        return None
 
     def best(self, reachable):
-        """The first routable (candidate, approach route) by tier, width and joint travel, trying
+        """On recovery prefer finger clearance, then tier, width and joint travel, trying
         each start lift in turn. None when none routes."""
-        ranked = sorted(reachable, key=lambda grasp: (grasp.candidate.tier, grasp.candidate.width,
+        ranked = sorted(reachable, key=lambda grasp: (-grasp.clearance, grasp.candidate.tier, grasp.candidate.width,
                                                       np.linalg.norm(grasp.pre_joints - self.seed)))
+        checked = {}
         for lift in (0., *self.settings.approach_start_lifts_m):
             for grasp in ranked:
+                if not self.blocked:
+                    key = id(grasp)
+                    if key not in checked:
+                        checked[key] = self.servo_descent(grasp.pre_joints, grasp.candidate.palm)
+                    if checked[key] is None:
+                        continue
                 approach = approach_path(self.arm, self.seed, grasp.pre_joints, self.approach, self.settings,
                                          self.cancelled, initial_lift_m=lift, blockers=self.blockers)
                 if approach is not None:
@@ -331,6 +398,8 @@ def approach(plan, ctx, target):
 
 def replan(plan, ctx, target, error, attempt):
     """Replan from a fresh view of the same target, parking the arm first when it hides it."""
+    if error.code == "COLLISION":
+        target.blocked.append((plan, "descent" if target.descending else "approach"))
     ctx.actions.stop(plan.epoch)
     ctx.stage("Replanning approach")
     stopped = ctx.observe(plan.epoch)
@@ -350,7 +419,7 @@ def replan(plan, ctx, target, error, attempt):
             raise SkillFailure("TARGET_LOST", "A new grasp requires a supported target view") from error
     ctx.emit({"type": "grasp_replan", "attempt": attempt, "label": plan.label,
               "frame_id": frame.frame_id, "reason": str(error)})
-    plan = plan_target(plan.side, plan.label, frame, ctx.planning())
+    plan = plan_target(plan.side, plan.label, frame, ctx.planning(), target.blocked)
     ctx.emit({"type": "skill_prepared", "skill": "pick", "plan": plan, "attempt": attempt})
     return plan, target.rebased(plan)
 
@@ -382,6 +451,7 @@ class PickTarget:
         grasp = ctx.settings.grasp
         self.track = TargetTrack(plan.points, grasp.shape_quantiles, grasp.target_surface_tolerance,
                                  grasp.target_shift, self.capture_center)
+        self.blocked = []
         self.mode = None
         self.descending = False
         self.last_supported_time = None
@@ -395,7 +465,9 @@ class PickTarget:
 
     def rebased(self, plan):
         """A tracker for the same target freshly planned, keeping the capture anchor."""
-        return PickTarget(plan, self.ctx, self.capture_center, self.limits)
+        target = PickTarget(plan, self.ctx, self.capture_center, self.limits)
+        target.blocked = list(self.blocked)
+        return target
 
     def supported(self, frame):
         """Whether this frame shows the captured surfaces within their capture range."""
