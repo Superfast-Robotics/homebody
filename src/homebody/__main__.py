@@ -1,4 +1,4 @@
-"""The `homebody` command line: run, check and provider-check."""
+"""The `homebody` command line: run, check and provider-check; `homebody real2sim ...` runs REAL2SIM."""
 import argparse
 import errno
 import json
@@ -7,13 +7,16 @@ import os
 import shutil
 import sys
 import time
+import uuid
 from dataclasses import replace
-from datetime import UTC
+from datetime import UTC, datetime
 from importlib.util import find_spec
 from pathlib import Path
 
 from homebody.session.config import DEFAULT_ENV, MODELS
 from homebody.session.settings import Settings
+from homebody.vlm.catalog import PROVIDERS, make, model_label, requirement
+from homebody.vlm.provider import ProviderError
 
 
 def parser():
@@ -61,7 +64,6 @@ def check(root: Path, scene: Path, settings) -> int:
             print(f"{'OK' if available else 'MISSING'} {name}")
             if not available:
                 missing.append(name)
-    from homebody.vlm.catalog import PROVIDERS, model_label, requirement
     if settings.agent.provider not in PROVIDERS:
         print(f"MISSING provider {settings.agent.provider!r} for model {settings.agent.model!r} "
               f"in vlm/catalog.py PROVIDERS")
@@ -84,11 +86,6 @@ def check(root: Path, scene: Path, settings) -> int:
 
 
 def provider_check(settings, output):
-    import uuid
-    from datetime import datetime
-
-    from homebody.vlm.catalog import make
-    from homebody.vlm.provider import ProviderError
     path = output / ("provider-check-" + datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
                      + "-" + uuid.uuid4().hex[:6])
     provider = make(settings.agent)
@@ -112,7 +109,6 @@ def run(args, settings, output):
     from homebody.session.recorder import Recorder
     from homebody.session.session import Session
     from homebody.ui.console import Console, Controls
-    from homebody.vlm.catalog import make, model_label
     from homebody.vlm.observations import semantic_prior
 
     recorder = Recorder(args.root, settings, output)
@@ -180,6 +176,10 @@ def run(args, settings, output):
 
 
 def main(argv=None):
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if argv[:1] == ["real2sim"]:
+        from homebody.real2sim.cli import main as real2sim
+        return real2sim(argv[1:])
     value = parser()
     args = value.parse_args(argv)
     if args.root is None:

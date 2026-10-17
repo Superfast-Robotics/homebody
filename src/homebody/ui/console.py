@@ -21,17 +21,14 @@ from homebody.ui.selection import (
     draw_path,
 )
 from homebody.ui.theme import (
-    BRAND,
     FACING,
     GOAL,
     HEADING,
-    PANEL_WIDTH,
     ROBOT,
     ROUTE,
     STANCE,
-    STYLE,
-    header,
     note,
+    open_server,
     section,
 )
 from homebody.vlm.observations import depth_preview, label_preview, map_preview
@@ -242,18 +239,8 @@ class Console:
                  scene_name="Simulation", model_name="", topdown_settings: Topdown | None = None,
                  render_in_background=False):
         """With RENDER_IN_BACKGROUND the live view and map are drawn on a UI thread from the newest frame."""
-        import viser
-
         claim(host, port)
-        self.server = viser.ViserServer(host=host, port=port)
-        self.server.gui.configure_theme(titlebar_content=None,
-                                        control_width="large", dark_mode=False,
-                                        brand_color=BRAND,
-                                        show_logo=False, show_share_button=False)
-        self.server.gui.main_panel.dock_right()
-        self.server.gui.main_panel.set_width(PANEL_WIDTH)
-        self.server.gui.add_html(STYLE)
-        self.server.gui.add_html(header(scene_name))
+        self.server = open_server(host, port, scene_name, "sim")
         self.scene_view = None
         self.model_name = model_name
         self.overlays = Overlays(topdown_settings if topdown_settings is not None else Topdown())

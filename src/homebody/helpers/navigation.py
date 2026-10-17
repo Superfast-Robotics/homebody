@@ -5,6 +5,8 @@ import math
 import numpy as np
 from scipy.ndimage import distance_transform_edt
 
+from .raster import px_to_world
+
 EDGE_WINDOW = 0.8
 EDGE_BAND = 0.30
 EDGE_REFITS = 3
@@ -26,8 +28,7 @@ def pixel(navigation, xy):
 
 
 def world(navigation, cell):
-    p = navigation.T_map_px @ [cell[1], cell[0], 1.0]
-    return p[:2] / p[2]
+    return px_to_world(navigation.T_map_px, [[cell[1], cell[0]]])[0]
 
 
 def inside(grid, cell):

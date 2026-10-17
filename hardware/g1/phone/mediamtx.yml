@@ -1,0 +1,33 @@
+# MediaMTX v1.21.1 reference configuration. Replace the two loopback source
+# permissions with the phone's USB address and workstation's wired address.
+# See guides/phone-camera.md. No camera video is recorded by this relay.
+logLevel: info
+rtsp: true
+rtspAddress: :8554
+rtspTransports: [tcp]
+rtmp: false
+hls: false
+webrtc: false
+srt: false
+moq: false
+api: false
+metrics: false
+pprof: false
+playback: false
+authMethod: internal
+authInternalUsers:
+  - user: any
+    ips: [127.0.0.1] # Phone source address, not the Jetson's USB address.
+    permissions:
+      - action: publish
+        path: iphone
+  - user: any
+    ips: [127.0.0.1] # Workstation source address on the robot Ethernet network.
+    permissions:
+      - action: read
+        path: iphone
+pathDefaults:
+  source: publisher
+  overridePublisher: false
+paths:
+  iphone:

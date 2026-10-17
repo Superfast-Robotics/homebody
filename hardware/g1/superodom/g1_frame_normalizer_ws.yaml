@@ -1,0 +1,40 @@
+# frame_normalizer for the workstation engine (g1_ws.launch.py): every topic under /ws and the
+# frames renamed; its camera colorization inputs are not used.
+/**:
+  ros__parameters:
+    map_frame: "ws_map"
+    sensor_frame: "ws_sensor"
+    gravity_frame: "gravity"
+
+    imu_odom_in: "/ws/state_estimation"
+    lidar_odom_in: "/ws/laser_odometry"
+    map_in: "/ws/laser_cloud_map"
+    scan_in: "/ws/registered_scan"
+
+    imu_odom_out: "/ws/state_estimation_aligned"
+    lidar_odom_out: "/ws/laser_odometry_aligned"
+    imu_velocity_marker_out: "/ws/state_estimation_aligned_velocity_markers"
+    map_out: "/ws/laser_cloud_map_aligned"
+    scan_out: "/ws/registered_scan_aligned"
+    image_raw_out: "/ws/zed/image_rect_color/uncompressed"
+
+    use_compressed_image: false
+    image_in: "/ws/zed/image_rect_color/compressed"
+    camera_info_in: "/ws/zed/camera_info"
+    camera_frame: "ws_camera"
+    scan_color_out: "/ws/registered_scan_colorized"
+    sync_tolerance: 0.05
+
+    use_static_extrinsics: true
+    cam_tx: 0.0
+    cam_ty: 0.0
+    cam_tz: 0.0
+    cam_qx: 0.0
+    cam_qy: 0.0
+    cam_qz: 0.0
+    cam_qw: 1.0
+    cam_roll_deg: 0.0
+    cam_pitch_deg: 0.0
+    cam_yaw_deg: 0.0
+
+    rotate_twist: false

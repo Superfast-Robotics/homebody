@@ -1,0 +1,24 @@
+{
+  "platform": "linux/amd64",
+  "base": "ros:humble-ros-base-jammy@sha256:6b4abb5340e430c632bcf4710fb34996df4f80e502993e5755f8fc59a39c7b2e",
+  "superodom": {
+    "url": "https://github.com/superxslam/SuperOdom",
+    "revision": "57a6e233c348372485b7c64ae8238d53c1c7c2ad",
+    "patch": "imuPreintegration_node.cpp: MultiThreadedExecutor -> SingleThreadedExecutor",
+    "serial_imu_executor": 1,
+    "image": "homebody-superodom:57a6e233-serial-imu"
+  },
+  "sophus": {
+    "url": "https://github.com/strasdat/Sophus",
+    "revision": "97e71617749a32b83cdd411591ebb2ede9d330f0"
+  },
+  "gtsam": {
+    "url": "https://github.com/borglab/gtsam",
+    "revision": "4abef9248edc4c49943d8fd8a84c028deb486f4c"
+  },
+  "unitree_ros2": {
+    "url": "https://github.com/unitreerobotics/unitree_ros2",
+    "revision": "668d1ec5a05d1c38d3306bdca7d59f2ba3581a88",
+    "image": "homebody-recorder:humble-57a6e233"
+  }
+}

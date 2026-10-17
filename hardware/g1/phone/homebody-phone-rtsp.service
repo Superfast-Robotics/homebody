@@ -1,0 +1,23 @@
+[Unit]
+Description=HomeBody iPhone RTSP relay
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+DynamicUser=yes
+WorkingDirectory=/opt/homebody-phone
+ExecStart=/opt/homebody-phone/mediamtx-v1.21.1 /etc/homebody-phone/mediamtx.yml
+Restart=always
+RestartSec=3
+KillSignal=SIGINT
+TimeoutStopSec=10
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

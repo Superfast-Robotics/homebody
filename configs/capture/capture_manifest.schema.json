@@ -1,0 +1,1378 @@
+{
+  "type": "object",
+  "properties": {
+    "contract_version": {
+      "const": "real-to-sim-capture/v1"
+    },
+    "session_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$"
+    },
+    "started_at_utc": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$"
+    },
+    "collection_state": {
+      "enum": [
+        "planned",
+        "recording",
+        "finalized",
+        "complete",
+        "interrupted"
+      ]
+    },
+    "start_time_note": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "intended_use": {
+      "type": "object",
+      "properties": {
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "metric_geometry",
+              "rgb_appearance_semantics",
+              "lidar_localization_evaluation",
+              "robot_workspace",
+              "interaction",
+              "existing_scene_edit"
+            ]
+          }
+        },
+        "target_simulator": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "output_formats": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "tolerances": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "scope": {
+                "type": "string",
+                "minLength": 1
+              },
+              "quantity": {
+                "type": "string",
+                "minLength": 1
+              },
+              "value": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "unit": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "evidence_standard": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "scope",
+              "quantity",
+              "value",
+              "unit",
+              "evidence_standard"
+            ],
+            "additionalProperties": true
+          }
+        },
+        "allowed_methods": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "constraints": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "required": [
+        "capabilities",
+        "target_simulator",
+        "output_formats",
+        "tolerances",
+        "allowed_methods",
+        "constraints"
+      ],
+      "additionalProperties": true
+    },
+    "provenance": {
+      "type": "object"
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/file"
+      }
+    },
+    "streams": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/stream"
+      }
+    },
+    "clocks": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/clock"
+      }
+    },
+    "frames": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/frame"
+      }
+    },
+    "calibrations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/calibration"
+      }
+    },
+    "transforms": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/transform"
+      }
+    },
+    "alignments": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/alignment"
+      }
+    },
+    "scene_policy": {
+      "type": "object",
+      "properties": {
+        "authoritative_source_file_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$"
+          }
+        },
+        "excluded_content": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "mask_file_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$"
+          }
+        },
+        "retention_policy": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "notes": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "authoritative_source_file_ids",
+        "excluded_content",
+        "mask_file_ids",
+        "retention_policy",
+        "notes"
+      ],
+      "additionalProperties": true
+    },
+    "splits": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "selection": {
+                "const": "time_interval"
+              },
+              "role": {
+                "enum": [
+                  "construction",
+                  "development",
+                  "final_evaluation",
+                  "unassigned"
+                ]
+              },
+              "stream_id": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$"
+              },
+              "clock_id": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$"
+              },
+              "segment_id": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$"
+              },
+              "start_stamp": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "^-?[0-9]+(?:[.][0-9]+)?$"
+              },
+              "end_stamp": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "^-?[0-9]+(?:[.][0-9]+)?$"
+              },
+              "used_in_map": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "notes": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "selection",
+              "role",
+              "stream_id",
+              "clock_id",
+              "segment_id",
+              "start_stamp",
+              "end_stamp",
+              "used_in_map",
+              "notes"
+            ],
+            "additionalProperties": true
+          },
+          {
+            "type": "object",
+            "properties": {
+              "selection": {
+                "const": "file_set"
+              },
+              "role": {
+                "enum": [
+                  "construction",
+                  "development",
+                  "final_evaluation",
+                  "unassigned"
+                ]
+              },
+              "file_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$"
+                },
+                "minItems": 1,
+                "uniqueItems": true
+              },
+              "used_in_map": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "notes": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "selection",
+              "role",
+              "file_ids",
+              "used_in_map",
+              "notes"
+            ],
+            "additionalProperties": true
+          }
+        ]
+      }
+    },
+    "derived_products": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$"
+          },
+          "output_file_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$"
+            }
+          },
+          "input_file_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$"
+            }
+          },
+          "producer": {
+            "type": "object"
+          },
+          "parameters": {
+            "type": "object"
+          },
+          "calibration_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$"
+            }
+          },
+          "alignment_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$"
+            }
+          },
+          "frame_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "clock_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "output_file_ids",
+          "input_file_ids",
+          "producer",
+          "parameters",
+          "calibration_ids",
+          "alignment_ids",
+          "frame_id",
+          "clock_id"
+        ],
+        "additionalProperties": true
+      }
+    },
+    "quality_report_file_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "readiness": {
+      "type": "object",
+      "properties": {
+        "geometry": {
+          "$ref": "#/$defs/readiness"
+        },
+        "appearance_registration": {
+          "$ref": "#/$defs/readiness"
+        },
+        "localization_evaluation": {
+          "$ref": "#/$defs/readiness"
+        },
+        "robot_interaction": {
+          "$ref": "#/$defs/readiness"
+        }
+      },
+      "required": [
+        "geometry",
+        "appearance_registration",
+        "localization_evaluation",
+        "robot_interaction"
+      ],
+      "additionalProperties": true
+    },
+    "profile": {
+      "const": "sensor-only"
+    },
+    "sensor_integrity": {
+      "enum": ["pending", "accepted", "rejected"],
+      "description": "Native recording checks only; not coverage, calibration, scene readiness or task success."
+    }
+  },
+  "required": [
+    "contract_version",
+    "collection_state",
+    "files",
+    "streams",
+    "clocks",
+    "frames",
+    "calibrations",
+    "transforms",
+    "alignments"
+  ],
+  "additionalProperties": true,
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Real-to-sim capture manifest v1 (structural validation only)",
+  "$defs": {
+    "binding": {
+      "type": "object",
+      "properties": {
+        "file_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$"
+        },
+        "selector": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "file_id",
+        "selector"
+      ],
+      "additionalProperties": true
+    },
+    "timestamp_field": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "clock_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$"
+        },
+        "unit": {
+          "type": "string",
+          "minLength": 1
+        },
+        "encoding": {
+          "type": "string",
+          "minLength": 1
+        },
+        "meaning": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "name",
+        "clock_id",
+        "unit",
+        "encoding",
+        "meaning"
+      ],
+      "additionalProperties": true
+    },
+    "file": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\\\)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
+        },
+        "role": {
+          "type": "string",
+          "minLength": 1
+        },
+        "size_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "sha256": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "finalized": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "path",
+        "role",
+        "size_bytes",
+        "sha256",
+        "finalized"
+      ],
+      "additionalProperties": true,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "finalized": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "size_bytes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "stream": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$"
+        },
+        "kind": {
+          "enum": [
+            "lidar",
+            "rgb",
+            "depth",
+            "imu",
+            "poses",
+            "joints",
+            "events",
+            "other"
+          ]
+        },
+        "status": {
+          "enum": [
+            "recorded",
+            "unavailable",
+            "not_requested",
+            "failed"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "timestamp_status": {
+          "enum": [
+            "known",
+            "receive_time_only",
+            "unknown"
+          ]
+        },
+        "timing_notes": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sensor_identity": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "frame_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "bindings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/binding"
+          }
+        },
+        "payload_schema": {
+          "type": "object"
+        },
+        "timestamp_fields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/timestamp_field"
+          }
+        },
+        "summary_timestamp_field": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sample_count": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "first_stamp": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^-?[0-9]+(?:[.][0-9]+)?$"
+        },
+        "last_stamp": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^-?[0-9]+(?:[.][0-9]+)?$"
+        },
+        "observed_rate_hz": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "status",
+        "timestamp_status",
+        "frame_id",
+        "bindings",
+        "payload_schema",
+        "timestamp_fields"
+      ],
+      "additionalProperties": true,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "recorded"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "bindings": {
+                "minItems": 1
+              },
+              "payload_schema": {
+                "minProperties": 1
+              },
+              "sample_count": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "reason": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "recorded"
+              },
+              "timestamp_status": {
+                "enum": [
+                  "known",
+                  "receive_time_only"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "timestamp_fields": {
+                "minItems": 1
+              },
+              "summary_timestamp_field": {
+                "type": "string",
+                "minLength": 1
+              },
+              "first_stamp": {
+                "type": "string"
+              },
+              "last_stamp": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "recorded"
+              },
+              "timestamp_status": {
+                "const": "unknown"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "timing_notes": {
+                "type": "string",
+                "minLength": 1
+              },
+              "summary_timestamp_field": {
+                "type": "null"
+              },
+              "first_stamp": {
+                "type": "null"
+              },
+              "last_stamp": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "recorded"
+              },
+              "timestamp_status": {
+                "const": "receive_time_only"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "timing_notes": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "frame": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$"
+        },
+        "axes": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "handedness": {
+          "enum": [
+            "right",
+            "left",
+            "unknown"
+          ]
+        },
+        "length_unit": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "enum": [
+            "known",
+            "unknown"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "axes",
+        "handedness",
+        "length_unit",
+        "status"
+      ],
+      "additionalProperties": true
+    },
+    "clock": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$"
+        },
+        "domain": {
+          "type": "string",
+          "minLength": 1
+        },
+        "unit": {
+          "type": "string",
+          "minLength": 1
+        },
+        "origin": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "synchronization": {
+          "type": "string",
+          "minLength": 1
+        },
+        "segments": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "domain",
+        "unit",
+        "origin",
+        "synchronization",
+        "segments"
+      ],
+      "additionalProperties": true
+    },
+    "calibration": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$"
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "enum": [
+            "measured",
+            "estimated",
+            "unknown"
+          ]
+        },
+        "stream_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$"
+          }
+        },
+        "bindings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/binding"
+          }
+        },
+        "validity": {
+          "type": "object"
+        },
+        "uncertainty": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "notes": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "status",
+        "stream_ids",
+        "bindings",
+        "validity",
+        "uncertainty"
+      ],
+      "additionalProperties": true
+    },
+    "transform": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$"
+        },
+        "source_frame": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$"
+        },
+        "target_frame": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$"
+        },
+        "status": {
+          "enum": [
+            "measured",
+            "estimated",
+            "unknown"
+          ]
+        },
+        "representation": {
+          "enum": [
+            "static",
+            "dynamic",
+            "unknown"
+          ]
+        },
+        "translation_m": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "number"
+          },
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "quaternion_xyzw": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "number"
+          },
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "bindings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/binding"
+          }
+        },
+        "validity": {
+          "type": "object"
+        },
+        "uncertainty": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "notes": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "id",
+        "source_frame",
+        "target_frame",
+        "status",
+        "representation",
+        "translation_m",
+        "quaternion_xyzw",
+        "bindings",
+        "validity",
+        "uncertainty"
+      ],
+      "additionalProperties": true,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "unknown"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "translation_m": {
+                "type": "null"
+              },
+              "quaternion_xyzw": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "representation": {
+                "const": "static"
+              },
+              "status": {
+                "enum": [
+                  "measured",
+                  "estimated"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "translation_m": {
+                "type": "array"
+              },
+              "quaternion_xyzw": {
+                "type": "array"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "representation": {
+                "const": "dynamic"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "bindings": {
+                "minItems": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "alignment": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$"
+        },
+        "kind": {
+          "enum": [
+            "clock",
+            "spatial",
+            "source_revision"
+          ]
+        },
+        "status": {
+          "enum": [
+            "measured",
+            "estimated",
+            "unknown"
+          ]
+        },
+        "source_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$"
+        },
+        "target_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$"
+        },
+        "bindings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/binding"
+          }
+        },
+        "method": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "validity": {
+          "type": "object"
+        },
+        "uncertainty": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "notes": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "status",
+        "source_id",
+        "target_id",
+        "bindings",
+        "method",
+        "validity",
+        "uncertainty"
+      ],
+      "additionalProperties": true
+    },
+    "readiness": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "enum": [
+            "pending",
+            "ready",
+            "limited",
+            "blocked",
+            "not_requested"
+          ]
+        },
+        "evidence_file_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$"
+          }
+        },
+        "gaps": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "required": [
+        "status",
+        "evidence_file_ids",
+        "gaps"
+      ],
+      "additionalProperties": true
+    }
+  },
+  "description": "Required keys and types. Additional properties are permitted. See the HomeBody REAL2SIM skill references for file/ID/selector resolution, sensor-specific payloads, transforms, acquisition quality and capability readiness. Schema validity alone is not collection or reconstruction acceptance.",
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "collection_state": {
+            "const": "complete"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "files": {
+            "minItems": 1,
+            "items": {
+              "properties": {
+                "finalized": {
+                  "const": true
+                }
+              }
+            }
+          },
+          "streams": {
+            "minItems": 1,
+            "contains": {
+              "properties": {
+                "status": {
+                  "const": "recorded"
+                }
+              },
+              "required": [
+                "status"
+              ]
+            }
+          },
+          "quality_report_file_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "intended_use": {
+            "properties": {
+              "capabilities": {
+                "minItems": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "collection_state": {
+            "const": "complete"
+          },
+          "started_at_utc": {
+            "type": "null"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "start_time_note": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "profile"
+        ]
+      },
+      "then": {
+        "properties": {
+          "collection_state": {
+            "const": "finalized"
+          }
+        }
+      },
+      "else": {
+        "required": [
+          "contract_version",
+          "session_id",
+          "started_at_utc",
+          "collection_state",
+          "start_time_note",
+          "intended_use",
+          "provenance",
+          "files",
+          "streams",
+          "clocks",
+          "frames",
+          "calibrations",
+          "transforms",
+          "alignments",
+          "scene_policy",
+          "splits",
+          "derived_products",
+          "quality_report_file_id",
+          "readiness"
+        ],
+        "properties": {
+          "streams": {
+            "items": {
+              "required": [
+                "id",
+                "kind",
+                "status",
+                "reason",
+                "timestamp_status",
+                "timing_notes",
+                "sensor_identity",
+                "frame_id",
+                "bindings",
+                "payload_schema",
+                "timestamp_fields",
+                "summary_timestamp_field",
+                "sample_count",
+                "first_stamp",
+                "last_stamp",
+                "observed_rate_hz"
+              ]
+            }
+          },
+          "calibrations": {
+            "items": {
+              "required": [
+                "id",
+                "kind",
+                "status",
+                "stream_ids",
+                "bindings",
+                "validity",
+                "uncertainty",
+                "notes"
+              ]
+            }
+          },
+          "transforms": {
+            "items": {
+              "required": [
+                "id",
+                "source_frame",
+                "target_frame",
+                "status",
+                "representation",
+                "translation_m",
+                "quaternion_xyzw",
+                "bindings",
+                "validity",
+                "uncertainty",
+                "notes"
+              ]
+            }
+          },
+          "alignments": {
+            "items": {
+              "required": [
+                "id",
+                "kind",
+                "status",
+                "source_id",
+                "target_id",
+                "bindings",
+                "method",
+                "validity",
+                "uncertainty",
+                "notes"
+              ]
+            }
+          }
+        }
+      }
+    }
+  ]
+}

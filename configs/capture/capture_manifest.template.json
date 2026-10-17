@@ -1,0 +1,191 @@
+{
+  "$schema": "./capture_manifest.schema.json",
+  "contract_version": "real-to-sim-capture/v1",
+  "session_id": "assign-unique-session-id",
+  "started_at_utc": null,
+  "start_time_note": null,
+  "collection_state": "planned",
+  "intended_use": {
+    "capabilities": [
+      "metric_geometry",
+      "rgb_appearance_semantics",
+      "lidar_localization_evaluation"
+    ],
+    "target_simulator": null,
+    "output_formats": [],
+    "tolerances": [
+      {
+        "scope": "observed room surfaces and task objects; scene-specific requirements remain operator-defined",
+        "quantity": "metric reconstruction error",
+        "value": null,
+        "unit": "metres",
+        "evidence_standard": null
+      }
+    ],
+    "allowed_methods": [],
+    "constraints": [
+      "Capture and offline validation only; no reconstruction or robot operation."
+    ]
+  },
+  "provenance": {
+    "recorder_version": "See meta/recorder_source",
+    "configuration_file_ids": [],
+    "capture_profile": "LiDAR + iPhone",
+    "postprocessor": "src/homebody/real2sim/exploration/record/capture_contract.py",
+    "notes": "Recording code and configuration are in meta/recorder_source. Postprocessor code is separately identified, never substituted for producer provenance."
+  },
+  "files": [],
+  "streams": [],
+  "clocks": [
+    {
+      "id": "host",
+      "domain": "recorder epoch",
+      "unit": "nanoseconds",
+      "origin": "Unix epoch",
+      "synchronization": "Host receipt/write and phone decode clock; not exposure time",
+      "segments": []
+    },
+    {
+      "id": "mid360",
+      "domain": "device timestamp",
+      "unit": "nanoseconds",
+      "origin": null,
+      "synchronization": "Unknown absolute offset; retain clock-offset observations and resets",
+      "segments": []
+    }
+  ],
+  "frames": [
+    {
+      "id": "ws_map",
+      "axes": "aligned SLAM map, gravity-aligned Z up",
+      "handedness": "right",
+      "length_unit": "metres",
+      "status": "known"
+    },
+    {
+      "id": "gravity",
+      "axes": "aligned sensor/body convention; see meta/frames.txt",
+      "handedness": "right",
+      "length_unit": "metres",
+      "status": "known"
+    },
+    {
+      "id": "livox_frame",
+      "axes": null,
+      "handedness": "unknown",
+      "length_unit": "metres",
+      "status": "unknown"
+    },
+    {
+      "id": "imu_unresolved",
+      "axes": null,
+      "handedness": "unknown",
+      "length_unit": "metres",
+      "status": "unknown"
+    },
+    {
+      "id": "iphone_optical",
+      "axes": "optical projection/mount not calibrated",
+      "handedness": "unknown",
+      "length_unit": "metres",
+      "status": "unknown"
+    },
+    {
+      "id": "exploration_start",
+      "axes": "X forward, Y left, Z up at exploration zero",
+      "handedness": "right",
+      "length_unit": "metres",
+      "status": "known"
+    }
+  ],
+  "calibrations": [
+    {
+      "id": "phone_projection",
+      "kind": "intrinsics_and_processing",
+      "status": "unknown",
+      "stream_ids": [],
+      "bindings": [],
+      "validity": {},
+      "uncertainty": null,
+      "notes": "Device/model, serial, selected lens and mount are unknown. The reference phone profile is unverified, not an operator declaration. Intrinsics, distortion, stabilization/crop, rolling shutter, exposure timing and extrinsics require validation; retained source metadata is in meta/phone_camera.json when available."
+    }
+  ],
+  "transforms": [
+    {
+      "id": "T_gravity_from_iphone",
+      "source_frame": "iphone_optical",
+      "target_frame": "gravity",
+      "status": "unknown",
+      "representation": "unknown",
+      "translation_m": null,
+      "quaternion_xyzw": null,
+      "bindings": [],
+      "validity": {},
+      "uncertainty": null,
+      "notes": "Head-adjacent torso mount photograph is not a measured transform."
+    }
+  ],
+  "alignments": [
+    {
+      "id": "clock_mid360_to_host",
+      "kind": "clock",
+      "status": "unknown",
+      "source_id": "mid360",
+      "target_id": "host",
+      "bindings": [],
+      "method": null,
+      "validity": {},
+      "uncertainty": null,
+      "notes": "Receipt minus header offsets are diagnostics, not measured one-way latency."
+    }
+  ],
+  "scene_policy": {
+    "authoritative_source_file_ids": [],
+    "excluded_content": [],
+    "mask_file_ids": [],
+    "retention_policy": "Preserve complete native source runs; no automatic deletion.",
+    "notes": "No exclusions declared for this capture. Dynamic foreground and ordinary blur are not exclusions."
+  },
+  "splits": [],
+  "derived_products": [],
+  "quality_report_file_id": null,
+  "readiness": {
+    "geometry": {
+      "status": "limited",
+      "evidence_file_ids": [],
+      "gaps": [
+        "Raw metric XYZ, scans and online poses support observed local geometry only.",
+        "Moving coverage, deskew timing convention, mount and map-epoch alignment still require validation.",
+        "This is input readiness for observed surfaces only; room-scale accuracy tolerances are unspecified."
+      ]
+    },
+    "appearance_registration": {
+      "status": "pending",
+      "evidence_file_ids": [],
+      "gaps": [
+        "Native video retained; estimate/validate intrinsics, extrinsics and exposure timing across motion."
+      ]
+    },
+    "localization_evaluation": {
+      "status": "limited",
+      "evidence_file_ids": [],
+      "gaps": [
+        "Only shared-SLAM internal consistency is supported.",
+        "Select exact target and separate repeat queries; independent reference and final-test split absent."
+      ]
+    },
+    "robot_interaction": {
+      "status": "not_requested",
+      "evidence_file_ids": [],
+      "gaps": [
+        "Capture does not qualify grasping, reach, collision geometry or articulated mechanisms."
+      ]
+    }
+  },
+  "native_conventions": {
+    "lidar": "XYZ metres. Raw MID-360 time field is relative nanoseconds; bridge scales by 1e-9. Driver scan-stamp reference/deskew unverified. Registered XYZ already transformed; raw sweeps retained.",
+    "imu": "Raw MID-360 acceleration in g; bridge multiplies by 9.80511. Gyro consumed as rad/s. Empty native frame; physical axes/bias calibration unverified.",
+    "poses": "Online SLAM T_header_frame_from_child_frame; translation metres, quaternion xyzw. Retain /homebody/slam_epoch; not a globally optimized or independently surveyed trajectory.",
+    "joints": "Measured robot/hand state; joint ordering and model attachment require validation before self-mask/reach claims."
+  }
+}

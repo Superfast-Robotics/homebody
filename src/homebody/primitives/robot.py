@@ -38,4 +38,4 @@ class Robot(Protocol):
         """Block while SECONDS pass under the current commands: whole control periods, at most 1 s."""
 
     def stop(self, epoch: int) -> None:
-        """Zero the base and hold both arms. The hands keep their closure."""
+        """Zero the base and keep both arms in place. The hands keep their closure."""

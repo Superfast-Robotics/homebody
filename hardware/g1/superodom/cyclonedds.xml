@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!-- homebody workstation-side CycloneDDS: the robot LAN NIC only (never wlo1/docker0), discovery
+     multicast like the robot's own config, a receive buffer that holds ~8 s of raw clouds. -->
+<CycloneDDS xmlns="https://cdds.io/config" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="https://cdds.io/config https://raw.githubusercontent.com/eclipse-cyclonedds/cyclonedds/master/etc/cyclonedds.xsd">
+    <Domain Id="any">
+        <General>
+            <Interfaces>
+                <NetworkInterface name="@ROBOT_INTERFACE@" priority="default" multicast="default" />
+            </Interfaces>
+            <AllowMulticast>spdp</AllowMulticast>
+            <MaxMessageSize>65500B</MaxMessageSize>
+        </General>
+        <Internal>
+            <SocketReceiveBufferSize min="32MB" />
+            <DefragUnreliableMaxSamples>32</DefragUnreliableMaxSamples>
+            <DefragReliableMaxSamples>64</DefragReliableMaxSamples>
+            <DeliveryQueueMaxSamples>256</DeliveryQueueMaxSamples>
+            <MaxQueuedRexmitBytes>2MB</MaxQueuedRexmitBytes>
+        </Internal>
+    </Domain>
+</CycloneDDS>

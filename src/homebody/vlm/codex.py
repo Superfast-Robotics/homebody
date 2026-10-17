@@ -38,6 +38,8 @@ class Codex:
                    str(work / "decision.json"), "--json", "--color", "never", "--model",
                    self.settings.model_id, "-c", 'web_search="disabled"',
                    "-c", f'model_reasoning_effort="{self.effort(self.settings)}"', "-c", 'approval_policy="never"']
+        if self.settings.service_tier != "default":
+            command += ["-c", f'service_tier="{self.settings.service_tier}"']
         for feature in DISABLED_FEATURES:
             command += ["--disable", feature]
         for image in images:

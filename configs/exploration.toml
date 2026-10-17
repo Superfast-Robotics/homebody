@@ -1,0 +1,22 @@
+# Exploration settings for this deployment. Omitted settings take the defaults in
+# src/homebody/real2sim/exploration/config.py; `--settings my.toml` and command-line options
+# override this file, and every run records the result in meta/settings.json. The one credential
+# is the G1's SSH password, `[robot] ssh_password` (the Unitree factory default "123"); set the
+# robot's own here or in a separate `--settings` file, or export HOMEBODY_G1_SSH_PASSWORD, which
+# overrides it.
+
+[exploration]
+# The instruction the console starts with and the active time budget; both can be changed per launch.
+task = "Explore the accessible parts of this space."
+budget_s = 420.0
+
+[robot]
+# ssh_target = "unitree@192.168.123.164"  # the G1's SSH account and address
+# ssh_password = "123"                    # the Unitree factory password; use the robot's own
+# The workstation interface on the robot network; empty selects the only 192.168.123.x link.
+iface = ""
+
+# [iphone]
+# input_url = "rtsp://JETSON_LAN_IP:8554/iphone"  # the phone stream the workstation reads
+# relay_service = "homebody-phone-rtsp.service"   # the relay unit on the Jetson; empty leaves video alone
+# hwaccel = "cuda"                                # decode the phone video on the GPU

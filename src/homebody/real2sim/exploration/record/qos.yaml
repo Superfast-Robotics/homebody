@@ -1,0 +1,47 @@
+# ros2 bag record --qos-profile-overrides-path (rosbag2 0.15 / Humble format).
+# Rule: every high-rate stream is BEST_EFFORT on the recorder side. The writers of
+# /utlidar/* (the LiDAR's DDS publisher), /lowstate (motion board) and /lowcmd
+# (the command writer on this workstation) offer RELIABLE or unknown QoS;
+# rosbag2's adaptive QoS would then subscribe RELIABLE and a stalled recorder could apply
+# back-pressure to a writer the robot depends on. A best_effort reader matches any writer.
+# Depth = ~1-2 s of messages so a write stall drops in the recorder, never at the writer.
+
+# ---- MID-360 raw (source of truth for offline SuperOdom re-runs) ----
+/homebody/iphone/color/image/compressed: {history: keep_last, depth: 10, reliability: best_effort, durability: volatile}
+/utlidar/cloud_livox_mid360:        {history: keep_last, depth: 20,   reliability: best_effort, durability: volatile}
+/utlidar/imu_livox_mid360:          {history: keep_last, depth: 400,  reliability: best_effort, durability: volatile}
+# optional (derivable offline with hardware/g1/superodom/time_rescale_node.py); off by default
+/utlidar/cloud_livox_mid360_sec:    {history: keep_last, depth: 20,   reliability: best_effort, durability: volatile}
+/utlidar/imu_livox_mid360_sec:      {history: keep_last, depth: 400,  reliability: best_effort, durability: volatile}
+
+# ---- SuperOdom on the workstation (/ws prefix, hardware/g1/superodom/g1_ws.launch.py) ----
+/ws/laser_odometry_aligned:         {history: keep_last, depth: 50,   reliability: best_effort, durability: volatile}
+/ws/laser_odometry:                 {history: keep_last, depth: 50,   reliability: best_effort, durability: volatile}
+/ws/state_estimation:               {history: keep_last, depth: 400,  reliability: best_effort, durability: volatile}
+/ws/state_estimation_health:        {history: keep_last, depth: 50,   reliability: best_effort, durability: volatile}
+/ws/registered_scan_aligned:        {history: keep_last, depth: 20,   reliability: best_effort, durability: volatile}
+/ws/laser_cloud_map_aligned:        {history: keep_last, depth: 5,    reliability: best_effort, durability: volatile}
+/ws/super_odometry_stats:           {history: keep_last, depth: 50,   reliability: best_effort, durability: volatile}
+/ws/tf:                             {history: keep_last, depth: 1000, reliability: best_effort, durability: volatile}
+# static: must be RELIABLE + TRANSIENT_LOCAL or the one latched sample is never received.
+/ws/tf_static:                      {history: keep_last, depth: 100,  reliability: reliable,    durability: transient_local}
+
+# ---- extrinsics publisher (republishes every 10 s so each split has it) ----
+/tf_static:                         {history: keep_last, depth: 100,  reliability: reliable,    durability: transient_local}
+/tf:                                {history: keep_last, depth: 1000, reliability: best_effort, durability: volatile}
+
+
+# ---- Unitree DDS (needs unitree_hg message type support in the recorder image) ----
+# DDS rt/lowstate <-> ROS /lowstate, type unitree_hg::msg::dds_::LowState_
+/lowstate:                          {history: keep_last, depth: 2000, reliability: best_effort, durability: volatile}
+/lowcmd:                            {history: keep_last, depth: 1000, reliability: best_effort, durability: volatile}
+/dex3/left/state:                   {history: keep_last, depth: 500,  reliability: best_effort, durability: volatile}
+/dex3/right/state:                  {history: keep_last, depth: 500,  reliability: best_effort, durability: volatile}
+
+/homebody/cameras:                  {history: keep_last, depth: 10,   reliability: reliable,    durability: transient_local}
+/homebody/slam_epoch:               {history: keep_last, depth: 10,   reliability: reliable,    durability: transient_local}
+/ws/state_estimation_aligned:       {history: keep_last, depth: 400,  reliability: best_effort, durability: volatile}
+/homebody/clock_offset:             {history: keep_last, depth: 10,   reliability: reliable,    durability: volatile}
+
+# ---- exploration state ----
+/exploration/state:                 {history: keep_last, depth: 50,   reliability: reliable,    durability: volatile}

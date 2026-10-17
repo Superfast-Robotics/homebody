@@ -5188,6 +5188,312 @@
    "sha256": "070de8dc11082fe95a3b55391cb142e78a4b3bc116f1b947dbb31ca0d5767e0f",
    "bytes": 11583,
    "source": "vendored G1 controller kernel; see THIRD_PARTY_NOTICES.md"
+  },
+  {
+   "path": "assets/robot/g1_body29_hand14.urdf",
+   "sha256": "8bbf006633fc50b616f665c7a970780cc296577a0adfd7d28b049e751c238735",
+   "bytes": 51870,
+   "source": "Psi0 G1 dynamics URDF; see THIRD_PARTY_NOTICES.md"
+  },
+  {
+   "path": "assets/robot/g1_viz/g1_29dof_with_hand_rev_1_0_viz.urdf",
+   "sha256": "5adcf04bad290076907af23be462d2ffed5d333244b923d93cd5f0f60b8ea1c3",
+   "bytes": 50767,
+   "source": "Unitree G1 29-DoF visual URDF; BSD-3-Clause, assets/robot/LICENSE"
+  },
+  {
+   "path": "assets/robot/g1_viz/meshes_viz/head_link.STL",
+   "sha256": "12737d2a562fccfa8298a7450f837e58b8b2d18ec6fa1a76193a9bc4893f350a",
+   "bytes": 74684,
+   "source": "Unitree G1 29-DoF visual mesh; BSD-3-Clause, assets/robot/LICENSE"
+  },
+  {
+   "path": "assets/robot/g1_viz/meshes_viz/left_ankle_pitch_link.STL",
+   "sha256": "dc38721ba454bac1d3dbaffeff7f078ae6ed6600b79b070d4ebc863c7bfd337e",
+   "bytes": 10084,
+   "source": "Unitree G1 29-DoF visual mesh; BSD-3-Clause, assets/robot/LICENSE"
+  },
+  {
+   "path": "assets/robot/g1_viz/meshes_viz/left_ankle_roll_link.STL",
+   "sha256": "6d7f8f50cfa424b7003f95116db267d3e033742bd32c3e0b1e719bfa3e17fa63",
+   "bytes": 52284,
+   "source": "Unitree G1 29-DoF visual mesh; BSD-3-Clause, assets/robot/LICENSE"
+  },
+  {
+   "path": "assets/robot/g1_viz/meshes_viz/left_elbow_link.STL",
+   "sha256": "11510e1e16d80aa2cd5a20923db279ffc1248a1b24296f3f2cbced629775fb1e",
+   "bytes": 10084,
+   "source": "Unitree G1 29-DoF visual mesh; BSD-3-Clause, assets/robot/LICENSE"
+  },
+  {
+   "path": "assets/robot/g1_viz/meshes_viz/left_hand_index_0_link.STL",
+   "sha256": "4ed7478e5651708b7d9c6ac3de5b78549e8b2c06078af74d8a71423284f8664e",
+   "bytes": 45484,
+   "source": "Unitree G1 29-DoF visual mesh; BSD-3-Clause, assets/robot/LICENSE"
+  },
+  {
+   "path": "assets/robot/g1_viz/meshes_viz/left_hand_index_1_link.STL",
+   "sha256": "77bdee8699518044f102cc67d249837b43e35ecc8562434ec349e89aa36ce25e",
+   "bytes": 121784,
+   "source": "Unitree G1 29-DoF visual mesh; BSD-3-Clause, assets/robot/LICENSE"
+  },
+  {
+   "path": "assets/robot/g1_viz/meshes_viz/left_hand_middle_0_link.STL",
+   "sha256": "4ed7478e5651708b7d9c6ac3de5b78549e8b2c06078af74d8a71423284f8664e",
+   "bytes": 45484,
+   "source": "Unitree G1 29-DoF visual mesh; BSD-3-Clause, assets/robot/LICENSE"
+  },
+  {
+   "path": "assets/robot/g1_viz/meshes_viz/left_hand_middle_1_link.STL",
+   "sha256": "77bdee8699518044f102cc67d249837b43e35ecc8562434ec349e89aa36ce25e",
+   "bytes": 121784,
+   "source": "Unitree G1 29-DoF visual mesh; BSD-3-Clause, assets/robot/LICENSE"
+  },
+  {
+   "path": "assets/robot/g1_viz/meshes_viz/left_hand_palm_link.STL",
+   "sha256": "29fa59e1d1240e4ceac4c4ed9f48a8c0e635def0c7f639246949439f1fd38914",
+   "bytes": 294884,
+   "source": "Unitree G1 29-DoF visual mesh; BSD-3-Clause, assets/robot/LICENSE"
+  },
+  {
+   "path": "assets/robot/g1_viz/meshes_viz/left_hand_thumb_0_link.STL",
+   "sha256": "9b88e784a75621c7e120ab6f37e0fbd3be2f578299da0007d693fc761687c43b",
+   "bytes": 8884,
+   "source": "Unitree G1 29-DoF visual mesh; BSD-3-Clause, assets/robot/LICENSE"
+  },
+  {
+   "path": "assets/robot/g1_viz/meshes_viz/left_hand_thumb_1_link.STL",
+   "sha256": "f4cb5ab9f11e7c77642a732381438f8e18d43795eb927d2b43b34ee89fb236ed",
+   "bytes": 45484,
+   "source": "Unitree G1 29-DoF visual mesh; BSD-3-Clause, assets/robot/LICENSE"
+  },
+  {
+   "path": "assets/robot/g1_viz/meshes_viz/left_hand_thumb_2_link.STL",
+   "sha256": "b20ec6139a7f3391efddb748b429b7a414a9cfddd755d6935ca1d84a39b25198",
+   "bytes": 121784,
+   "source": "Unitree G1 29-DoF visual mesh; BSD-3-Clause, assets/robot/LICENSE"
+  },
+  {
+   "path": "assets/robot/g1_viz/meshes_viz/left_hip_pitch_link.STL",
+   "sha256": "ddd98e7e624b18781378fffd82662cb821456509f255ec45fcafe592a14d2132",
+   "bytes": 14584,
+   "source": "Unitree G1 29-DoF visual mesh; BSD-3-Clause, assets/robot/LICENSE"
+  },
+  {
+   "path": "assets/robot/g1_viz/meshes_viz/left_hip_roll_link.STL",
+   "sha256": "a19e5ba19d7eefb3e8b4289c1a6a1afd7dcf8d9018b3cdfa3fc55be692258886",
+   "bytes": 15384,
+   "source": "Unitree G1 29-DoF visual mesh; BSD-3-Clause, assets/robot/LICENSE"
+  },
+  {
+   "path": "assets/robot/g1_viz/meshes_viz/left_hip_yaw_link.STL",
+   "sha256": "c4f894ad6fb6597d0210e6e6d5b48d73676c3b475f7262f8539f84585c1ca4c1",
+   "bytes": 23684,
+   "source": "Unitree G1 29-DoF visual mesh; BSD-3-Clause, assets/robot/LICENSE"
+  },
+  {
+   "path": "assets/robot/g1_viz/meshes_viz/left_knee_link.STL",
+   "sha256": "e3ecf7806358633ab0b1d9fcbc5ec9a2b0cfc4b2055220804024ccf3f42b977f",
+   "bytes": 76084,
+   "source": "Unitree G1 29-DoF visual mesh; BSD-3-Clause, assets/robot/LICENSE"
+  },
+  {
+   "path": "assets/robot/g1_viz/meshes_viz/left_shoulder_pitch_link.STL",
+   "sha256": "d8c36677b40ac8b7c9b279ddd7b26b53f72d3779d58f466ee7591ae39e0e67d0",
+   "bytes": 14184,
+   "source": "Unitree G1 29-DoF visual mesh; BSD-3-Clause, assets/robot/LICENSE"
+  },
+  {
+   "path": "assets/robot/g1_viz/meshes_viz/left_shoulder_roll_link.STL",
+   "sha256": "2a3921c68e71a4501f836c6b284117aa8b1517b7e03d4128f21d220f783bd4f8",
+   "bytes": 32084,
+   "source": "Unitree G1 29-DoF visual mesh; BSD-3-Clause, assets/robot/LICENSE"
+  },
+  {
+   "path": "assets/robot/g1_viz/meshes_viz/left_shoulder_yaw_link.STL",
+   "sha256": "f3ad1522406f182c777091dc135ff5cb513836c4b8b06d717d9a4b6675b5e14e",
+   "bytes": 19984,
+   "source": "Unitree G1 29-DoF visual mesh; BSD-3-Clause, assets/robot/LICENSE"
+  },
+  {
+   "path": "assets/robot/g1_viz/meshes_viz/left_wrist_pitch_link.STL",
+   "sha256": "ff255ab5c21cadd8d230c2028b654ce978f258c60f6ccfd331e9d6a7cc34179f",
+   "bytes": 10084,
+   "source": "Unitree G1 29-DoF visual mesh; BSD-3-Clause, assets/robot/LICENSE"
+  },
+  {
+   "path": "assets/robot/g1_viz/meshes_viz/left_wrist_roll_link.STL",
+   "sha256": "243451dbfecc44f493b41dd18189170e3e017949c5dd77d20645eef68ac582d0",
+   "bytes": 28484,
+   "source": "Unitree G1 29-DoF visual mesh; BSD-3-Clause, assets/robot/LICENSE"
+  },
+  {
+   "path": "assets/robot/g1_viz/meshes_viz/left_wrist_yaw_link.STL",
+   "sha256": "57e87793b3bcc467e05d8741f1bb63aa13900de94436b896275e45aa5ec60cbe",
+   "bytes": 25484,
+   "source": "Unitree G1 29-DoF visual mesh; BSD-3-Clause, assets/robot/LICENSE"
+  },
+  {
+   "path": "assets/robot/g1_viz/meshes_viz/logo_link.STL",
+   "sha256": "1a205624bab3ee533b623051cb429820ba6b7e5250a0f3f77a99dc46cd9754ed",
+   "bytes": 19484,
+   "source": "Unitree G1 29-DoF visual mesh; BSD-3-Clause, assets/robot/LICENSE"
+  },
+  {
+   "path": "assets/robot/g1_viz/meshes_viz/pelvis.STL",
+   "sha256": "a0603b0b4a7a21c3b32b08eb50038a730de15a146f1fade562500e635da5bcd7",
+   "bytes": 84934,
+   "source": "Unitree G1 29-DoF visual mesh; BSD-3-Clause, assets/robot/LICENSE"
+  },
+  {
+   "path": "assets/robot/g1_viz/meshes_viz/pelvis_contour_link.STL",
+   "sha256": "86838d78054520c8a7987632cb8fc102d06e310ae04a0c211a96fc1173f8f33f",
+   "bytes": 445384,
+   "source": "Unitree G1 29-DoF visual mesh; BSD-3-Clause, assets/robot/LICENSE"
+  },
+  {
+   "path": "assets/robot/g1_viz/meshes_viz/right_ankle_pitch_link.STL",
+   "sha256": "7407609b6134d537fb35b240da47069f12e04b18278fa0b3009c5b3b08978fb4",
+   "bytes": 10084,
+   "source": "Unitree G1 29-DoF visual mesh; BSD-3-Clause, assets/robot/LICENSE"
+  },
+  {
+   "path": "assets/robot/g1_viz/meshes_viz/right_ankle_roll_link.STL",
+   "sha256": "affe7bc34fcdd7f6d6bafd92f7325f5e43afc2ff6c7303521b23f5b284287c5c",
+   "bytes": 52284,
+   "source": "Unitree G1 29-DoF visual mesh; BSD-3-Clause, assets/robot/LICENSE"
+  },
+  {
+   "path": "assets/robot/g1_viz/meshes_viz/right_elbow_link.STL",
+   "sha256": "8bb2900eb9140c4126d75aa6ac239b59ae553b8b7be9ed3cb40afc69b8e9d96d",
+   "bytes": 10084,
+   "source": "Unitree G1 29-DoF visual mesh; BSD-3-Clause, assets/robot/LICENSE"
+  },
+  {
+   "path": "assets/robot/g1_viz/meshes_viz/right_hand_index_0_link.STL",
+   "sha256": "cca5bb795e68c9ceb5773e6e4e667ced438287397414f058a47604ef26e219ae",
+   "bytes": 45484,
+   "source": "Unitree G1 29-DoF visual mesh; BSD-3-Clause, assets/robot/LICENSE"
+  },
+  {
+   "path": "assets/robot/g1_viz/meshes_viz/right_hand_index_1_link.STL",
+   "sha256": "3113d2242d03a8cd06d4e8b380755107057cd8d662b0d446b5a330a660f376c4",
+   "bytes": 121784,
+   "source": "Unitree G1 29-DoF visual mesh; BSD-3-Clause, assets/robot/LICENSE"
+  },
+  {
+   "path": "assets/robot/g1_viz/meshes_viz/right_hand_middle_0_link.STL",
+   "sha256": "cca5bb795e68c9ceb5773e6e4e667ced438287397414f058a47604ef26e219ae",
+   "bytes": 45484,
+   "source": "Unitree G1 29-DoF visual mesh; BSD-3-Clause, assets/robot/LICENSE"
+  },
+  {
+   "path": "assets/robot/g1_viz/meshes_viz/right_hand_middle_1_link.STL",
+   "sha256": "3113d2242d03a8cd06d4e8b380755107057cd8d662b0d446b5a330a660f376c4",
+   "bytes": 121784,
+   "source": "Unitree G1 29-DoF visual mesh; BSD-3-Clause, assets/robot/LICENSE"
+  },
+  {
+   "path": "assets/robot/g1_viz/meshes_viz/right_hand_palm_link.STL",
+   "sha256": "767f2fc99b2ca4a9494e450611ae078059b1553fffc254c9f67ed5949d9deeda",
+   "bytes": 299584,
+   "source": "Unitree G1 29-DoF visual mesh; BSD-3-Clause, assets/robot/LICENSE"
+  },
+  {
+   "path": "assets/robot/g1_viz/meshes_viz/right_hand_thumb_0_link.STL",
+   "sha256": "156aeb24d80a3d8105c6f3558be70fb04ed68d996de2eb066bfcb5df8045a573",
+   "bytes": 8884,
+   "source": "Unitree G1 29-DoF visual mesh; BSD-3-Clause, assets/robot/LICENSE"
+  },
+  {
+   "path": "assets/robot/g1_viz/meshes_viz/right_hand_thumb_1_link.STL",
+   "sha256": "dc8778140ecd7009e879b883651e8fc9679a2eab197380de516c1f06a736f4c6",
+   "bytes": 45484,
+   "source": "Unitree G1 29-DoF visual mesh; BSD-3-Clause, assets/robot/LICENSE"
+  },
+  {
+   "path": "assets/robot/g1_viz/meshes_viz/right_hand_thumb_2_link.STL",
+   "sha256": "f4ae94d5db5d02575b6b21fa76826678bd96491b8b05662f3fb19e687eb669cb",
+   "bytes": 121784,
+   "source": "Unitree G1 29-DoF visual mesh; BSD-3-Clause, assets/robot/LICENSE"
+  },
+  {
+   "path": "assets/robot/g1_viz/meshes_viz/right_hip_pitch_link.STL",
+   "sha256": "370b70655519f8a58715244698da41432ec142e0d7fadfc5642a00b580a20dba",
+   "bytes": 14484,
+   "source": "Unitree G1 29-DoF visual mesh; BSD-3-Clause, assets/robot/LICENSE"
+  },
+  {
+   "path": "assets/robot/g1_viz/meshes_viz/right_hip_roll_link.STL",
+   "sha256": "2e9555fb9c21cf1fcc305ee71fcedd6f517108e79516ebd8983e7817247dc495",
+   "bytes": 15484,
+   "source": "Unitree G1 29-DoF visual mesh; BSD-3-Clause, assets/robot/LICENSE"
+  },
+  {
+   "path": "assets/robot/g1_viz/meshes_viz/right_hip_yaw_link.STL",
+   "sha256": "b363da38af75efe905dcde49cbda24f0103d7d1df8031b8bb8db91b490165249",
+   "bytes": 23684,
+   "source": "Unitree G1 29-DoF visual mesh; BSD-3-Clause, assets/robot/LICENSE"
+  },
+  {
+   "path": "assets/robot/g1_viz/meshes_viz/right_knee_link.STL",
+   "sha256": "94a3e016ab10c2ac0ced7c9dacc4ac55704b252edb4251979180447e56d7be9e",
+   "bytes": 77184,
+   "source": "Unitree G1 29-DoF visual mesh; BSD-3-Clause, assets/robot/LICENSE"
+  },
+  {
+   "path": "assets/robot/g1_viz/meshes_viz/right_shoulder_pitch_link.STL",
+   "sha256": "f5df32392dbd3636e81cfe3aca2a1899bfe4f8547348c2865ad21db368ad7ca2",
+   "bytes": 14184,
+   "source": "Unitree G1 29-DoF visual mesh; BSD-3-Clause, assets/robot/LICENSE"
+  },
+  {
+   "path": "assets/robot/g1_viz/meshes_viz/right_shoulder_roll_link.STL",
+   "sha256": "4ee04393ccbe066d0eaf00e74da7f824f08ff86027524156bfe64ec37622e3e3",
+   "bytes": 32184,
+   "source": "Unitree G1 29-DoF visual mesh; BSD-3-Clause, assets/robot/LICENSE"
+  },
+  {
+   "path": "assets/robot/g1_viz/meshes_viz/right_shoulder_yaw_link.STL",
+   "sha256": "78e730623cac764dfdd7795ad4a0730c57ed0ef3df62c624f3060e0e663d7f40",
+   "bytes": 19984,
+   "source": "Unitree G1 29-DoF visual mesh; BSD-3-Clause, assets/robot/LICENSE"
+  },
+  {
+   "path": "assets/robot/g1_viz/meshes_viz/right_wrist_pitch_link.STL",
+   "sha256": "47e1816fdd586c7216ea0e4c458fa6ec52095ffd419b4ecfcecf9c1c45f669f9",
+   "bytes": 10084,
+   "source": "Unitree G1 29-DoF visual mesh; BSD-3-Clause, assets/robot/LICENSE"
+  },
+  {
+   "path": "assets/robot/g1_viz/meshes_viz/right_wrist_roll_link.STL",
+   "sha256": "9886cd9459589b27ae83e7b0756cf56a744104f0cdf819c6527ff26a9ed29854",
+   "bytes": 28484,
+   "source": "Unitree G1 29-DoF visual mesh; BSD-3-Clause, assets/robot/LICENSE"
+  },
+  {
+   "path": "assets/robot/g1_viz/meshes_viz/right_wrist_yaw_link.STL",
+   "sha256": "0b68d5924b1a2e3177187487d9cf277370eda22602085ef0584874f0b35e63fb",
+   "bytes": 27384,
+   "source": "Unitree G1 29-DoF visual mesh; BSD-3-Clause, assets/robot/LICENSE"
+  },
+  {
+   "path": "assets/robot/g1_viz/meshes_viz/torso_link_rev_1_0.STL",
+   "sha256": "38397989998d69ced82894452e907816b529131ae1e60fe77c078495e37ee78f",
+   "bytes": 205634,
+   "source": "Unitree G1 29-DoF visual mesh; BSD-3-Clause, assets/robot/LICENSE"
+  },
+  {
+   "path": "assets/robot/g1_viz/meshes_viz/waist_roll_link_rev_1_0.STL",
+   "sha256": "fb35b91c08d7ed835587b00b5240f6e47ac28a8b11b75624d3086aa0b6570e09",
+   "bytes": 10084,
+   "source": "Unitree G1 29-DoF visual mesh; BSD-3-Clause, assets/robot/LICENSE"
+  },
+  {
+   "path": "assets/robot/g1_viz/meshes_viz/waist_yaw_link_rev_1_0.STL",
+   "sha256": "42cc80e918d892b2db1ba31d231290abeb0f1a150340d41c2abe4f5d076611b4",
+   "bytes": 49584,
+   "source": "Unitree G1 29-DoF visual mesh; BSD-3-Clause, assets/robot/LICENSE"
   }
  ],
  "generation_note": "SHA-256 and size of every shipped asset, checked by tools/verify_assets.py."

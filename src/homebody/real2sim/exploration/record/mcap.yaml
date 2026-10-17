@@ -1,0 +1,10 @@
+# rosbag2_storage_mcap writer options (--storage-config-file). Chunked + CRC so a killed
+# recorder leaves a file `mcap recover` can salvage; no compression while recording
+# (JPEG colour and float point clouds gain little; compress offline).
+noChunkCRC: false
+noChunking: false
+noMessageIndex: false
+noSummary: false
+chunkSize: 4194304
+compression: "None"
+forceCompression: false

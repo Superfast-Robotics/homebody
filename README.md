@@ -27,7 +27,7 @@
 | Target date | Release | Scope | Status |
 |---|---|---|---|
 | October 5, 2026 | **SIM** | Simulation environment with navigation and pick-and-place. | Released |
-| October 16, 2026 | **REAL2SIM** | Exploration and scene-reconstruction pipeline. | Planned |
+| October 16, 2026 | **REAL2SIM** | Exploration and scene-reconstruction pipeline. | Released |
 | October 23, 2026 | **REAL** | Real-world deployment code and setup instructions. | Planned |
 
 ## Installation
@@ -59,14 +59,30 @@ homebody provider-check --model astra
 ```
 
 <details>
-<summary>No GPU, or on a Mac?</summary>
+<summary>No GPU, or on a Mac? (SIM)</summary>
 
-A GPU is optional: the walking policy runs on the CPU when CUDA is missing. Rendering is
+For SIM a GPU is optional: the walking policy runs on the CPU when CUDA is missing. Rendering is
 chosen for you (`egl` on Linux with a GPU, `osmesa` on Linux without one, `cgl` on macOS).
 Set `MUJOCO_GL` to override it. Linux without a GPU needs `sudo apt install libosmesa6`, and
 `pip install torch --index-url https://download.pytorch.org/whl/cpu` before step 2 skips the
-large CUDA download. It runs on macOS (Apple silicon) and Linux.
+large CUDA download. SIM runs on macOS (Apple silicon) and Linux; REAL2SIM and REAL need the Linux/amd64
+workstation with an NVIDIA GPU described next.
 </details>
+
+### 🔧 Robot hardware, for REAL2SIM and REAL
+
+A Unitree G1 with its MID-360 LiDAR, and a Linux/amd64 workstation or laptop with an NVIDIA GPU (an
+RTX 4080 or 4090 is preferred) and Docker, plugged into the robot's Ethernet. 3D-print the chest mount
+(`hardware/g1_iphone_mount.stl`), fit your iPhone in it and connect the phone to the G1's Jetson with a
+USB-C to USB-C cable. Put the robot's SSH user, IP and password and the phone stream in `configs/exploration.toml`
+(`[robot]`, `[iphone]`), then install:
+
+```bash
+bash hardware/g1/install.sh          # or: --robot unitree@192.168.123.164 --password 123 --iface enp3s0
+```
+
+The [exploration guide](guides/exploration.md) and the [phone guide](guides/phone-camera.md)
+have the details.
 
 ## Usage
 
@@ -149,11 +165,27 @@ only the values it names.
 
 ### 📷 REAL2SIM
 
-Coming soon.
+Check, explore (open http://127.0.0.1:8099 and press **Start exploration**; **STOP** ends the run,
+recorded under `runs/explore/`), then reconstruct the recording into a HomeBody scene with a coding agent:
+
+```bash
+homebody real2sim explore check
+homebody real2sim explore --task "Explore this room." --iphone-input "$PHONE_STREAM_URL"
+homebody real2sim reconstruct --exploration-data runs/explore/<run> --output assets/real2sim/my_room --task "Reconstruct the observed room"
+homebody --env my_room                 # the new scene runs in SIM like src_kitchen
+```
+
+The coding agent reconstructs the scene from the capture on its own, following the
+[HomeBody REAL2SIM skill](.agents/skills/homebody-real2sim/SKILL.md); the [REAL2SIM guide](guides/real2sim.md)
+describes the scene package it delivers. Settings are the `[group]` tables in `configs/exploration.toml`,
+overridden by `--settings my.toml`.
+
+\*This release is an initial version of REAL2SIM, built on the vanilla open-source SuperOdometry; the real-world
+rollouts use the full version with Amazon FAR's SuperOdometry.
 
 ### 🚀 REAL
 
-Coming soon.
+Coming soon!
 
 ## Contributing
 
@@ -168,13 +200,21 @@ Write one module in `src/homebody/skills/`, for example `push.py`, and add its n
 
 - `PROMPT`, one line starting with `push: ` that tells the model what the skill does and
   what arguments it takes
-- `NEEDS`, the `Robot` commands it uses, and `FAILURES`, the result codes it can return
+- `NEEDS`, the `Robot` commands it uses (`OPTIONAL` lists commands it uses when the backend has
+  them), and `FAILURES`, the result codes it can return
 - `prepare(arguments, selected, current, planning)`, which plans from one camera frame
-- `execute(plan, ctx)`, which runs the plan and returns a `Result`
+- `execute(plan, ctx)`, which runs the plan and returns a `Result` (and `abort`, if it must
+  undo something)
 
-`navigate.py`, `pick.py` and `place.py` are full examples. A skill talks to the robot only
-through `Robot`, so it runs unchanged on a real backend, and its prompt line describes the
-robot, not one kitchen or task.
+`navigate.py`, `pick.py` and `place.py` are full examples, and `tests/test_custom_skill.py`
+builds a new skill, `wave`, from scratch and runs it. A skill with tunable numbers also adds a
+settings group in `session/config.py` and `session/settings.py`. A SIM skill talks to the robot
+only through `Robot`, so it runs unchanged on a real backend, and its prompt line describes the
+robot, not one kitchen or task. The skills the exploration model can call are listed in
+`real2sim/exploration/skills.py` and declare their commands against the live actions (`SURFACE`)
+instead of `Robot`. Adding one takes four places: its module, its name in `LIVE_SKILLS`, its branch in
+`vlm_pick.parse_decision` and its branch in `decision_interpretation.py`; the
+[architecture guide](guides/architecture.md) shows where each piece goes.
 </details>
 
 <details>
@@ -196,7 +236,9 @@ A scene is one folder under `assets/real2sim/`, run with `--env <folder>`. It ne
 `scene.xml` (MuJoCo), `task_scene.json` (the robot's start and the movable objects),
 `map.npz` (the navigation map), `physics.json` and `semantics.json` (the labels and
 descriptions the model is given), and optionally a `settings.toml`. `src_kitchen/` is the
-example to copy, and `tools/verify_assets.py` checks the files.
+example. Follow the [scene build and validation steps](guides/real2sim.md)
+for a new room. `tools/verify_assets.py` checks the repository's shipped manifest;
+it does not certify a new scene's geometry or physics.
 </details>
 
 <details>
@@ -205,8 +247,9 @@ example to copy, and `tools/verify_assets.py` checks the files.
 Implement the `Robot` protocol in `src/homebody/primitives/robot.py`, nine members covering
 time, camera frames, measurements and commands to the base, arms and hands.
 `backends/mujoco.py` is the full simulator version; `backends/real.py` is an empty
-placeholder. A hardware backend also needs capture timestamps, a deadman that stops the
-base, an operator stop and calibration ([CLAUDE.md](CLAUDE.md) has the list).
+placeholder. The G1 exploration driver lives in `backends/g1/`. A hardware backend also needs
+capture timestamps, a deadman that stops the base, an operator stop and calibration
+([CLAUDE.md](CLAUDE.md) has the list).
 </details>
 
 <details>
@@ -222,14 +265,22 @@ you can, the replay video from `tools/compose_cockpit.py`.
 
 | Path | What it is |
 |---|---|
-| `src/homebody/skills/` | The skills: `navigate`, `pick`, `place` |
+| `src/homebody/session/` | The decision loop, settings and recording, for SIM and for exploration |
+| `src/homebody/skills/` | The SIM skills (`navigate`, `pick`, `place`) and the skills exploration runs on the G1 |
+| `src/homebody/primitives/` | The `Robot` interface, observation records and the live sensor and navigation primitives |
 | `src/homebody/vlm/` | The model providers and the prompt |
-| `src/homebody/backends/` | The MuJoCo robot |
+| `src/homebody/backends/` | The MuJoCo robot and the G1 driver |
+| `src/homebody/real2sim/` | Exploration (live map, decisions, capture), export and reconstruction |
+| `src/homebody/motion/exploration/` | Gait, drive math and localization checks for the G1 |
+| `hardware/g1/` | The G1 launcher and the SLAM, recorder and phone relay recipes |
+| `configs/` | `simulation.toml` and `exploration.toml` settings, wave sets and the capture schema |
+| `.agents/skills/homebody-real2sim/` | Capture audit and reconstruction workflow |
 | `assets/` | The robot, its walking policy and the SRC Kitchen scene |
 | `evaluation/` | The physics scorer |
-| `tools/` | Checks, scoring, timelines and replays |
+| `tools/` | Checks, scoring, timelines, replays and scene building |
 
-[CLAUDE.md](CLAUDE.md) explains how the code fits together.
+[CLAUDE.md](CLAUDE.md) explains how the code fits together, and the
+[architecture guide](guides/architecture.md) shows the SIM and REAL2SIM layers.
 </details>
 
 ## Bibtex

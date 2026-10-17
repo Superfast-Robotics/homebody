@@ -1,0 +1,702 @@
+{
+ "explore": {
+  "decisions": [
+   {
+    "n": 1,
+    "kind": "update_region",
+    "used": true,
+    "outcome": "updated",
+    "rejection": null,
+    "rejection_code": null,
+    "goal": null,
+    "face_yaw": null,
+    "result_code": null,
+    "result_outcome": null,
+    "pose_after": null
+   },
+   {
+    "n": 2,
+    "kind": "point",
+    "used": true,
+    "outcome": "arrived",
+    "rejection": null,
+    "rejection_code": null,
+    "goal": [
+     1.598,
+     0.004
+    ],
+    "face_yaw": null,
+    "result_code": null,
+    "result_outcome": "arrived",
+    "pose_after": [
+     1.597917,
+     0.00435,
+     0.873695
+    ]
+   },
+   {
+    "n": 3,
+    "kind": "look",
+    "used": true,
+    "outcome": "arrived",
+    "rejection": null,
+    "rejection_code": null,
+    "goal": [
+     1.598,
+     0.004
+    ],
+    "face_yaw": 0.546,
+    "result_code": null,
+    "result_outcome": "arrived",
+    "pose_after": [
+     1.597917,
+     0.00435,
+     0.545947
+    ]
+   },
+   {
+    "n": 4,
+    "kind": "point",
+    "used": true,
+    "outcome": "arrived",
+    "rejection": null,
+    "rejection_code": null,
+    "goal": [
+     0.204,
+     1.201
+    ],
+    "face_yaw": null,
+    "result_code": null,
+    "result_outcome": "arrived",
+    "pose_after": [
+     0.203567,
+     1.201083,
+     2.710871
+    ]
+   },
+   {
+    "n": 5,
+    "kind": "explored",
+    "used": true,
+    "outcome": "accepted",
+    "rejection": null,
+    "rejection_code": null,
+    "goal": null,
+    "face_yaw": null,
+    "result_code": null,
+    "result_outcome": null,
+    "pose_after": null
+   }
+  ],
+  "requests": [
+   {
+    "n": 1,
+    "skill": "update_region",
+    "names": [
+     "explored",
+     "look_at",
+     "pick_point",
+     "request_help",
+     "update_region"
+    ],
+    "images": 4,
+    "pose": [
+     0.0,
+     0.0,
+     5.235988
+    ],
+    "region_revision": 0,
+    "history_ids": 6,
+    "arguments": {
+     "base_revision": 0,
+     "vertices": [
+      [
+       247,
+       656
+      ],
+      [
+       870,
+       656
+      ],
+      [
+       870,
+       113
+      ],
+      [
+       247,
+       113
+      ]
+     ],
+     "reason": "Synthetic room enclosed by walls.",
+     "evidence_ids": [
+      "E001-I001",
+      "E001-I002",
+      "E001-I003",
+      "E001-I004",
+      "E001-I005",
+      "E001-I007"
+     ],
+     "uncertain_edges": []
+    },
+    "prompt_sha256": "49376c7089e3312e9e9d8a7a50391460ee1e7bebb23ad45e19ed2fe3c3cf6ec5"
+   },
+   {
+    "n": 2,
+    "skill": "pick_point",
+    "names": [
+     "explored",
+     "look_at",
+     "pick_point",
+     "request_help",
+     "update_region"
+    ],
+    "images": 4,
+    "pose": [
+     0.0,
+     0.0,
+     5.235988
+    ],
+    "region_revision": 1,
+    "history_ids": 6,
+    "arguments": {
+     "x": 625,
+     "y": 481,
+     "face_x": 625,
+     "face_y": 384,
+     "why": "Inspect the far wall.",
+     "target_area": "synthetic wall",
+     "expected_gain": "readable edges"
+    },
+    "prompt_sha256": "441c16939b1f4be2476feb0f6844394f6dde13cb5591fc39b6664a99609b8dad"
+   },
+   {
+    "n": 3,
+    "skill": "look_at",
+    "names": [
+     "explored",
+     "look_at",
+     "pick_point",
+     "request_help",
+     "update_region"
+    ],
+    "images": 5,
+    "pose": [
+     1.597917,
+     0.00435,
+     1.570796
+    ],
+    "region_revision": 1,
+    "history_ids": 7,
+    "arguments": {
+     "x": 743,
+     "y": 375,
+     "why": "Look through the doorway.",
+     "target_area": "doorway",
+     "expected_gain": "different angle"
+    },
+    "prompt_sha256": "dde7723979257cf079aa86ae1109b4a5d43ee3f9c12d7e7fc89ae5e66d51261d"
+   },
+   {
+    "n": 4,
+    "skill": "pick_point",
+    "names": [
+     "explored",
+     "look_at",
+     "pick_point",
+     "request_help",
+     "update_region"
+    ],
+    "images": 5,
+    "pose": [
+     1.597917,
+     0.00435,
+     0.545947
+    ],
+    "region_revision": 1,
+    "history_ids": 8,
+    "arguments": {
+     "x": 373,
+     "y": 365,
+     "face_x": 373,
+     "face_y": 249,
+     "why": "Inspect the far wall.",
+     "target_area": "synthetic wall",
+     "expected_gain": "readable edges"
+    },
+    "prompt_sha256": "fd9e5be0f00ef4e0a74ed127509b5813860a7d5859dc4375525015d500e28239"
+   },
+   {
+    "n": 5,
+    "skill": "explored",
+    "names": [
+     "explored",
+     "look_at",
+     "pick_point",
+     "request_help",
+     "update_region"
+    ],
+    "images": 5,
+    "pose": [
+     0.203567,
+     1.201083,
+     1.570796
+    ],
+    "region_revision": 1,
+    "history_ids": 9,
+    "arguments": {
+     "why": "The synthetic room has readable evidence.",
+     "coverage_summary": "Walls and doorway visible.",
+     "evidence_views": [
+      "E001-I001",
+      "E001-I002",
+      "E001-I003",
+      "E001-I004",
+      "E001-I005",
+      "E001-I008",
+      "E001-I009",
+      "E001-I010",
+      "E001-I011"
+     ],
+     "remaining_gaps": [],
+     "image_assessments": [
+      {
+       "id": "E001-I001",
+       "usability": "readable",
+       "reason": "Synthetic edges readable."
+      },
+      {
+       "id": "E001-I002",
+       "usability": "readable",
+       "reason": "Synthetic edges readable."
+      },
+      {
+       "id": "E001-I003",
+       "usability": "readable",
+       "reason": "Synthetic edges readable."
+      },
+      {
+       "id": "E001-I004",
+       "usability": "readable",
+       "reason": "Synthetic edges readable."
+      },
+      {
+       "id": "E001-I005",
+       "usability": "readable",
+       "reason": "Synthetic edges readable."
+      },
+      {
+       "id": "E001-I008",
+       "usability": "readable",
+       "reason": "Synthetic edges readable."
+      },
+      {
+       "id": "E001-I009",
+       "usability": "readable",
+       "reason": "Synthetic edges readable."
+      },
+      {
+       "id": "E001-I010",
+       "usability": "readable",
+       "reason": "Synthetic edges readable."
+      },
+      {
+       "id": "E001-I011",
+       "usability": "readable",
+       "reason": "Synthetic edges readable."
+      }
+     ],
+     "coverage_updates": [
+      {
+       "area": "synthetic room",
+       "scope": "included",
+       "requirement": "readable walls",
+       "complementary_required": false,
+       "status": "covered",
+       "evidence_views": [
+        "E001-I001",
+        "E001-I002",
+        "E001-I003",
+        "E001-I004",
+        "E001-I005",
+        "E001-I008",
+        "E001-I009",
+        "E001-I010",
+        "E001-I011"
+       ],
+       "complementary_views": [],
+       "gaps": [],
+       "resolution": "walls visible"
+      }
+     ]
+    },
+    "prompt_sha256": "f82ac546c57ab1d4b170e1cab8c7391433f09e8eed8c9d7509ce59781feeabdc"
+   }
+  ],
+  "calls": [
+   {
+    "call": "arm"
+   },
+   {
+    "call": "turn",
+    "heading": 0.0,
+    "hold_s": 1.0,
+    "kwargs": {},
+    "from": [
+     0.0,
+     0.0,
+     0.0
+    ]
+   },
+   {
+    "call": "turn",
+    "heading": 1.047198,
+    "hold_s": 1.0,
+    "kwargs": {},
+    "from": [
+     0.0,
+     0.0,
+     0.0
+    ]
+   },
+   {
+    "call": "turn",
+    "heading": 2.094395,
+    "hold_s": 1.0,
+    "kwargs": {},
+    "from": [
+     0.0,
+     0.0,
+     1.047198
+    ]
+   },
+   {
+    "call": "turn",
+    "heading": 3.141593,
+    "hold_s": 1.0,
+    "kwargs": {},
+    "from": [
+     0.0,
+     0.0,
+     2.094395
+    ]
+   },
+   {
+    "call": "turn",
+    "heading": 4.18879,
+    "hold_s": 1.0,
+    "kwargs": {},
+    "from": [
+     0.0,
+     0.0,
+     3.141593
+    ]
+   },
+   {
+    "call": "turn",
+    "heading": 5.235988,
+    "hold_s": 1.0,
+    "kwargs": {},
+    "from": [
+     0.0,
+     0.0,
+     4.18879
+    ]
+   },
+   {
+    "call": "hold",
+    "pose": [
+     0.0,
+     0.0,
+     5.235988
+    ]
+   },
+   {
+    "call": "walk",
+    "points": [
+     [
+      0.0,
+      0.0
+     ],
+     [
+      0.284605,
+      -0.411096
+     ],
+     [
+      0.45,
+      -0.65
+     ],
+     [
+      0.95,
+      -0.65
+     ],
+     [
+      1.05,
+      -0.65
+     ],
+     [
+      1.370999,
+      -0.266647
+     ],
+     [
+      1.597917,
+      0.00435
+     ]
+    ],
+    "mps": 0.3,
+    "kwargs": {
+     "radius_m": 0.3,
+     "seconds": 60.0
+    },
+    "look": false
+   },
+   {
+    "call": "turn",
+    "heading": 1.570796,
+    "hold_s": 1.0,
+    "kwargs": {
+     "seconds": 52.519916
+    },
+    "from": [
+     1.597917,
+     0.00435,
+     0.873695
+    ]
+   },
+   {
+    "call": "turn",
+    "heading": 0.545947,
+    "hold_s": 1.0,
+    "kwargs": {
+     "recover_blocked": true
+    },
+    "from": [
+     1.597917,
+     0.00435,
+     1.570796
+    ]
+   },
+   {
+    "call": "walk",
+    "points": [
+     [
+      1.597917,
+      0.00435
+     ],
+     [
+      1.264124,
+      0.376617
+     ],
+     [
+      0.930331,
+      0.748883
+     ],
+     [
+      0.75,
+      0.95
+     ],
+     [
+      0.295668,
+      1.158763
+     ],
+     [
+      0.203567,
+      1.201083
+     ]
+    ],
+    "mps": 0.3,
+    "kwargs": {
+     "radius_m": 0.3,
+     "seconds": 60.0
+    },
+    "look": false
+   },
+   {
+    "call": "turn",
+    "heading": 1.570796,
+    "hold_s": 1.0,
+    "kwargs": {
+     "seconds": 53.761722
+    },
+    "from": [
+     0.203567,
+     1.201083,
+     2.710871
+    ]
+   },
+   {
+    "call": "hold",
+    "pose": [
+     0.203567,
+     1.201083,
+     1.570796
+    ]
+   }
+  ],
+  "phase": "done",
+  "previous_action_result": {
+   "kind": "vlm",
+   "outcome": "arrived",
+   "t": 74.634,
+   "goal": [
+    0.203567,
+    1.201083
+   ],
+   "pose_xyyaw": [
+    0.203567,
+    1.201083,
+    2.710871
+   ],
+   "code": null,
+   "why": "action completed",
+   "details": {},
+   "facing_result": {
+    "target": [
+     0.203567,
+     2.397817
+    ],
+    "outcome": "arrived",
+    "why": "The viewing turn finished."
+   }
+  },
+  "coverage": {
+   ">=1": 0.0,
+   ">=2": 0.0,
+   ">=3": 0.0,
+   "patches": 0
+  },
+  "enclosure": {
+   "enclosed": true,
+   "open_m": 0.0,
+   "looked_unresolved_m": 0.0,
+   "unknown_m2": 0.0
+  },
+  "region": {
+   "revision": 1,
+   "status": "accepted",
+   "ownership": "automatic",
+   "vertices_start_frame_m": [
+    [
+     -1.797783,
+     -1.801067
+    ],
+    [
+     3.798833,
+     -1.801067
+    ],
+    [
+     3.798833,
+     3.800883
+    ],
+    [
+     -1.797783,
+     3.800883
+    ]
+   ]
+  },
+  "scope_ready": true,
+  "views": {
+   "count": 11,
+   "coverage_assessment": [
+    {
+     "area": "synthetic room",
+     "scope": "included",
+     "requirement": "readable walls",
+     "complementary_required": false,
+     "status": "covered",
+     "evidence_views": [
+      "E001-I001",
+      "E001-I002",
+      "E001-I003",
+      "E001-I004",
+      "E001-I005",
+      "E001-I008",
+      "E001-I009",
+      "E001-I010",
+      "E001-I011"
+     ],
+     "complementary_views": [],
+     "gaps": [],
+     "resolution": "walls visible"
+    }
+   ]
+  },
+  "final_pose": [
+   0.203567,
+   1.201083,
+   1.570796
+  ],
+  "artifacts": [
+   "boundary.json",
+   "live_map.npz",
+   "run.json",
+   "task_regions.jsonl",
+   "views/epoch_001/E001-I001.png",
+   "views/epoch_001/E001-I002.png",
+   "views/epoch_001/E001-I003.png",
+   "views/epoch_001/E001-I004.png",
+   "views/epoch_001/E001-I005.png",
+   "views/epoch_001/E001-I006.png",
+   "views/epoch_001/E001-I007.png",
+   "views/epoch_001/E001-I008.png",
+   "views/epoch_001/E001-I009.png",
+   "views/epoch_001/E001-I010.png",
+   "views/epoch_001/E001-I011.png",
+   "views/epoch_001/index.json",
+   "vlm/context_leg_1.json",
+   "vlm/context_leg_2.json",
+   "vlm/context_leg_3.json",
+   "vlm/context_leg_4.json",
+   "vlm/context_leg_5.json",
+   "vlm/leg_1.json",
+   "vlm/leg_1.png",
+   "vlm/leg_1_camera.png",
+   "vlm/leg_1_history_1.png",
+   "vlm/leg_1_local.png",
+   "vlm/leg_2.json",
+   "vlm/leg_2.png",
+   "vlm/leg_2_camera.png",
+   "vlm/leg_2_history_1.png",
+   "vlm/leg_2_local.png",
+   "vlm/leg_3.json",
+   "vlm/leg_3.png",
+   "vlm/leg_3_camera.png",
+   "vlm/leg_3_history_1.png",
+   "vlm/leg_3_history_2.png",
+   "vlm/leg_3_local.png",
+   "vlm/leg_4.json",
+   "vlm/leg_4.png",
+   "vlm/leg_4_camera.png",
+   "vlm/leg_4_history_1.png",
+   "vlm/leg_4_history_2.png",
+   "vlm/leg_4_local.png",
+   "vlm/leg_5.json",
+   "vlm/leg_5.png",
+   "vlm/leg_5_camera.png",
+   "vlm/leg_5_history_1.png",
+   "vlm/leg_5_history_2.png",
+   "vlm/leg_5_local.png"
+  ],
+  "timings": {
+   "wall_s": 2.4231,
+   "decision": {
+    "n": 5,
+    "p50_ms": 439.1722,
+    "p95_ms": 445.3016,
+    "max_ms": 445.8355
+   },
+   "provider": {
+    "n": 5,
+    "p50_ms": 0.24,
+    "p95_ms": 0.2942,
+    "max_ms": 0.2983
+   },
+   "map_update": {
+    "n": 6,
+    "p50_ms": 1.6809,
+    "p95_ms": 1.8921,
+    "max_ms": 1.907
+   },
+   "import_s": 0.2768
+  }
+ }
+}

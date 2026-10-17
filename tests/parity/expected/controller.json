@@ -1,0 +1,928 @@
+{
+ "controller": {
+  "clear": {
+   "scenario": "clear",
+   "goal": [
+    1.6,
+    0.0
+   ],
+   "facing": null,
+   "terminal": {
+    "status": "returned",
+    "code": null
+   },
+   "refusal_codes": [],
+   "commands": {
+    "count": 3825,
+    "stream": [
+     [
+      0.0,
+      0.0,
+      0.0,
+      "walk",
+      0.5
+     ],
+     [
+      0.0,
+      0.0,
+      -1.0,
+      "walk",
+      0.7
+     ],
+     [
+      0.0,
+      0.0,
+      -0.838628,
+      "walk",
+      0.1
+     ],
+     [
+      0.0,
+      0.0,
+      0.0,
+      "walk",
+      0.5
+     ],
+     [
+      0.278372,
+      -0.111845,
+      0.0,
+      "walk",
+      0.8
+     ],
+     [
+      0.298634,
+      -0.028598,
+      0.0,
+      "walk",
+      1.4
+     ],
+     [
+      0.0,
+      0.0,
+      0.0,
+      "walk",
+      0.5
+     ],
+     [
+      0.0,
+      0.0,
+      1.0,
+      "walk",
+      0.1
+     ],
+     [
+      0.0,
+      0.0,
+      0.910097,
+      "walk",
+      0.1
+     ],
+     [
+      0.0,
+      0.0,
+      0.746279,
+      "walk",
+      0.1
+     ],
+     [
+      0.0,
+      0.0,
+      0.611949,
+      "walk",
+      0.1
+     ],
+     [
+      0.0,
+      0.0,
+      0.501798,
+      "walk",
+      0.1
+     ],
+     [
+      0.0,
+      0.0,
+      0.0,
+      "walk",
+      0.5
+     ],
+     [
+      0.292196,
+      -0.052017,
+      0.0,
+      "walk",
+      0.1
+     ],
+     [
+      0.29074,
+      -0.046039,
+      0.0,
+      "walk",
+      0.1
+     ],
+     [
+      0.289089,
+      -0.039829,
+      0.0,
+      "walk",
+      0.1
+     ],
+     [
+      0.287221,
+      0.086625,
+      0.0,
+      "walk",
+      1.3
+     ],
+     [
+      0.2825,
+      0.100963,
+      0.0,
+      "walk",
+      0.3
+     ],
+     [
+      0.0,
+      0.0,
+      0.0,
+      "walk",
+      0.5
+     ],
+     [
+      0.0,
+      0.0,
+      1.0,
+      "walk",
+      0.6
+     ],
+     [
+      0.0,
+      0.0,
+      0.88135,
+      "walk",
+      0.1
+     ],
+     [
+      0.0,
+      0.0,
+      0.722707,
+      "walk",
+      0.1
+     ],
+     [
+      0.0,
+      0.0,
+      0.59262,
+      "walk",
+      0.1
+     ],
+     [
+      0.0,
+      0.0,
+      0.485948,
+      "walk",
+      0.1
+     ],
+     [
+      0.0,
+      0.0,
+      0.0,
+      "walk",
+      0.5
+     ],
+     [
+      0.292679,
+      -0.054128,
+      0.0,
+      "walk",
+      0.1
+     ],
+     [
+      0.291248,
+      -0.048067,
+      0.0,
+      "walk",
+      0.1
+     ],
+     [
+      0.289619,
+      -0.041766,
+      0.0,
+      "walk",
+      0.1
+     ],
+     [
+      0.287769,
+      0.08479,
+      0.0,
+      "walk",
+      1.3
+     ],
+     [
+      0.278997,
+      0.110276,
+      0.0,
+      "walk",
+      0.8
+     ],
+     [
+      0.0,
+      0.0,
+      0.0,
+      "walk",
+      0.5
+     ],
+     [
+      0.0,
+      0.0,
+      0.0,
+      "stand",
+      3.0
+     ]
+    ],
+    "moving": 2200
+   },
+   "waypoints": [
+    [
+     0.0,
+     0.0
+    ],
+    [
+     0.15,
+     -0.35
+    ],
+    [
+     0.45,
+     -0.65
+    ],
+    [
+     0.95,
+     -0.65
+    ],
+    [
+     1.05,
+     -0.65
+    ],
+    [
+     1.372971,
+     -0.268307
+    ],
+    [
+     1.6,
+     0.0
+    ]
+   ],
+   "routes": [
+    [
+     [
+      0.0,
+      0.0
+     ],
+     [
+      0.15,
+      -0.35
+     ],
+     [
+      0.45,
+      -0.65
+     ],
+     [
+      0.95,
+      -0.65
+     ],
+     [
+      1.05,
+      -0.65
+     ],
+     [
+      1.372971,
+      -0.268307
+     ],
+     [
+      1.6,
+      0.0
+     ]
+    ],
+    [
+     [
+      0.0,
+      0.0
+     ],
+     [
+      0.15,
+      -0.35
+     ],
+     [
+      0.45,
+      -0.65
+     ],
+     [
+      0.95,
+      -0.65
+     ],
+     [
+      1.05,
+      -0.65
+     ],
+     [
+      1.372971,
+      -0.268307
+     ],
+     [
+      1.6,
+      0.0
+     ]
+    ]
+   ],
+   "final_pose": [
+    1.445388,
+    -0.171736,
+    0.461412
+   ],
+   "goal_error_m": 0.23108,
+   "arrived": true,
+   "events": [
+    {
+     "at_s": 0.0,
+     "event": "drive.request",
+     "data": {
+      "goal_xy_m": [
+       1.6,
+       0.0
+      ],
+      "radius_m": 0.3,
+      "snap": false,
+      "planning_radius_m": 0.3,
+      "preserve_goal": true,
+      "arrival_heading_required": false,
+      "preferred_clearance": false,
+      "turn_translation_limit_m": 0.5,
+      "execution_radius_m": 0.25,
+      "route_rejoin": true
+     }
+    },
+    {
+     "at_s": 0.0,
+     "event": "drive.phase",
+     "data": {
+      "phase": "VALIDATE"
+     }
+    },
+    {
+     "at_s": 0.0,
+     "event": "drive.phase",
+     "data": {
+      "phase": "PLAN"
+     }
+    },
+    {
+     "at_s": 0.0,
+     "event": "drive.route",
+     "data": {
+      "code": "PATH_READY",
+      "phase": "prepared",
+      "waypoints": 7,
+      "route_id": "4889f0e7d2e7f9710e6cb6fd8e407ba10cbd13b273771a59e61623291298abcf",
+      "map_generation": "0000000000000000000000000000000000000000000000000000000000000000",
+      "planner_corners": 5,
+      "route_len_m": 2.2565,
+      "start_snap_m": 0.0,
+      "goal_snap_m": 0.0,
+      "seeds_tried": [],
+      "radius_m": 0.3,
+      "execution_radius_m": 0.25,
+      "preferred_clearance_margin_m": 0.15,
+      "turn_translation_limit_m": 0.5,
+      "route_px": [
+       [
+        40,
+        40
+       ],
+       [
+        43,
+        33
+       ],
+       [
+        49,
+        27
+       ],
+       [
+        59,
+        27
+       ],
+       [
+        61,
+        27
+       ],
+       [
+        67,
+        35
+       ],
+       [
+        72,
+        40
+       ]
+      ],
+      "route_world_xy": [
+       [
+        0.0,
+        0.0
+       ],
+       [
+        0.15,
+        -0.35
+       ],
+       [
+        0.45,
+        -0.65
+       ],
+       [
+        0.95,
+        -0.65
+       ],
+       [
+        1.05,
+        -0.65
+       ],
+       [
+        1.372971,
+        -0.268307
+       ],
+       [
+        1.6,
+        0.0
+       ]
+      ],
+      "requested_goal_world_xy": [
+       1.6,
+       0.0
+      ],
+      "goal_world_xy": [
+       1.6,
+       0.0
+      ],
+      "facing_world_xy": null,
+      "goal_px": [
+       72.0,
+       40.0
+      ],
+      "facing_px": null
+     }
+    },
+    {
+     "at_s": 0.0,
+     "event": "drive.route",
+     "data": {
+      "code": "PATH_READY",
+      "phase": "execute",
+      "route_id": "4889f0e7d2e7f9710e6cb6fd8e407ba10cbd13b273771a59e61623291298abcf",
+      "map_generation": "0000000000000000000000000000000000000000000000000000000000000000",
+      "route_world_xy": [
+       [
+        0.0,
+        0.0
+       ],
+       [
+        0.15,
+        -0.35
+       ],
+       [
+        0.45,
+        -0.65
+       ],
+       [
+        0.95,
+        -0.65
+       ],
+       [
+        1.05,
+        -0.65
+       ],
+       [
+        1.372971,
+        -0.268307
+       ],
+       [
+        1.6,
+        0.0
+       ]
+      ],
+      "actual_start_world_xy": [
+       0.0,
+       0.0
+      ],
+      "requested_goal_world_xy": [
+       1.6,
+       0.0
+      ],
+      "goal_world_xy": [
+       1.6,
+       0.0
+      ],
+      "route_px": [
+       [
+        40,
+        40
+       ],
+       [
+        43,
+        33
+       ],
+       [
+        49,
+        27
+       ],
+       [
+        59,
+        27
+       ],
+       [
+        61,
+        27
+       ],
+       [
+        67,
+        35
+       ],
+       [
+        72,
+        40
+       ]
+      ],
+      "radius_m": 0.3,
+      "execution_radius_m": 0.25,
+      "turn_translation_limit_m": 0.5,
+      "preferred_clearance_margin_m": 0.15
+     }
+    },
+    {
+     "at_s": 0.0,
+     "event": "drive.phase",
+     "data": {
+      "phase": "EXECUTE"
+     }
+    },
+    {
+     "at_s": 15.3,
+     "event": "drive.phase",
+     "data": {
+      "phase": "VERIFY_ARRIVAL"
+     }
+    },
+    {
+     "at_s": 15.3,
+     "event": "drive.arrival",
+     "data": {
+      "pose": [
+       1.4454,
+       -0.1717,
+       0.4614
+      ],
+      "gap_m": 0.2311,
+      "snap_m": 0.0,
+      "requested_gap_m": 0.2311,
+      "arrival_tolerance_m": 0.25,
+      "footprint_safe": true
+     }
+    },
+    {
+     "at_s": 15.3,
+     "event": "drive.phase",
+     "data": {
+      "phase": "TERMINAL_RESULT"
+     }
+    },
+    {
+     "at_s": 15.3,
+     "event": "drive.result",
+     "data": {
+      "attempt": 0,
+      "result": {
+       "arrived": true,
+       "gap_m": 0.2311,
+       "requested_gap_m": 0.2311,
+       "legs": 0,
+       "commanded_m": 0.0,
+       "realized_m": 0.0,
+       "route_px": [
+        [
+         40,
+         40
+        ],
+        [
+         43,
+         33
+        ],
+        [
+         49,
+         27
+        ],
+        [
+         59,
+         27
+        ],
+        [
+         61,
+         27
+        ],
+        [
+         67,
+         35
+        ],
+        [
+         72,
+         40
+        ]
+       ],
+       "turns": 0,
+       "continuous": true
+      }
+     }
+    },
+    {
+     "at_s": 15.3,
+     "event": "drive.arrival_confirmed",
+     "data": {
+      "pose": [
+       1.445388,
+       -0.171736,
+       0.461412
+      ],
+      "goal_xy": [
+       1.6,
+       0.0
+      ],
+      "gap_m": 0.23108
+     }
+    }
+   ],
+   "event_counts": {
+    "motion.context": 1,
+    "drive.request": 1,
+    "base.pose": 79,
+    "drive.phase": 5,
+    "drive.planning_footprint": 1,
+    "skill.stage": 11,
+    "drive.plan_start": 1,
+    "drive.route": 2,
+    "drive.waypoint": 5,
+    "command": 3825,
+    "command.result": 3825,
+    "drive.turn_translation": 6,
+    "base.action": 9,
+    "drive.burst": 9,
+    "drive.waypoint_passed": 5,
+    "drive.strafe": 4,
+    "drive.continuous": 1,
+    "drive.settled": 1,
+    "drive.arrival": 1,
+    "drive.result": 1,
+    "drive.arrival_confirmed": 1
+   },
+   "event_trace_sha256": "6f256d1a3372abb49f7ffdd4b42354896b91ffd9fa22262e80b67c78026e14ec",
+   "command_trace_sha256": "6a8eaa1da1d038b4bdd5b1b17736feecf69f4d41f4f1d1baacfd4d69062b6c00",
+   "simulated_s": 15.3,
+   "timings": {
+    "wall_s": 0.1281,
+    "tick": {
+     "n": 3824,
+     "p50_ms": 0.008,
+     "p95_ms": 0.0125,
+     "max_ms": 1.0566
+    },
+    "route_plan": {
+     "n": 1,
+     "p50_ms": 6.2067,
+     "p95_ms": 6.2067,
+     "max_ms": 6.2067
+    }
+   }
+  },
+  "blocked": {
+   "scenario": "blocked",
+   "goal": [
+    1.0,
+    0.0
+   ],
+   "facing": [
+    1.0,
+    1.0
+   ],
+   "terminal": {
+    "status": "ActionRefused",
+    "code": "NO_COLLISION_FREE_PATH",
+    "reason": "action unavailable after local repair: exact start or accepted goal is blocked"
+   },
+   "refusal_codes": [
+    "NO_COLLISION_FREE_PATH",
+    "NO_COLLISION_FREE_PATH",
+    "NO_COLLISION_FREE_PATH"
+   ],
+   "commands": {
+    "count": 100,
+    "stream": [
+     [
+      0.0,
+      0.0,
+      0.0,
+      "walk",
+      0.4
+     ]
+    ],
+    "moving": 0
+   },
+   "waypoints": null,
+   "routes": [],
+   "final_pose": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "goal_error_m": 1.0,
+   "arrived": false,
+   "events": [
+    {
+     "at_s": 0.0,
+     "event": "drive.request",
+     "data": {
+      "goal_xy_m": [
+       1.0,
+       0.0
+      ],
+      "radius_m": 0.3,
+      "snap": false,
+      "planning_radius_m": 0.3,
+      "preserve_goal": true,
+      "arrival_heading_required": true,
+      "preferred_clearance": false,
+      "facing_xy_m": [
+       1.0,
+       2.0
+      ]
+     }
+    },
+    {
+     "at_s": 0.0,
+     "event": "drive.phase",
+     "data": {
+      "phase": "VALIDATE"
+     }
+    },
+    {
+     "at_s": 0.0,
+     "event": "drive.phase",
+     "data": {
+      "phase": "PLAN"
+     }
+    },
+    {
+     "at_s": 0.2,
+     "event": "drive.failure",
+     "data": {
+      "attempt": 0,
+      "code": "NO_COLLISION_FREE_PATH",
+      "detail": "exact start or accepted goal is blocked",
+      "phase": "plan",
+      "radius_m": 0.3,
+      "requested_radius_m": 0.3,
+      "active_radius_m": null,
+      "elapsed_s": 0.2
+     }
+    },
+    {
+     "at_s": 0.2,
+     "event": "drive.retry",
+     "data": {
+      "goal_xy_m": [
+       1.0,
+       0.0
+      ],
+      "kind": "same_goal_replan",
+      "from_radius_m": 0.3,
+      "radius_m": 0.3,
+      "remaining_s": 34.8
+     }
+    },
+    {
+     "at_s": 0.2,
+     "event": "drive.phase",
+     "data": {
+      "phase": "VALIDATE"
+     }
+    },
+    {
+     "at_s": 0.2,
+     "event": "drive.phase",
+     "data": {
+      "phase": "PLAN"
+     }
+    },
+    {
+     "at_s": 0.4,
+     "event": "drive.failure",
+     "data": {
+      "attempt": 0,
+      "code": "NO_COLLISION_FREE_PATH",
+      "detail": "exact start or accepted goal is blocked",
+      "phase": "plan",
+      "radius_m": 0.3,
+      "requested_radius_m": 0.3,
+      "active_radius_m": null,
+      "elapsed_s": 0.4
+     }
+    },
+    {
+     "at_s": 0.4,
+     "event": "drive.action_refused",
+     "data": {
+      "code": "NO_COLLISION_FREE_PATH",
+      "reason": "action unavailable after local repair: exact start or accepted goal is blocked",
+      "goal_xy": [
+       1.0,
+       0.0
+      ],
+      "route_xy": [],
+      "original_reason": {
+       "attempt": 0,
+       "code": "NO_COLLISION_FREE_PATH",
+       "detail": "exact start or accepted goal is blocked",
+       "phase": "plan",
+       "radius_m": 0.3,
+       "requested_radius_m": 0.3,
+       "active_radius_m": null,
+       "elapsed_s": 0.2
+      },
+      "failures": [
+       {
+        "attempt": 0,
+        "code": "NO_COLLISION_FREE_PATH",
+        "detail": "exact start or accepted goal is blocked",
+        "phase": "plan",
+        "radius_m": 0.3,
+        "requested_radius_m": 0.3,
+        "active_radius_m": null,
+        "elapsed_s": 0.2
+       },
+       {
+        "attempt": 0,
+        "code": "NO_COLLISION_FREE_PATH",
+        "detail": "exact start or accepted goal is blocked",
+        "phase": "plan",
+        "radius_m": 0.3,
+        "requested_radius_m": 0.3,
+        "active_radius_m": null,
+        "elapsed_s": 0.4
+       }
+      ],
+      "attempts": 0,
+      "repairs": [
+       {
+        "kind": "same_goal_replan",
+        "t": 0.2,
+        "radius_m": 0.3
+       }
+      ],
+      "requested_radius_m": 0.3,
+      "active_radius_m": null,
+      "elapsed_s": 0.4,
+      "remaining_s": 34.6
+     }
+    }
+   ],
+   "event_counts": {
+    "motion.context": 1,
+    "drive.request": 1,
+    "base.pose": 3,
+    "drive.phase": 4,
+    "drive.planning_footprint": 2,
+    "skill.stage": 2,
+    "drive.plan_start": 2,
+    "command": 100,
+    "command.result": 100,
+    "drive.failure": 2,
+    "drive.collision_refused": 2,
+    "drive.recovery_decision": 2,
+    "drive.retry": 1,
+    "drive.action_refused": 1
+   },
+   "event_trace_sha256": "ba9e0088d94c003ac6f89be2726e9b5af28d77e111e80cd38bb01bbda73e9459",
+   "command_trace_sha256": "ffb07c1ba73e1323ea896f365e3ccb8b5e2fc49852d6fad680c7958799be67d3",
+   "simulated_s": 0.4,
+   "timings": {
+    "wall_s": 0.0019,
+    "tick": {
+     "n": 99,
+     "p50_ms": 0.0076,
+     "p95_ms": 0.01,
+     "max_ms": 0.5121
+    },
+    "route_plan": {
+     "n": 0,
+     "p50_ms": null,
+     "p95_ms": null,
+     "max_ms": null
+    }
+   }
+  }
+ }
+}

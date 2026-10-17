@@ -1,0 +1,66 @@
+# SuperOdom configuration for the G1's MID-360 topics, based on SuperOdom's humanoid MID-360
+# configuration. The differences:
+#  1) laser_topic is the rescaled cloud from time_rescale_node.py: the driver's per-point time is
+#     float32 nanoseconds and the velodyne parser expects seconds.
+#  2) sensor "velodyne" selects the PointCloud2 parser, which reads the driver's
+#     x, y, z, intensity, ring (uint16), time (float32) layout directly.
+#  3) scan_line 4: the MID-360's ring is 0..3.
+#  4) min_range 1.0: people and the robot's own body near the sensor stay out of matching and the
+#     map. /registered_scan stays the full deskewed cloud; the explorer and the bag export apply
+#     the same 1 m rule to it themselves.
+#  5) max_iterations 5 and mapping_plane_resolution 0.2, so scan-to-map registration converges
+#     within the 100 ms scan period on indoor scenes.
+# Calibration is SuperOdom's identity R and the factory T; do not add an Rx(180): the upside-down
+# mount is absorbed by the gravity initialization. The IMU is mandatory (scans are dropped until
+# it initializes) and must start within ~50 ms of the first scan; keep the robot still for the
+# first second so the gravity estimate settles.
+/**:
+  ros__parameters:
+    # The driver's IMU is in g; time_rescale_node republishes it in m/s^2 on _sec. g_norm below
+    # is the magnitude it preintegrates against.
+    imu_topic: "/utlidar/imu_livox_mid360_sec"
+    laser_topic: "/utlidar/cloud_livox_mid360_sec"   # from time_rescale_node.py
+    # Visual/preintegration odometry feedback for deskew is disabled by subscribing to a topic
+    # nobody publishes, as SuperOdom's own configuration does.
+    odom_topic: "/state_estimation2"
+    sensor: "velodyne"
+    use_imu_roll_pitch: false
+
+    world_frame: "map"
+    world_frame_rot: "map_rot"
+    sensor_frame: "sensor"
+    sensor_frame_rot: "sensor_rot"
+
+    imu_acc_x_limit: 0.5
+    imu_acc_y_limit: 0.2
+    imu_acc_z_limit: 0.4
+
+    feature_extraction_node:
+        scan_line: 4           # ring 0..3
+        min_range: 1.0
+        filter_point_size: 1
+        mapping_skip_frame: 1
+        provide_point_time: 1  # time in seconds on the _sec topic
+
+    laser_mapping_node:
+        mapping_line_resolution: 0.2
+        mapping_plane_resolution: 0.2
+        max_iterations: 5
+        max_surface_features: 2000
+
+        localization_mode: false   # pure odometry
+        read_pose_file: false
+        init_x: 0.0
+        init_y: 0.0
+        init_z: 0.0
+        init_roll: 0.0
+        init_pitch: 0.0
+        init_yaw: 0.0
+
+    imu_preintegration_node:
+        lidar_correction_noise: 0.01
+        acc_n: 3.9939570888238808e-03
+        gyr_n: 1.5636343949698187e-03
+        acc_w: 6.4356659353532566e-05
+        gyr_w: 3.5640318696367613e-05
+        g_norm: 9.80511

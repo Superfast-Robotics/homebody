@@ -112,6 +112,7 @@ class Agent:
     model: str = "astra"
     # "model" takes the model's own effort, max means Codex's xhigh
     reasoning_effort: str = "model"
+    service_tier: str = "default"
     timeout: float = 180.0
     # retries of a busy service, after busy_wait, twice that, three times that seconds
     busy_retries: int = 3
@@ -120,6 +121,8 @@ class Agent:
     done_settle_seconds: float = 3.0
 
     def __post_init__(self):
+        if self.service_tier not in ("default", "fast", "flex"):
+            raise ValueError("agent.service_tier must be default, fast or flex")
         if self.model not in MODELS:
             raise ValueError(f"agent.model must be one of {', '.join(MODELS)}")
         if self.reasoning_effort not in ("model", "low", "medium", "high", "xhigh", "max"):

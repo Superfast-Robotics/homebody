@@ -94,11 +94,25 @@ body:not(:has(.tabler-icon-cloud-check)) .hb-live .hb-off {display:inline;}
 """
 
 
-def header(scene_name):
+def header(scene_name, *, mode="sim"):
     return ('<div class="hb-header"><div class="hb-wordmark">Home<span>Body</span></div>'
             '<div class="hb-meta"><span class="hb-live" role="status">'
             '<span class="hb-on">Connected</span><span class="hb-off">Disconnected</span></span>'
-            f'<span class="hb-room">{escape(scene_name)} (sim)</span></div></div>')
+            f'<span class="hb-room">{escape(scene_name)} ({escape(mode)})</span></div></div>')
+
+
+def open_server(host, port, title, mode, style=""):
+    """A Viser server with the HomeBody theme, the panel docked right and the TITLE (MODE) header."""
+    import viser
+
+    server = viser.ViserServer(host=host, port=port)
+    server.gui.configure_theme(titlebar_content=None, control_width="large", dark_mode=False,
+                               brand_color=BRAND, show_logo=False, show_share_button=False)
+    server.gui.main_panel.dock_right()
+    server.gui.main_panel.set_width(PANEL_WIDTH)
+    server.gui.add_html(STYLE + style)
+    server.gui.add_html(header(title, mode=mode))
+    return server
 
 
 def section(title):

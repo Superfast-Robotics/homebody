@@ -1,5 +1,5 @@
 """Shared test fakes: a planning arm with no collision geometry, and a console over a mocked
-web server. Kept for tests of the skill framework, the console and the cockpit tool."""
+web server. Used by tests of the skill framework, the console and the cockpit tool."""
 from unittest.mock import MagicMock
 
 import numpy as np

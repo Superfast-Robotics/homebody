@@ -1,0 +1,4 @@
+interface:
+  display_name: "HomeBody Real-to-Sim"
+  short_description: "Build and validate a HomeBody scene from a capture"
+  default_prompt: "Use $homebody-real2sim to audit my closed exploration recording and build a measured HomeBody/MuJoCo scene."

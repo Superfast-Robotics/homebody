@@ -3,20 +3,24 @@ prepare/execute lifecycle every registered skill runs."""
 import traceback
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
-from homebody.helpers.kinematics import Arm
 from homebody.primitives.actions import ActionRejected, PhysicsInvalid
 from homebody.primitives.observations import ObservationError
 from homebody.primitives.robot import Robot
 from homebody.session.settings import Settings
 
+if TYPE_CHECKING:  # annotations only: the arm kinematics load trimesh
+    from homebody.helpers.kinematics import Arm
+
 DECLARATIONS = ("NEEDS", "FAILURES", "PROMPT", "prepare", "execute")
 
 
 class SkillFailure(RuntimeError):
-    def __init__(self, code, message):
+    def __init__(self, code, message, details=None):
         super().__init__(message)
         self.code = code
+        self.details = {} if details is None else details
 
 
 @dataclass(frozen=True)
@@ -35,7 +39,7 @@ class Result:
 @dataclass(frozen=True)
 class Planning:
     """What preparation reads besides frames."""
-    arms: Mapping[str, Arm]
+    arms: Mapping[str, "Arm"]
     jaw_samples: Mapping[str, list]
     settings: Settings
     carried: Mapping[str, dict]
@@ -47,7 +51,7 @@ class Context:
     """Execution's only handle on the robot."""
     observations: Robot
     actions: Robot
-    arms: Mapping[str, Arm]
+    arms: Mapping[str, "Arm"]
     settings: Settings = field(default_factory=Settings)
     jaw_samples: Mapping[str, list] = field(default_factory=dict)
     cancelled: Callable[[], bool] = lambda: False
@@ -55,6 +59,14 @@ class Context:
     carried: dict = field(default_factory=dict)
     _skill_name: str | None = field(default=None, init=False, repr=False)
     _stage_name: str | None = field(default=None, init=False, repr=False)
+
+    def begin(self, name, skill):
+        """Start SKILL's attempt under NAME: its stage events follow."""
+        self._skill_name, self._stage_name = name, None
+
+    def settle(self, epoch, result):
+        """Hold or stop the base after an executed skill."""
+        return stopped(self, epoch, result)
 
     def planning(self):
         return Planning(self.arms, self.jaw_samples, self.settings, self.carried, self.cancelled)
@@ -108,9 +120,13 @@ def declared(name, skill):
     missing = [declaration for declaration in DECLARATIONS if not hasattr(skill, declaration)]
     if missing:
         raise TypeError(f"Skill {name!r} does not declare {', '.join(missing)}")
-    if not isinstance(skill.NEEDS, tuple) or not all(
-            callable(getattr(Robot, command, None)) for command in skill.NEEDS):
-        raise TypeError(f"Skill {name!r}: NEEDS must be a tuple of Robot commands: {skill.NEEDS!r}")
+    surface = getattr(skill, "SURFACE", Robot)
+    for declaration in ("NEEDS", "OPTIONAL"):
+        commands = getattr(skill, declaration, ())
+        if not isinstance(commands, tuple) or not all(
+                callable(getattr(surface, command, None)) for command in commands):
+            raise TypeError(f"Skill {name!r}: {declaration} must be a tuple of {surface.__name__} "
+                            f"commands: {commands!r}")
     if not isinstance(skill.FAILURES, tuple):
         raise TypeError(f"Skill {name!r}: FAILURES must be a tuple of result codes")
     if not skill.PROMPT.startswith(f"{name}: "):
@@ -124,42 +140,69 @@ def refusal_code(error):
 
 
 class Runner:
-    def __init__(self, context):
-        self.context = context
+    """Runs the skills of REGISTRY, the SIM skills unless another registry is given, on one context."""
+
+    def __init__(self, context, registry=None):
+        if registry is None:
+            from .registry import REGISTRY
+            registry = REGISTRY
+        self.context, self.registry = context, registry
 
     def run(self, name, arguments, selected_frame):
         """A declared result. A programming error propagates after the terminal event."""
-        ctx = self.context
-        ctx._skill_name, ctx._stage_name = name, None
-        ctx.emit({"type": "skill_started", "skill": name, "frame_id": selected_frame.frame_id})
-        attempt = Attempt(ctx, name, selected_frame)
+        attempt = self.prepare(name, arguments, selected_frame)
+        return attempt.result if attempt.finished else self._phase(attempt, attempt.execute)
+
+    def prepare(self, name, arguments, selected_frame):
+        """An attempt holding its plan for `execute`; a refused preparation has already finished it."""
+        attempt = Attempt(self.context, name, selected_frame, self.registry.get(name))
+        self.context.begin(name, attempt.skill)
+        self.context.emit({"type": "skill_started", "skill": name, "frame_id": selected_frame.frame_id})
+        self._phase(attempt, lambda: attempt.prepare(arguments))
+        return attempt
+
+    def execute(self, attempt):
+        """Execute a prepared attempt once."""
+        if attempt.finished:
+            raise RuntimeError("Skill attempt already finished")
+        self.context.begin(attempt.name, attempt.skill)
+        return self._phase(attempt, attempt.execute)
+
+    def cancel(self, attempt, message="Prepared action discarded"):
+        """Finish a prepared attempt without executing it."""
+        if attempt.finished:
+            return attempt.result
+        return attempt.finish(Result(attempt.name, "CANCELLED", message))
+
+    def _phase(self, attempt, operation):
         try:
-            result = attempt.run(arguments)
+            result = attempt.guarded(operation)
         except BaseException as error:
-            attempt.finish(Result(name, "ERROR", type(error).__name__, {"traceback": traceback.format_exc()}))
+            attempt.finish(Result(attempt.name, "ERROR", type(error).__name__,
+                                  {"traceback": traceback.format_exc()}))
             raise
-        return attempt.finish(result)
+        return None if result is None else attempt.finish(result)
 
 
 class Attempt:
     """One skill invocation and how far it got."""
 
-    def __init__(self, ctx, name, selected_frame):
-        from .registry import REGISTRY
+    def __init__(self, ctx, name, selected_frame, skill):
         self.ctx, self.name, self.selected, self.epoch = ctx, name, selected_frame, selected_frame.epoch
-        self.skill = REGISTRY.get(name)
+        self.skill = skill
         self.declared = COMMON_FAILURES + (() if self.skill is None else self.skill.FAILURES)
         self.plan, self.executing, self.aborting = None, False, False
+        self.finished, self.result = False, None
 
-    def run(self, arguments):
-        """Prepare and execute, turning a typed failure into its declared result code."""
+    def guarded(self, operation):
+        """OPERATION's value, or its typed failure as the declared result code."""
         try:
-            return self.attempt(arguments)
+            return operation()
         except SkillFailure as error:
             if error.code not in self.declared:
                 raise RuntimeError(f"Skill raised an undeclared failure code: {error.code}") from error
             self.aborting = self.executing and error.code != "CANCELLED"
-            return Result(self.name, error.code, str(error))
+            return Result(self.name, error.code, str(error), error.details)
         except ObservationError as error:
             self.aborting = self.executing
             return Result(self.name, "TARGET_LOST" if self.executing else "INVALID_ARGUMENT", str(error))
@@ -167,7 +210,7 @@ class Attempt:
             self.aborting = self.executing and not isinstance(error, PhysicsInvalid)
             return Result(self.name, refusal_code(error), str(error))
 
-    def attempt(self, arguments):
+    def prepare(self, arguments):
         ctx = self.ctx
         ctx.stage("Preparing")
         if self.skill is None:
@@ -178,6 +221,9 @@ class Attempt:
                 raise SkillFailure("ACTION_REJECTED", f"Missing action capability: {command}")
         self.plan = self.skill.prepare(arguments, self.selected, current, ctx.planning())
         ctx.emit({"type": "skill_prepared", "skill": self.name, "plan": self.plan})
+
+    def execute(self):
+        ctx = self.ctx
         ctx.check(self.epoch)
         self.executing = True
         result = self.skill.execute(self.plan, ctx)
@@ -192,8 +238,9 @@ class Attempt:
             if self.aborting and hasattr(self.skill, "abort"):
                 result = aborted(self.skill, self.plan, ctx, result)
             if self.executing and ctx.observations.epoch == self.epoch:
-                result = stopped(ctx, self.epoch, result)
+                result = ctx.settle(self.epoch, result)
         finally:
+            self.finished, self.result = True, result
             ctx.emit({"type": "skill_finished", "result": result})
         return result
 

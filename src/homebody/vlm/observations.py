@@ -4,6 +4,8 @@ import json
 import numpy as np
 from PIL import Image, ImageDraw
 
+from .topdown import metadata
+
 
 def depth_preview(depth: np.ndarray, far: float = 4.0) -> np.ndarray:
     valid = np.isfinite(depth) & (depth > 0)
@@ -68,7 +70,6 @@ def describe(frame, topdown_settings=None) -> dict:
                    "static occupancy: dark=obstacle, light=free, blue=robot and heading"],
     }
     if topdown_settings is not None:
-        from .topdown import metadata
         result["topdown"] = metadata(topdown_settings)
         result["topdown"]["world_from_torso"] = frame.world_torso.tolist()
         result["click_images"]["release_point_1000"] = 4
