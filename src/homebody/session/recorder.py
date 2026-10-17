@@ -7,7 +7,8 @@ import time
 import uuid
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import asdict, is_dataclass
+from collections.abc import Mapping
+from dataclasses import asdict, fields, is_dataclass
 from datetime import UTC, datetime
 from importlib import metadata
 from pathlib import Path
@@ -48,16 +49,24 @@ def source_digest(source: Path) -> str:
     return directory_digest(source, {".py", ".md"})
 
 
+MAX_ARRAY_ITEMS = 4096  # an array larger than this is recorded as its shape
+
+
 def json_value(value):
-    if is_dataclass(value):
-        return asdict(value)
+    """JSON for what json.dumps cannot write itself. A dataclass converts one level at a time (asdict deep-copies,
+    which fails on the read-only mappings a frame holds), large arrays become a summary, and anything else a short
+    label, so recording an event (a plan a customised skill made, say) never fails the skill."""
+    if is_dataclass(value) and not isinstance(value, type):
+        return {f.name: getattr(value, f.name) for f in fields(value)}
+    if isinstance(value, Mapping):
+        return dict(value)
     if isinstance(value, np.ndarray):
-        return value.tolist()
+        return value.tolist() if value.size <= MAX_ARRAY_ITEMS else f"array{value.shape} {value.dtype}"
     if isinstance(value, np.generic):
         return value.item()
-    if isinstance(value, Path):
-        return str(value)
-    raise TypeError(f"Not JSON serializable: {type(value)}")
+    if isinstance(value, (Path, set, frozenset, tuple)):
+        return str(value) if isinstance(value, Path) else list(value)
+    return f"<{type(value).__name__}>"
 
 
 def write_json(path: Path, value):
