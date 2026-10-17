@@ -1,7 +1,7 @@
 # Brief: improve the harness the robot agent and its coding assistant work with
 
 HomeBody drives a simulated Unitree G1 humanoid (MuJoCo; Dex3 three-finger hands; a head RGB-D
-camera). On every task, a model (GPT-6 Astra) acts as the agent: each turn it sees the head image and
+camera). On every task, a model (GPT-6.1 Sol) acts as the agent: each turn it sees the head image and
 three derived images, the scene memory from a scan, the recent steps and the instructions, and
 replies with one action: a skill call (navigate, pick, place), `call_coder`, or `done`.
 `call_coder(skill, goal, tried, success, constraints)` hands one skill to a coding assistant (Sol,
@@ -15,8 +15,8 @@ of the task. Coded skills and `lib/` do not carry over between tasks.
 The coding assistant runs in auto mode: every failed skill call (except a badly formed one, or a
 refusal its skill marks final, such as an object already on the floor) goes to the assistant
 without the agent asking, with the failed call as evidence. While one skill keeps failing (a stuck
-point) the assistant runs at most 3 times and the agent may call that skill at most 3 more times;
-a task allows 9 assistant calls. The agent still decides each next step, including its own
+point) the assistant runs once and the agent may call that skill at most 3 more times; a task
+allows 3 assistant calls. The agent still decides each next step, including its own
 `call_coder` (for example to ask for a new skill no built-in one covers).
 
 You are improving the HARNESS that makes this work: what the agent and the assistant are told and

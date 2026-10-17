@@ -136,7 +136,7 @@ class Session:
                                cancelled=controls.cancel.is_set, emit=self.skill_event)
         self.runner = Runner(self.context)
         self.coder = Coder(settings.coder)
-        self.recovery = Recovery(settings.coder.tries)
+        self.recovery = Recovery(settings.coder.tries, settings.coder.rescues)
         self.history = []
         self.status = "Ready"
         self._physics_fault = None
@@ -215,10 +215,11 @@ class Session:
         skills += (f"\n{CALL}: skill, goal, tried, success, constraints. A coding assistant changes the skill and "
                    f"runs it on the robot (see above); {left} call{'s' if left != 1 else ''} left this task.")
         if self.settings.coder.auto:
-            tries = self.settings.coder.tries
+            tries, rescues = self.settings.coder.tries, self.settings.coder.rescues
             skills += (f" In this session a failed skill call goes to the coding assistant automatically, at most "
-                       f"{tries} times while that skill keeps failing; its result follows the failure in the recent "
-                       f"steps. Once a skill has failed you may call it at most {tries} more times until a call of "
+                       f"{rescues} time{'s' if rescues != 1 else ''} while that skill keeps failing; its result follows "
+                       f"the failure in the recent steps. Once a skill has failed you may call it at most {tries} more "
+                       "times until a call of "
                        "it succeeds; use the results to decide whether another try can help, else choose "
                        "something else or done.")
         hands = "; ".join(hand_status(side, self.context.carried.get(side)) for side in ("left", "right"))

@@ -1005,7 +1005,7 @@ def test_older_steps_drop_result_details_but_keep_code_and_message():
 def test_auto_mode_hands_each_failure_to_the_coder_and_bounds_the_retries(build, monkeypatch):
     from homebody.skills.contract import Result
 
-    settings = replace(Settings(agent=Agent(done_settle_seconds=0.)), coder=Coder(auto=True, calls=9))
+    settings = replace(Settings(agent=Agent(done_settle_seconds=0.)), coder=Coder(auto=True, calls=9, rescues=3))
     picks = [Decision("Try the cup.", "pick", {"hand": "right"}) for _ in range(5)]
     session = build(Provider([*picks, Decision("Give up.", "done", {})]), settings=settings)
     runs, asks = [], []

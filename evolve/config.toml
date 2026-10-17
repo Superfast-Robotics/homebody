@@ -24,9 +24,9 @@ val = ["assets/generated/val_*", "assets/generated/heldout_*",
 
 [agent]
 # The model playing HomeBody's agent in every evaluation episode (a session/config.py MODELS key).
-# GPT-6 Astra (medium) through the LiteLLM proxy: only HomeBody's own prompt reaches the model (no Codex
-# context); the coding sub-agent is Sol (settings.coder). Until v002 the agent was Sol (sol61-litellm).
-model = "astra-litellm"
+# GPT-6.1 Sol through the LiteLLM proxy: only HomeBody's own prompt reaches the model (no Codex
+# context); the coding sub-agent is Sol too (settings.coder). v003 alone used Astra (astra-litellm).
+model = "sol61-litellm"
 
 # The checks a candidate must pass, by the highest tier its patch touches (tiers.toml).
 [gates.0]

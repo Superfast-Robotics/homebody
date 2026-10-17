@@ -1,6 +1,6 @@
 """Stuck points for the coder's auto mode: a skill failing until one of its calls succeeds.
 
-At a stuck point each failure goes to the coder automatically, at most TRIES times, and the agent may call
+At a stuck point a failure goes to the coder automatically, at most RESCUES times, and the agent may call
 the skill at most TRIES more times; a call of it that succeeds (or a coder call that does) ends the point.
 """
 import json
@@ -9,8 +9,8 @@ NOT_A_FAILURE = frozenset({"INVALID_ARGUMENT", "PHYSICS_INVALID", "RECOVERY_LIMI
 
 
 class Recovery:
-    def __init__(self, tries: int):
-        self.tries = tries
+    def __init__(self, tries: int, rescues: int):
+        self.tries, self.rescues = tries, rescues
         self.points: dict[str, dict] = {}
 
     def reset(self):
@@ -42,7 +42,7 @@ class Recovery:
         point, code = self.points.get(skill), result["code"]
         final = bool((result.get("details") or {}).get("final"))
         return (code not in NOT_A_FAILURE and code != "OK" and not final and point is not None
-                and point["coder"] < self.tries)
+                and point["coder"] < self.rescues)
 
     def coder_done(self, skill: str, code: str):
         """After a coder call for SKILL ended with CODE: an OK version ends the stuck point."""

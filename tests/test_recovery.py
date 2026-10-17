@@ -4,7 +4,7 @@ from homebody.vlm.provider import Decision
 
 
 def test_a_stuck_point_gets_three_coder_calls_and_three_retries():
-    recovery = Recovery(3)
+    recovery = Recovery(3, 3)
     coder_calls = 0
     for call in range(4):
         assert recovery.admit("pick") is None
@@ -19,7 +19,7 @@ def test_a_stuck_point_gets_three_coder_calls_and_three_retries():
 
 
 def test_success_ends_the_stuck_point():
-    recovery = Recovery(3)
+    recovery = Recovery(3, 3)
     recovery.settle("pick", "NO_GRASP")
     recovery.coder_done("pick", "OK")
     assert "pick" not in recovery.points
@@ -30,7 +30,7 @@ def test_success_ends_the_stuck_point():
 
 
 def test_bad_arguments_are_not_a_stuck_point():
-    recovery = Recovery(3)
+    recovery = Recovery(3, 3)
     recovery.settle("pick", "INVALID_ARGUMENT")
     assert not recovery.wants_coder("pick", {"code": "INVALID_ARGUMENT"}) and "pick" not in recovery.points
 
@@ -43,7 +43,19 @@ def test_the_automatic_request_carries_the_failed_call():
 
 
 def test_a_final_refusal_is_left_to_the_agent():
-    recovery = Recovery(3)
+    recovery = Recovery(3, 3)
     recovery.settle("navigate", "CARRY_CLEARED")
     assert not recovery.wants_coder("navigate", {"code": "CARRY_CLEARED", "details": {"final": True}})
     assert recovery.wants_coder("navigate", {"code": "CARRY_CLEARED", "details": {}})
+
+
+def test_one_rescue_per_stuck_point_still_allows_three_tries():
+    recovery = Recovery(3, 1)
+    recovery.settle("pick", "NO_GRASP")
+    assert recovery.wants_coder("pick", {"code": "NO_GRASP"})
+    recovery.coder_done("pick", "CODER_FAILED")
+    for _ in range(3):
+        assert recovery.admit("pick") is None
+        recovery.settle("pick", "NO_GRASP")
+        assert not recovery.wants_coder("pick", {"code": "NO_GRASP"})
+    assert recovery.admit("pick")["code"] == "RECOVERY_LIMIT"
