@@ -6,7 +6,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation, Slerp
 
 from homebody.helpers.collision import Clearance, overlap
-from homebody.helpers.geometry import inverse, points_in, transform
+from homebody.helpers.geometry import inverse, points_in, rotation_error, transform
 from homebody.helpers.trajectory import joint_rows, retime_path, servo_step
 from homebody.primitives.observations import Frame, FreshEvidence
 from homebody.skills.contract import SkillFailure
@@ -111,10 +111,12 @@ def track(ctx, epoch, side, world_target, tracked_target, check, best_effort=Fal
     arm, command = ctx.arms[side], within_limits(ctx, side, state.arm_joints(side))
     start, evidence = state.time, FreshEvidence(epoch)
     closest, closest_time = np.inf, start
+    world_goal = world_target.copy()
     while state.time - start < ctx.settings.motion.arm_timeout:
         target = world_target.copy()
         if tracked_target is not None:
             target[:3, 3] += tracked_target.update(state)
+        world_goal = target.copy()
         target = inverse(state.world_torso) @ target
         if position_only:
             target[:3, :3] = (inverse(state.world_torso) @ state.palm(arm, side))[:3, :3]
@@ -134,6 +136,13 @@ def track(ctx, epoch, side, world_target, tracked_target, check, best_effort=Fal
         ctx.actions.arm_target(epoch, side, command)
         ctx.advance(epoch, ctx.settings.servo.tick)
         state = reads.next()
+    palm = state.palm(arm, side)
+    joints = state.arm_joints(side)
+    ctx.emit({"type": "arm_servo_timeout", "side": side,
+              "position_error_m": float(np.linalg.norm(world_goal[:3, 3] - palm[:3, 3])),
+              "rotation_error_rad": float(np.linalg.norm(rotation_error(world_goal[:3, :3], palm[:3, :3]))),
+              "joint_tracking_error_rad": float(np.max(np.abs(command - joints))),
+              "joint_limit_margin_rad": float(np.min(np.minimum(joints - arm.lower, arm.upper - joints)))})
     return None
 
 

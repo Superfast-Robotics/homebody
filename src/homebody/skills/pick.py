@@ -390,10 +390,37 @@ def approach(plan, ctx, target):
         ctx.stage("Following grasp path")
         move_path(ctx, plan.epoch, plan.side, plan.approach_joints, tracked_target=target)
     ctx.stage("Aligning above target")
+    correct_alignment(plan, ctx, target)
     servo(ctx, plan.epoch, plan.side, plan.pre, tracked_target=target)
     target.begin_descent()
     ctx.stage("Descending to grasp")
     return servo(ctx, plan.epoch, plan.side, plan.palm, tracked_target=target, exclude_labels=(plan.label,))
+
+
+ALIGNMENT_CORRECTION_RAD = 0.5  # only a local correction, never another approach route
+
+
+def correct_alignment(plan, ctx, target):
+    """Re-solve the same pre-grasp once from the measured endpoint and current torso.
+
+    An unsolved, large or blocked correction leaves the existing full-pose servo in charge.
+    Both the proposed segment and its execution retain the approach collision gates.
+    """
+    frame = ctx.observe(plan.epoch)
+    goal = plan.pre.copy()
+    goal[:3, 3] += target.update(frame)
+    measured = frame.arm_joints(plan.side)
+    solved = ctx.arms[plan.side].solve(inverse(frame.world_torso) @ goal, measured)
+    reason = "no IK solution"
+    if solved is not None:
+        reason = "correction exceeds local joint bound"
+        if np.max(np.abs(solved - measured)) <= ALIGNMENT_CORRECTION_RAD:
+            clearance = Clearance(frame, ctx.arms, plan.side, ctx.settings.collision, exempt_start=True)
+            reason = clearance.path_violation(measured, solved)
+    ctx.emit({"type": "pick_alignment_correction", "frame_id": frame.frame_id,
+              "side": plan.side, "reason": reason, "applied": reason is None})
+    if reason is None:
+        move_path(ctx, plan.epoch, plan.side, [solved], tracked_target=target)
 
 
 def replan(plan, ctx, target, error, attempt):
