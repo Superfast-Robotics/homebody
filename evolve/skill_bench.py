@@ -22,7 +22,8 @@ episode's offset), calls the candidate's pick once on the object (a click on its
 the agent would give); if the pick fails and the episode allows it (coder: true), the coding
 assistant gets one call_coder to change pick and run it on the robot, as in a task. A held object is
 then carried along the task's carry path and the robot stands still for a moment. Scored from
-physics: 0 not lifted, 1 lifted but not held at the end (dropped in the pick or the carry), 2 still
+physics (an episode with "return" walks back to the pick stance after the carry): 0 not lifted, 1 lifted
+but not held at the end (dropped in the pick or the carry), 2 still
 held (success); the record also keeps the built-in pick's own outcome, the coder's result, its
 credits and the seconds spent. An episode whose stance or view fails before the pick is a setup failure and
 is not scored. Writes OUT/result.json; the session evidence (events, physics) stays under OUT.
@@ -99,6 +100,9 @@ def run_pick(cm, session, episode, step):
     if held and step.carry_goal is not None:
         carried = execute("navigate", cm.navigate_arguments(step.carry_goal, step.carry_facing, side),
                           port.snapshot(), evidence_name="carry")
+        if carried and episode.get("return"):  # and back to the pick stance: the turns and longer walk of a task
+            carried = execute("navigate", cm.navigate_arguments(episode["stance"], step.facing, side),
+                              port.snapshot(), evidence_name="return")
         carry = session.outcome["steps"][-1] if session.outcome["steps"] else {"code": "OK" if carried else "?"}
     if held:
         for _ in range(int(SETTLE_SECONDS / 0.02)):

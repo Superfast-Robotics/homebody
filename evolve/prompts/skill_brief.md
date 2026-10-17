@@ -10,7 +10,7 @@ Each episode is one generated scene (three families: an object in an open bin; a
 a counter; an object near a backsplash beside a basket). A scripted driver walks the robot to the
 scene's stance (some episodes shift it by up to 8 cm), calls `{skill}` once with a click on the
 object's visible pixels (the click the agent would give), then carries the object along the task's
-carry path and stands still. No model is involved, and the physics is deterministic, so every
+carry path (in some benchmarks walking back to the pick stance afterwards) and stands still. No model is involved, and the physics is deterministic, so every
 version runs exactly the same episodes. Scored from physics: 0 not lifted, 1 lifted but not held at
 the end (dropped during the pick or the carry), 2 still held: success. An episode's value is its stage
 / 2. Episodes whose stance or view failed before the skill ran are not scored. End to end, the costliest
