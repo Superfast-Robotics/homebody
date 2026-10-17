@@ -35,6 +35,9 @@ def build(round_dir, best, train_local, history, instructions):
     copy_runs(Path(train_local), ws / "runs")
     versions(ws, Path(train_local).parents[1], best, history)
     (ws / "history.md").write_text(render_history(history))
+    notes = round_dir.parents[1] / "operator_notes.md"  # the operator's analysis of train runs, if any
+    if notes.exists():
+        shutil.copy(notes, ws / "NOTES.md")
     return ws
 
 
