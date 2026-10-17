@@ -16,12 +16,13 @@ from homebody.helpers.navigation import (
     route,
     square_stance,
 )
-from homebody.motion.carry import compact_carry, continuing, recover
+from homebody.motion.carry import compact_carry, continuing
+from homebody.toolkit.navigation_carry import recover_navigation
 
 from .contract import Result, SkillFailure
 
 MAX_FLOAT = float(np.finfo(float).max)  # a Python float compares exactly with any int
-NEEDS = ("base_velocity", "arm_target", "advance", "stop")
+NEEDS = ("base_velocity", "arm_target", "grip", "advance", "stop")
 
 FAILURES = ("NO_ROUTE", "STALL", "TIMEOUT", "ARRIVAL_NOT_VERIFIED", "CARRY_CLEARED", "HOLD_UNCERTAIN")
 PROMPT = ('navigate: goal_map_1000 and facing_map_1000, [x, y] on image 3: goal, the floor where to '
@@ -283,11 +284,17 @@ class Transit:
                           look=lambda: ctx.observe(plan.epoch)):
                 continue
             ctx.stage("Checking carry")
-            status, self.frame = recover(ctx, plan.epoch, side)
-            if status != "verified":
-                code = "CARRY_CLEARED" if status == "cleared" else "HOLD_UNCERTAIN"
-                raise SkillFailure(code, f"Navigation stopped to recheck carry: {status}; submit a fresh action")
+            recovery = self.recover_carry(side)
+            self.frame = recovery.frame
+            if recovery.status != "verified":
+                code = "CARRY_CLEARED" if recovery.status == "cleared" else "HOLD_UNCERTAIN"
+                raise SkillFailure(code, f"Navigation carry recovery stopped for {side} at {recovery.gate}; "
+                                   f"recovery_history={recovery.history}")
             self.best = math.inf
+
+    def recover_carry(self, side):
+        """Navigation-only extension point; opt into a co-motion probe with probe=True."""
+        return recover_navigation(self.ctx, self.plan.epoch, side)
 
     def locate(self):
         """The pose, and the distance and heading error to the stance, from the frame."""

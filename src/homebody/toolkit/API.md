@@ -22,6 +22,38 @@ the `Context` (`ctx`), never the simulator.
 Shared motions: `motion/arm.py` (`servo_best_effort`, `move_joints`, `move_path(..., planned=True)`,
 `close_or_open`, `reset_arm`), `motion/carry.py` (holding, tucking).
 
+### Navigation carry repair
+
+`from homebody.toolkit.navigation_carry import recover_navigation`
+
+`recover_navigation(ctx, epoch, side, reclose=True, probe=False)` stops and settles the base,
+then tries unchanged shared recovery. For an already lifted, uncertain carry, `reclose` permits
+one stationary squeeze at the configured closure and duration, only with blocked loaded contact
+and no visible separation. Repeated fresh opposing retention can restore verification once;
+it does not refresh geometry or relax subsequent transport checks. Effort without closure gaps
+is insufficient. Requires `grip` in the skill's `NEEDS`.
+
+`probe=True` independently permits one upward motion after fresh opposing retention, visibility
+of the original label, and overlap with the original capture. IK, camera bounds and collision
+checks use the union of the old and observed payload. The bounded joint stream checks live
+clearance and retention. Capture refresh requires repeated fresh views with measured hand rise,
+measured target rise, and matching palm-relative surfaces. A commanded lift or stationary
+contact alone cannot pass. The lift size comes from existing lift-evidence and surface tolerances.
+No opening, target substitution or unchecked arm motion occurs.
+
+The result has `status` (shared `Recovery` enum), `frame`, `gate`, and `history`. Failed gates
+include `opposing_retention`, `visibility`, `capture_overlap`, `probe_clearance`, measured-motion
+gates and `freshness`. Action history lives on the carry record (`navigation_recovery`) across
+invocations: reclosing and probing each run at most once, even after interruption. Do not clear
+that history to retry. `probe_required` after a previous squeeze is an opportunity to enable
+the independent probe, subject to its live gates. A passed probe establishes current possession,
+not future transport stability; keep `Transit.check_carry` running throughout navigation.
+
+Built-in navigation enables reclosing only. To enable the separate probe in a customized
+navigate, change `Transit.recover_carry` to call
+`recover_navigation(self.ctx, self.plan.epoch, side, probe=True)`. Shared pick/place recovery
+is unchanged. The helper is for already lifted navigation loads, not initial grasp verification.
+
 ## Toolkit (`homebody.toolkit`)
 
 | Function | Returns |

@@ -74,6 +74,17 @@ After an execution-only failure, an unchanged baseline check cannot diagnose the
 inspect the execution report and make a targeted correction before spending another check.
 A passing planning check still requires execution and fresh verification to establish success.
 
+For a navigation carry refusal, use `toolkit.navigation_carry.recover_navigation` (toolkit/API.md)
+through `Transit.recover_carry`. It separates one stationary reclose from one optional, checked
+co-motion probe. Inspect its failed gate and persistent `recovery_history`; do not erase the
+history or repeat a completed squeeze. Missing opposing retention after reclosing requires a
+different grasp correction, not more samples or effort-only verification. When retention is
+present but captured geometry no longer verifies, enable `probe=True`; its visibility, original
+label overlap, clearance, measured hand/target motion and freshness gates must all pass before
+recapture. Do not directly mark the record verified or refresh geometry from a stationary view.
+Keep subsequent carry checks: passing a stationary repair or a probe does not prove stability
+during the rest of the route. Leave shared pick/place recovery semantics intact.
+
 For a pick tracking refusal, diagnose the initial approach failure separately from a later
 reset/replanning failure. `tracking` reports the preceding mode, age of the last supported or
 partial view, camera freshness allowance, remaining distance, visibility and measured occlusion

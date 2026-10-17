@@ -60,6 +60,9 @@ class FakeBackend:
     def arm_target(self, epoch, side, joints):
         assert epoch == self.epoch
 
+    def grip(self, epoch, side, closure):
+        assert epoch == self.epoch
+
     def stop(self, epoch):
         assert epoch == self.epoch
         self.velocity[:] = 0
