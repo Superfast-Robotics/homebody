@@ -1,4 +1,4 @@
-"""score_episode.py SESSION TARGETS EVALUATE_PY: score one recorded HomeBody session (or the latest
+"""score_episode.py SESSION TARGETS EVALUATE_PY [MODEL]: score one recorded HomeBody session (or the latest
 session under an --output root) from physics.
 
 Each targeted object gets a stage: 0 untouched, 1 lifted by the robot, 2 ended inside its target
@@ -6,7 +6,8 @@ region, 3 physics-verified placement (the frozen evaluator's verdict). An object
 that ends on the floor is flagged "dropped" and keeps stage 1 (lifted): the robot cannot bend to pick
 it up again, so a drop is not scored below an object never touched, and every run stays in the score.
 Writes nothing; prints the result JSON, with the session's step and coder-call counts and its cost: the
-tokens of every agent decision and coder call, in credits at the model's rates. A coder call cut off
+tokens of every agent decision and coder call, in credits at each model's rates (the agent's MODEL key,
+Sol when not given; the coder is Sol). A coder call cut off
 at its time limit leaves no usage record; it is counted in coder_unmetered and charged the mean of the
 metered calls (or CODER_FALLBACK when none are).
 """
@@ -19,12 +20,19 @@ import numpy as np
 
 LIFT_M = 0.05
 RATES = {"input": 50.0, "cached": 2.5, "output": 250.0}  # credits per 1M tokens (GPT-6.1 Sol)
+AGENT_RATES = {"astra": (250.0, 25.0, 1250.0), "sol": (50.0, 2.5, 250.0), "luna": (2.5, 0.25, 12.5)}  # by MODEL key
 CODER_FALLBACK = (120_000, 480_000, 4_000)  # (uncached, cached, output) tokens of a typical coder call
 FALL_M = 0.5  # ending this far below its start means it fell to the floor (scenes differ in floor height)
 
 
-def credits(uncached, cached, output):
-    return (uncached * RATES["input"] + cached * RATES["cached"] + output * RATES["output"]) / 1e6
+def credits(uncached, cached, output, rates=None):
+    rate_in, rate_cached, rate_out = rates or (RATES["input"], RATES["cached"], RATES["output"])
+    return (uncached * rate_in + cached * rate_cached + output * rate_out) / 1e6
+
+
+def agent_rates(model):
+    """The agent's credit rates from its MODEL key (astra-litellm, sol61-litellm, ...); Sol when unknown."""
+    return next((rates for family, rates in AGENT_RATES.items() if family in (model or "")), AGENT_RATES["sol"])
 
 
 def decision_usage(reply):
@@ -48,7 +56,7 @@ def decision_usage(reply):
     return total, cached, usage.get("output_tokens", usage.get("completion_tokens", 0))
 
 
-def cost(task_dir):
+def cost(task_dir, model=None):
     """The task's token use and credits: agent decisions (every attempt, retries included) and coder calls."""
     main = [decision_usage(reply) for reply in task_dir.glob("decisions/*/reply.json")]
     coder, unmetered = [], 0
@@ -61,7 +69,7 @@ def cost(task_dir):
             unmetered += 1
     main_in, main_cached, main_out = (sum(column) for column in zip(*main)) if main else (0, 0, 0)
     coder_in, coder_cached, coder_out = (sum(column) for column in zip(*coder)) if coder else (0, 0, 0)
-    metered = credits(main_in - main_cached, main_cached, main_out) + credits(coder_in - coder_cached, coder_cached, coder_out)
+    metered = credits(main_in - main_cached, main_cached, main_out, agent_rates(model)) + credits(coder_in - coder_cached, coder_cached, coder_out)
     per_call = (credits(coder_in - coder_cached, coder_cached, coder_out) / len(coder) if coder
                 else credits(*CODER_FALLBACK))
     return {"main_input": main_in, "main_cached": main_cached, "main_output": main_out,
@@ -70,7 +78,7 @@ def cost(task_dir):
             "credits": round(metered + unmetered * per_call, 3)}
 
 
-def main(session, targets_path, evaluate_py):
+def main(session, targets_path, evaluate_py, model=None):
     session = Path(session)
     if not (session / "events.jsonl").exists():  # an --output root: its latest session
         session = max(session.glob("session-*"))
@@ -99,9 +107,9 @@ def main(session, targets_path, evaluate_py):
                       "dropped": sum(o["dropped"] for o in objects.values()),
                       "objects": objects, "untargeted": verdict.get("untargeted"), "status": outcome.get("status"),
                       "steps": len(skills), "customizations": skills.count("call_coder"),
-                      "wall_seconds": outcome.get("wall_seconds", 0.0), "cost": cost(physics.parent)},
+                      "wall_seconds": outcome.get("wall_seconds", 0.0), "cost": cost(physics.parent, model)},
                      indent=1, default=str))
 
 
 if __name__ == "__main__":
-    main(*sys.argv[1:4])
+    main(*sys.argv[1:5])

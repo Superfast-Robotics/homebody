@@ -1,6 +1,7 @@
 """The remote machine: candidate checkouts, scripted suite runs and their results."""
 import shutil
 import subprocess
+import time
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -8,6 +9,25 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 # What a candidate checkout needs to run; assets come from the base by symlink.
 SYNCED = ("src", "tools", "tests", "configs", "evaluation", "vendor", "pyproject.toml")
+RETRIES, RETRY_WAIT = 5, 30  # a dropped network: attempts and seconds between them
+NOT_CONNECTED = ("connect to host", "Could not resolve", "Network is unreachable", "Connection refused")
+
+
+def run(command, **kwargs):
+    """subprocess.run, retried while the host cannot be reached at all (ssh and rsync exit 255 and say so):
+    nothing ran remotely, so a retry repeats nothing."""
+    for attempt in range(RETRIES):
+        result = subprocess.run(command, check=False, capture_output=True, text=True, **kwargs)
+        if result.returncode != 255 or not any(m in result.stderr for m in NOT_CONNECTED) or attempt == RETRIES - 1:
+            return result
+        time.sleep(RETRY_WAIT)
+    raise AssertionError("unreachable")
+
+
+def rsync(*args):
+    result = run(["rsync", *args])
+    if result.returncode != 0:
+        raise subprocess.CalledProcessError(result.returncode, ["rsync", *args], result.stdout, result.stderr)
 
 
 @dataclass(frozen=True)
@@ -24,9 +44,7 @@ class Remote:
         return cls(r["host"], r["root"], f"{r['root']}/{r['base']}", f"{r['root']}/{r['work']}", r["parallel"])
 
     def ssh(self, command, timeout=None, check=True):
-        result = subprocess.run(["ssh", "-o", "ServerAliveInterval=30", self.host, command], check=False,
-                                capture_output=True,
-                                text=True, timeout=timeout)
+        result = run(["ssh", "-o", "ServerAliveInterval=30", self.host, command], timeout=timeout)
         if check and result.returncode != 0:
             raise RuntimeError(f"remote command failed ({result.returncode}): {command[:200]}\n{result.stderr[-2000:]}")
         return result.stdout
@@ -36,8 +54,7 @@ class Remote:
         target = f"{self.work}/cands/{cid}"
         self.ssh(f"mkdir -p {target} && ln -sfn {self.base}/assets {target}/assets")
         sources = [str(Path(checkout) / name) for name in SYNCED if (Path(checkout) / name).exists()]
-        subprocess.run(["rsync", "-a", "--delete", "--exclude", "__pycache__", *sources, f"{self.host}:{target}/"],
-                       check=True, capture_output=True)
+        rsync("-a", "--delete", "--exclude", "__pycache__", *sources, f"{self.host}:{target}/")
         return target
 
     def static_checks(self, cid):
@@ -60,8 +77,8 @@ class Remote:
                  for t in tasks for r in range(repeats)]
         jobs = f"{results}/jobs.txt"
         self.ssh(f"rm -rf {results} && mkdir -p {results} && cat > {jobs} << 'EOF'\n" + "\n".join(lines) + "\nEOF")
-        subprocess.run(["rsync", "-a", str(HERE / "run_jobs.sh"), str(HERE / "score_episode.py"),
-                        str(HERE / "episode_settings.toml"), f"{self.host}:{self.work}/"], check=True)
+        rsync("-a", str(HERE / "run_jobs.sh"), str(HERE / "score_episode.py"), str(HERE / "episode_settings.toml"),
+              f"{self.host}:{self.work}/")
         waves = -(-len(lines) // self.parallel)
         self.ssh(f"bash {self.work}/run_jobs.sh {self.base} {self.parallel} {jobs} {self.work} {model}",
                  timeout=waves * 7500 + 600)
@@ -72,12 +89,10 @@ class Remote:
         if local.exists():  # a re-run must not inherit an earlier run's files
             shutil.rmtree(local)
         local.mkdir(parents=True)
-        subprocess.run(["rsync", "-a", "--include=*/", "--include=result.json", "--include=run.log",
-                        "--include=exit_code", "--include=events.jsonl", "--include=outcome.json",
-                        "--include=REQUEST.md", "--include=tools.jsonl", "--include=start_*.py",
-                        "--include=**/workspace/skills/*.py", "--include=**/workspace/lib/*.py",
-                        "--exclude=*", "--prune-empty-dirs",
-                        f"{self.host}:{results}/", f"{local}/"], check=True, capture_output=True)
+        rsync("-a", "--include=*/", "--include=result.json", "--include=run.log", "--include=exit_code",
+              "--include=events.jsonl", "--include=outcome.json", "--include=REQUEST.md", "--include=tools.jsonl",
+              "--include=start_*.py", "--include=**/workspace/skills/*.py", "--include=**/workspace/lib/*.py",
+              "--exclude=*", "--prune-empty-dirs", f"{self.host}:{results}/", f"{local}/")
         return local
 
 

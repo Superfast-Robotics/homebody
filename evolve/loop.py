@@ -8,6 +8,7 @@ accept by the non-regression rule into an archive of versions.
     python3 -m evolve.loop status
     python3 -m evolve.loop rebaseline       # pool the baseline with its own confirmation run
     python3 -m evolve.loop rejudge 1        # re-apply the rule to round 1 against the current best
+    python3 -m evolve.loop gate COMMIT      # end-to-end check of a skill-loop winner before it is merged
 """
 import argparse
 import json
@@ -186,6 +187,25 @@ class Loop:
                             "reason": entry["reason"] + "; passed, but another candidate scored higher"})
         self.log(f"round {number} re-judged; best is now {self.best()['id']}")
 
+    def gate(self, commit, tasks=6, repeats=2):
+        """A skill-loop winner's end-to-end check before it is merged: COMMIT on the first TASKS train tasks
+        (the families take turns), REPEATS each, against the best version's runs of the same tasks. Passes
+        unless train value falls by more than Z_DROP standard errors."""
+        best, cid = self.best(), f"gate-{commit[:7]}"
+        checkout = self.worktree(cid, git("rev-parse", commit))
+        self.remote.push_candidate(cid, checkout)
+        local = self.work / "results" / cid / "train"
+        results = self.remote.run_suite(cid, self.tasks("train")[:tasks], repeats, "train", self.cfg["agent"]["model"])
+        self.remote.collect(results, local)
+        if score.quota_hit(local):
+            raise QuotaExhausted(f"usage limit hit while gating {commit}")
+        child = score.summary(score.read_split(local))
+        d_train, se = score.difference(best["train"], child)
+        passed = d_train + score.Z_DROP * se >= 0
+        self.log(f"gate {commit[:7]} against {best['id']} on {tasks} train tasks x {repeats}: value "
+                 f"{d_train:+.3f} (se {se:.3f}); {'pass' if passed else 'FAIL: worse end to end'}")
+        return passed
+
     def remote_checks(self, cid, checkout):
         self.remote.push_candidate(cid, checkout)
         return self.remote.static_checks(cid)
@@ -337,6 +357,10 @@ def main(argv=None):
     sub.add_parser("rebaseline")
     rejudge = sub.add_parser("rejudge")
     rejudge.add_argument("round", type=int)
+    gate = sub.add_parser("gate", help="end-to-end check of a skill-loop winner before merging it")
+    gate.add_argument("commit")
+    gate.add_argument("--tasks", type=int, default=6)
+    gate.add_argument("--repeats", type=int, default=2)
     args = parser.parse_args(argv)
     loop = Loop()
     if args.command == "baseline":
@@ -347,6 +371,8 @@ def main(argv=None):
         loop.rebaseline()
     elif args.command == "rejudge":
         loop.rejudge(args.round)
+    elif args.command == "gate":
+        raise SystemExit(0 if loop.gate(args.commit, args.tasks, args.repeats) else 1)
     elif args.command == "run":
         for index in range(args.rounds):
             number = loop.round()

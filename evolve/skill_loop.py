@@ -28,6 +28,7 @@ from pathlib import Path
 
 from . import astra, skill_score
 from .loop import REPO, Loop, git
+from .remote import rsync
 from .workspace import coder_call
 
 RECORDING = threading.Lock()
@@ -160,8 +161,8 @@ class SkillLoop:
                  for split in splits for episode in (only[split] if only else self.episodes(split))]
         jobs = f"{root}/jobs.txt"
         self.remote.ssh(f"rm -rf {root} && mkdir -p {root} && cat > {jobs} << 'EOF'\n" + "\n".join(lines) + "\nEOF")
-        subprocess.run(["rsync", "-a", str(HERE / "skill_bench.py"), str(HERE / "skill_bench_tasks.py"), str(HERE / "run_skill_jobs.sh"),
-                        f"{self.remote.host}:{self.remote.work}/"], check=True)
+        rsync("-a", str(HERE / "skill_bench.py"), str(HERE / "skill_bench_tasks.py"), str(HERE / "run_skill_jobs.sh"),
+              f"{self.remote.host}:{self.remote.work}/")
         started = time.monotonic()
         self.remote.ssh(f"bash {self.remote.work}/run_skill_jobs.sh {self.remote.base} {self.cfg['parallel']} {jobs} "
                         f"{self.remote.work} {int(self.coder)} '{self.cfg.get('coder_model', '')}' "
@@ -169,11 +170,11 @@ class SkillLoop:
         if local.exists():
             shutil.rmtree(local)
         local.mkdir(parents=True)
-        subprocess.run(["rsync", "-a", "--include=*/", "--include=result.json", "--include=trace.json",
-                        "--include=run.log", "--include=REQUEST.md", "--include=tools.jsonl", "--include=start_*.py",
-                        "--include=**/coder/call-*/events.jsonl", "--include=**/workspace/skills/*.py",
-                        "--include=**/workspace/lib/*.py", "--exclude=*", "--prune-empty-dirs",
-                        f"{self.remote.host}:{root}/", f"{local}/"], check=True, capture_output=True)
+        rsync("-a", "--include=*/", "--include=result.json", "--include=trace.json", "--include=run.log",
+              "--include=REQUEST.md", "--include=tools.jsonl", "--include=start_*.py",
+              "--include=**/coder/call-*/events.jsonl", "--include=**/workspace/skills/*.py",
+              "--include=**/workspace/lib/*.py", "--exclude=*", "--prune-empty-dirs",
+              f"{self.remote.host}:{root}/", f"{local}/")
         for split in splits:
             (local / split).mkdir(exist_ok=True)
             (local / split / COMPLETE).write_text("done\n")
@@ -248,8 +249,7 @@ class SkillLoop:
         general change never mentions them."""
         local = self.work / "episodes"
         if not local.exists():
-            subprocess.run(["rsync", "-a", f"{self.remote.host}:{self.remote.work}/{self.cfg['episodes']}/", f"{local}/"],
-                           check=True, capture_output=True)
+            rsync("-a", f"{self.remote.host}:{self.remote.work}/{self.cfg['episodes']}/", f"{local}/")
         names = set()
         for path in local.glob("*/*.json"):
             episode = json.loads(path.read_text())

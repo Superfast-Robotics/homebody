@@ -17,7 +17,7 @@ run_one() {
     --scene "$scene" --model "$MODEL" --settings "$EVOLVE/episode_settings.toml" --output "$out/session" \
     --task "$task" > "$out/run.log" 2>&1
   echo "$?" > "$out/exit_code"
-  "$BASE/.venv/bin/python" "$EVOLVE/score_episode.py" "$out/session" "$targets" "$cand/evaluation/evaluate.py" \
+  "$BASE/.venv/bin/python" "$EVOLVE/score_episode.py" "$out/session" "$targets" "$cand/evaluation/evaluate.py" "$MODEL" \
     > "$out/result.json" 2> "$out/score.err" || rm -f "$out/result.json"
 }
 export -f run_one

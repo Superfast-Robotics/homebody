@@ -17,8 +17,10 @@ clear success); the assistant misreads the request, spends its executes on untes
 too early or too late, or repeatedly rebuilds something that should be a primitive or a toolkit
 function; a check or execute report hides what went wrong, so the next change guesses; the
 reference does not match behaviour; the instructions leave out something agents keep discovering
-the hard way. Separate these from task difficulty the
-harness cannot change. Rank them by how many stage points fixing them would likely gain across
+the hard way; a built-in skill refuses or fails the same way across tasks (a reach estimate, a
+stance, a gate or a deadline that is wrong). Separate these from task difficulty the harness cannot
+change, and count a refusal as task difficulty only when the sessions show the target physically out
+of reach, not merely because the skill said so. Rank them by how many stage points fixing them would likely gain across
 tasks, and by how well the fix would carry over to unseen scenes. Learn from history.md and versions.md:
 build on changes that helped on some scenes, do not re-propose what was rejected unless you say what
 differs, and say which earlier evidence supports each mechanism.

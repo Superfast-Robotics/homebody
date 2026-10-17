@@ -1,7 +1,7 @@
 # Brief: improve the harness the robot agent and its coding assistant work with
 
 HomeBody drives a simulated Unitree G1 humanoid (MuJoCo; Dex3 three-finger hands; a head RGB-D
-camera). On every task, a model (astra) acts as the agent: each turn it sees the head image and
+camera). On every task, a model (GPT-6 Astra) acts as the agent: each turn it sees the head image and
 three derived images, the scene memory from a scan, the recent steps and the instructions, and
 replies with one action: a skill call (navigate, pick, place), `call_coder`, or `done`.
 `call_coder(skill, goal, tried, success, constraints)` hands one skill to a coding assistant (Sol,
@@ -12,6 +12,13 @@ two executes), then answers success, failed or infeasible with the reason, the s
 world in and how to call the skill. A version that executed with OK replaces that skill for the rest
 of the task. Coded skills and `lib/` do not carry over between tasks.
 
+The coding assistant runs in auto mode: every failed skill call (except a badly formed one, or a
+refusal its skill marks final, such as an object already on the floor) goes to the assistant
+without the agent asking, with the failed call as evidence. While one skill keeps failing (a stuck
+point) the assistant runs at most 3 times and the agent may call that skill at most 3 more times;
+a task allows 9 assistant calls. The agent still decides each next step, including its own
+`call_coder` (for example to ask for a new skill no built-in one covers).
+
 You are improving the HARNESS that makes this work: what the agent and the assistant are told and
 given, not the skills of any one task. The harness is `src/homebody/harness/`:
 - `agent_prompt.md`: the agent's instructions opening every turn (when to call the coder, how to ask),
@@ -20,7 +27,10 @@ given, not the skills of any one task. The harness is `src/homebody/harness/`:
 - `env.py` and `API.md`: higher-level primitives a skill may build on (API.md must match env.py exactly),
 - `__init__.py`: how these enter the prompts.
 It builds on `src/homebody/toolkit/` (also yours, with its API.md) and on HomeBody's skills, motion
-and helpers. Prompt tuning and expanding or tuning the primitives are the expected kinds of change.
+and helpers. Prompt tuning and expanding or tuning the primitives are the expected kinds of change,
+and so are fixes to a built-in skill (tier 1) when it fails the same way across tasks: its refusal
+heuristics (reach estimates, the stance it chooses, gates, deadlines) are code that can be wrong,
+not facts about the task, unless the sessions show the target is physically out of reach.
 
 ## How a harness version is judged
 
