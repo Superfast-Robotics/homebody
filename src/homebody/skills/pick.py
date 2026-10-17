@@ -22,7 +22,7 @@ from homebody.motion.carry import (
     recover,
     recovery_result,
 )
-from homebody.primitives.observations import Frame, FreshEvidence
+from homebody.primitives.observations import Frame, FreshEvidence, ObservationError
 
 from . import navigate
 from .contract import Result, SkillFailure, click_argument, side_argument
@@ -432,6 +432,8 @@ class PickTarget:
         """Match this frame's view of the target and update the shift."""
         points = self._points(frame)
         match = self._match(points)
+        if match.mode == "uncertain":
+            match = self._wrist_match(frame) or match
         self.shift = self.track.last_supported_shape.center - self.plan.center
         if match.mode == "uncertain":
             goal = self.plan.palm.copy()
@@ -446,6 +448,24 @@ class PickTarget:
                            "partial_travel": self.window.travel if self.window is not None else 0.0,
                            "match": match})
             self.mode = mode
+
+    def _wrist_match(self, frame):
+        """When the head view no longer supports the target, the hand's own wrist camera: its match if
+        it shows the captured surfaces, else None (the head view's verdict stands)."""
+        if not self.ctx.settings.grasp.wrist_camera:
+            return None
+        try:
+            view = self.ctx.wrist(self.plan.epoch, self.plan.side)
+        except (SkillFailure, ObservationError) as error:
+            self.ctx.emit({"type": "wrist_view_unavailable", "reason": str(error)})
+            return None
+        if not view.visible(self.plan.label):
+            return None
+        match = self._match(view.target_points(self.plan.label))
+        if match.mode == "uncertain":
+            return None
+        self.ctx.emit({"type": "target_tracking", "mode": f"wrist_{match.mode}", "frame_id": frame.frame_id})
+        return match
 
     def _admit_hidden(self, frame, points, palm, goal):
         """Allow a blind finish only when the arm hides the target, the palm is close and the

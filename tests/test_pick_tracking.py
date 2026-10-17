@@ -18,7 +18,9 @@ def tracking(monkeypatch):
     plan = SimpleNamespace(points=points, center=np.zeros(3), palm=pose,
                            label=1, side="right", epoch=1)
     events = []
-    ctx = SimpleNamespace(settings=settings, arms={"right": object()}, emit=events.append)
+    blind = SimpleNamespace(visible=lambda label: False)  # the wrist camera sees nothing unless a test says so
+    ctx = SimpleNamespace(settings=settings, arms={"right": object()}, emit=events.append,
+                          wrist=lambda epoch, side: blind)
     target = pick.PickTarget(plan, ctx)
     state = SimpleNamespace(time=1., frame_id="fresh", base_pose=np.zeros(3),
                             world_camera=pose.copy(), visible=lambda label: True,
@@ -135,3 +137,25 @@ def test_measured_occlusion_gates_and_diagnostics(tracking, monkeypatch,
     assert target.occlusion["measured_fraction"] == pytest.approx(measured)
     assert target.occlusion["explained_missing_fraction"] == pytest.approx(explained)
     assert target.occlusion["exposed_missing_fraction"] == pytest.approx(exposed)
+
+
+def test_the_wrist_camera_keeps_a_target_the_head_view_lost(tracking):
+    target, state, palm, events = tracking
+    seen = []
+    target.ctx.wrist = lambda epoch, side: seen.append(side) or SimpleNamespace(
+        visible=lambda label: True, target_points=lambda label: target.plan.points)
+    state.time += target.ctx.settings.servo.perception_period
+    state.visible = lambda label: False
+    target._see(state, palm)
+    assert seen == ["right"] and target.mode == "supported"
+    assert target.last_supported_time == pytest.approx(state.time)
+    assert {"type": "target_tracking", "mode": "wrist_supported", "frame_id": "fresh"} in events
+
+
+def test_a_wrist_camera_that_cannot_see_leaves_the_head_verdict(tracking):
+    target, state, palm, _ = tracking
+    target.begin_descent()
+    state.time += target.ctx.settings.servo.perception_period
+    state.visible = lambda label: False
+    target._see(state, palm)
+    assert target.mode == "occluded"

@@ -8,9 +8,11 @@ that frame's head image.
 Perception:
 - `env.target(click)` -> a Target for the thing under the click, or None
 - `env.visible()` -> [{target, click, pixels}] for what is in view now
-- `env.locate(target)` -> {center, top_z, bottom_z, radius, extent, n_points} (torso frame) or None
+- `env.locate(target, camera="head")` -> {center, top_z, bottom_z, radius, extent, n_points} (torso frame) or None;
+  `camera="left"` / `"right"` reads that hand's wrist camera, rendered only on request: use it when the head
+  view cannot see the target (the arm in the way, the inside of a container)
 - `env.click_of(target)` -> its middle as a click on the current head image, or None
-- `env.points_near(center, radius=0.25, exclude=())` -> (N,3) sensed points near a torso point
+- `env.points_near(center, radius=0.25, exclude=(), camera="head")` -> (N,3) sensed points near a torso point
 - `env.state()` -> {base: [x, y, yaw] world, hands: {side: {palm, closure, holding}}}
 - `env.to_world(xyz)`, `env.to_torso(xyz)` convert points between frames
 

@@ -256,6 +256,7 @@ class Grasp:
     occlusion_exposed_missing_max: float = 0.1
     occlusion_visible_match: float = 0.5
     occlusion_no_view_rays: float = 0.8
+    wrist_camera: bool = True  # the hand's wrist camera when the head view loses the target
     hold_effort_fraction: float = 0.04
     hold_closure_gap: float = 0.04
     recovery_samples: int = 5

@@ -44,6 +44,17 @@ class Env:
     def _frame(self):
         return self._ctx.observe(self._epoch)
 
+    def _view(self, camera):
+        """(view, world_torso) of CAMERA: "head" (the default), or "left" / "right" for that hand's wrist
+        camera, rendered only on request."""
+        if camera == "head":
+            frame = self._frame()
+            return frame, frame.world_torso
+        if camera not in ("left", "right"):
+            raise ValueError('camera must be "head", "left" or "right"')
+        view = self._ctx.wrist(self._epoch, camera)
+        return view, self._ctx.measure(self._epoch).world_torso
+
     def log(self, *parts):
         """Add a line to the skill's result (also what print() does)."""
         if len(self._log) < LOG_LINES:
@@ -77,14 +88,16 @@ class Env:
                 found.append({"target": Target(int(label)), "click": _click(frame, u[k], v[k]), "pixels": len(u)})
         return found
 
-    def locate(self, target):
-        """TARGET's geometry from the current head depth, torso frame: {center, top_z, bottom_z,
-        radius, extent, n_points}, or None when it is not visible."""
-        frame = self._frame()
+    def locate(self, target, camera="head"):
+        """TARGET's geometry from CAMERA's current depth, torso frame: {center, top_z, bottom_z,
+        radius, extent, n_points}, or None when it is not visible. camera="left" / "right" reads that
+        hand's wrist camera: for when the head view cannot see the target (the arm in the way, the
+        inside of a container)."""
+        frame, world_torso = self._view(camera)
         mask = (frame.labels == target.label) & np.isfinite(frame.depth)
         if np.count_nonzero(mask) < MIN_VISIBLE_PIXELS:
             return None
-        points = points_in(inverse(frame.world_torso) @ frame.world_camera, unproject(frame.depth, frame.intrinsics, mask))
+        points = points_in(inverse(world_torso) @ frame.world_camera, unproject(frame.depth, frame.intrinsics, mask))
         center = points.mean(axis=0)
         radial = np.linalg.norm(points[:, :2] - center[:2], axis=1)
         return {"center": center.round(3).tolist(), "top_z": round(float(points[:, 2].max()), 3),
@@ -100,13 +113,14 @@ class Env:
         k = int(np.argmin((u - np.median(u)) ** 2 + (v - np.median(v)) ** 2))
         return _click(frame, u[k], v[k])
 
-    def points_near(self, center, radius=0.25, exclude=()):
-        """Sensed points (torso frame) within RADIUS of CENTER, the EXCLUDE targets removed."""
-        frame = self._frame()
+    def points_near(self, center, radius=0.25, exclude=(), camera="head"):
+        """Sensed points (torso frame) within RADIUS of CENTER, the EXCLUDE targets removed, from
+        CAMERA ("head", or a hand's wrist camera as in locate)."""
+        frame, world_torso = self._view(camera)
         mask = frame.labels >= 0
         for target in exclude:
             mask &= frame.labels != target.label
-        points = points_in(inverse(frame.world_torso) @ frame.world_camera, unproject(frame.depth, frame.intrinsics, mask))
+        points = points_in(inverse(world_torso) @ frame.world_camera, unproject(frame.depth, frame.intrinsics, mask))
         near = points[np.linalg.norm(points - np.asarray(center, float), axis=1) < radius]
         return near[:: max(1, len(near) // 3000)]
 
