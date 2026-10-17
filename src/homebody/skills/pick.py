@@ -23,7 +23,6 @@ from homebody.motion.carry import (
     recovery_result,
 )
 from homebody.primitives.observations import Frame, FreshEvidence
-from homebody.toolkit.search import SearchBudget
 
 from . import navigate
 from .contract import Result, SkillFailure, click_argument, side_argument
@@ -72,21 +71,7 @@ def prepare(arguments, selected, current, planning):
     if other in planning.carried and planning.carried[other]["label"] == label:
         raise SkillFailure("INVALID_ARGUMENT", f"The {other} hand carries the selected object; "
                                                f"repeat pick with the {other} hand to recheck it")
-    # A preferred stance is not an IK gate. Try actual calibrated poses before moving.
-    budget = SearchBudget(180., reserve=120., cancelled=planning.cancelled)
-    try:
-        return plan_target(side, label, current, planning, budget=budget.child(15.))
-    except SkillFailure as probe:
-        if probe.code != "NO_GRASP":
-            raise
-        try:
-            stance = approach_stance(side, label, current, planning)
-        except SkillFailure as heuristic:
-            raise SkillFailure(heuristic.code, f"Stance heuristic: {heuristic}; "
-                               f"current-stance feasibility: {probe}") from heuristic
-        if stance is not None:
-            return stance
-        return plan_target(side, label, current, planning, budget=budget)
+    return approach_stance(side, label, current, planning) or plan_target(side, label, current, planning)
 
 
 def execute(plan, ctx):
@@ -208,7 +193,7 @@ def walk_in(plan, ctx):
     return result
 
 
-def plan_target(side, label, current, planning, *, budget=None):
+def plan_target(side, label, current, planning):
     """The best routable grasp of the captured target from visible geometry."""
     if side in planning.carried:
         raise SkillFailure("HAND_OCCUPIED", "The selected hand has unresolved grasp ownership")
@@ -218,15 +203,14 @@ def plan_target(side, label, current, planning, *, budget=None):
     if not samples:
         raise SkillFailure("CALIBRATION_MISSING", "Robot-only jaw calibration is required")
     points = current.target_points(label)
-    budget = budget if budget is not None else SearchBudget(180., reserve=120., cancelled=planning.cancelled)
-    search = GraspSearch(side, label, current, planning, budget=budget)
+    search = GraspSearch(side, label, current, planning)
     fitted = _width_fitted_candidates(points, samples, planning.settings.grasp, planning.cancelled)
-    best = search.best(search.reachable(fitted))
+    best = search.best(list(search.reachable(fitted)))
     if planning.cancelled():
         raise SkillFailure("CANCELLED", "Operator cancelled grasp preparation")
     if best is None:
         raise SkillFailure("NO_GRASP", f"No grasp passed visible-depth geometry, reach and clearance gates: "
-                           f"{json.dumps(search.report())}")
+                           f"{search.counts}; blockers: {dict(search.blockers)}")
     grasp, route = best
     return Plan(current.epoch, side, label, route, grasp.pre, grasp.palm,
                 grasp.shape.center, points)
@@ -268,11 +252,9 @@ class GraspSearch:
     and the blockers met."""
     GATES = ("width", "pre_reachable", "grasp_reachable", "descent_clear", "approach_clear")
 
-    def __init__(self, side, label, current, planning, *, budget=None):
+    def __init__(self, side, label, current, planning):
         self.arm, self.seed = planning.arms[side], current.arm_joints(side)
-        self.settings = planning.settings.grasp
-        self.budget = budget if budget is not None else SearchBudget(60., cancelled=planning.cancelled)
-        self.cancelled = self.budget
+        self.settings, self.cancelled = planning.settings.grasp, planning.cancelled
         self.torso = inverse(current.world_torso)
         collision = planning.settings.collision
         opened = np.zeros_like(current.hands[side].joints)  # the hand opens before it moves
@@ -280,24 +262,16 @@ class GraspSearch:
         self.approach = Clearance(current, planning.arms, side, collision, exempt_start=True, fingers=opened)
         self.counts = dict.fromkeys(self.GATES, 0)
         self.blockers = Counter()
-        self.endpoint_failures = {}
-        self.exhausted = False
-        self.routes_tried = 0
-        self.routes_incomplete = 0
 
     def reachable(self, candidates):
         for candidate in candidates:
-            if self.cancelled():
-                return
             self.counts["width"] += 1
             pre_joints = self.arm.solve(self.torso @ candidate.pre, self.seed)
             if pre_joints is None:
-                self.endpoint_failure("pre", candidate.pre)
                 continue
             self.counts["pre_reachable"] += 1
             grasp_joints = self.arm.solve(self.torso @ candidate.palm, pre_joints)
             if grasp_joints is None:
-                self.endpoint_failure("closing", candidate.palm)
                 continue
             self.counts["grasp_reachable"] += 1
             obstruction = self.descent.path_violation(pre_joints, grasp_joints)
@@ -307,42 +281,16 @@ class GraspSearch:
             self.counts["descent_clear"] += 1
             yield ReachableGrasp(candidate, pre_joints)
 
-        self.exhausted = True
-
-    def endpoint_failure(self, stage, pose):
-        # Reuse the failed exact solve; do not spend another IK call on diagnostics.
-        distance = float(np.linalg.norm((self.torso @ pose)[:3, 3] - self.arm.shoulder))
-        self.endpoint_failures.setdefault(stage, {
-            "reason": "beyond_reach" if distance > self.arm.reach else "ik_failed",
-            "shoulder_distance_m": distance,
-            "reach_deficit_m": max(0., distance - float(self.arm.reach)),
-        })
-
-    def report(self):
-        return {"gates": self.counts, "endpoint_failures": self.endpoint_failures,
-                "route_blockers": dict(self.blockers), "routes_tried": self.routes_tried,
-                "routes_incomplete": self.routes_incomplete,
-                "search_complete": self.exhausted and not self.routes_incomplete and not self.cancelled(),
-                "alternatives_unexplored": not self.exhausted or bool(self.routes_incomplete) or self.cancelled(),
-                **self.budget.report()}
-
     def best(self, reachable):
-        """Route each feasible endpoint immediately, before requesting another candidate.
-
-        Keep all exact endpoint, descent and route gates. Each route branch has a
-        deadline; a difficult branch must leave time to try other poses and lifts.
-        """
-        for grasp in reachable:
-            for lift in (0., *self.settings.approach_start_lifts_m):
-                if self.cancelled():
-                    return None
-                branch = self.budget.child(3.)
-                self.routes_tried += 1
+        """The first routable (candidate, approach route) by tier, width and joint travel, trying
+        each start lift in turn. None when none routes."""
+        ranked = sorted(reachable, key=lambda grasp: (grasp.candidate.tier, grasp.candidate.width,
+                                                      np.linalg.norm(grasp.pre_joints - self.seed)))
+        for lift in (0., *self.settings.approach_start_lifts_m):
+            for grasp in ranked:
                 approach = approach_path(self.arm, self.seed, grasp.pre_joints, self.approach, self.settings,
-                                         branch, initial_lift_m=lift, blockers=self.blockers)
-                if branch():
-                    self.routes_incomplete += 1
-                if approach is not None and not self.cancelled():
+                                         self.cancelled, initial_lift_m=lift, blockers=self.blockers)
+                if approach is not None:
                     self.counts["approach_clear"] += 1
                     return grasp.candidate, approach
         return None
