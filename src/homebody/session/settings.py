@@ -44,7 +44,11 @@ def in_range(label, number):
 
 
 def check_value(label, value, default, variable_length):
-    """Raise ValueError unless VALUE has DEFAULT's kind: nonempty text, or numbers in LABEL's range (a tuple of the default's length unless VARIABLE_LENGTH, integers where the default is one)."""
+    """Raise ValueError unless VALUE has DEFAULT's kind: true or false, nonempty text, or numbers in LABEL's range (a tuple of the default's length unless VARIABLE_LENGTH, integers where the default is one)."""
+    if isinstance(default, bool):
+        if not isinstance(value, bool):
+            raise ValueError(f"{label} must be true or false")  # noqa: TRY004 -- every bad setting is a ValueError
+        return
     if isinstance(default, str):
         if not isinstance(value, str) or not value.strip():
             raise ValueError(f"{label} must be nonempty text")

@@ -162,7 +162,9 @@ class Coder:
     """The coding sub-agent the agent calls with call_coder (session/coder.py): Codex at `codex`
     (HOMEBODY_CODER_CODEX overrides it) running `model` through the provider at `base_url` (the key in
     LITELLM_API_KEY). One call may take `seconds` of wall time, motion included, with at most `checks`
-    dry runs and `executes` real runs; a task allows `calls` calls."""
+    dry runs and `executes` real runs; a task allows `calls` calls. With `auto`, every failed skill call is
+    handed to the coder without the agent asking (session/recovery.py), at most `tries` times at a stuck
+    point, where the agent may also call the failing skill at most `tries` more times."""
     codex: str = "codex"
     model: str = "gpt-6.1-sol"
     effort: str = "medium"
@@ -171,6 +173,8 @@ class Coder:
     checks: int = 6
     executes: int = 2
     calls: int = 3
+    auto: bool = False
+    tries: int = 3
 
 
 @dataclass(frozen=True)

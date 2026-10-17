@@ -2,3 +2,10 @@
 [agent]
 reasoning_effort = "medium"
 max_steps = 60
+
+[coder]
+# Auto mode: every failed skill call goes to the coder without the agent asking; at a stuck point (a skill
+# failing until a call of it succeeds) at most 3 coder calls and 3 more tries by the agent; 9 coder calls a task.
+auto = true
+tries = 3
+calls = 9

@@ -9,6 +9,7 @@ from dataclasses import asdict
 from homebody import harness
 from homebody.primitives.actions import PhysicsInvalid
 from homebody.session.coder import CALL, Coder
+from homebody.session.recovery import Recovery, request
 from homebody.skills.contract import COMMON_FAILURES, Context, Runner
 from homebody.skills.registry import PROMPTS, REGISTRY
 from homebody.vlm.observations import annotations, model_observation, rounded
@@ -132,6 +133,7 @@ class Session:
                                cancelled=controls.cancel.is_set, emit=self.skill_event)
         self.runner = Runner(self.context)
         self.coder = Coder(settings.coder)
+        self.recovery = Recovery(settings.coder.tries)
         self.history = []
         self.status = "Ready"
         self._physics_fault = None
@@ -209,6 +211,13 @@ class Session:
         left = self.settings.coder.calls - self.coder.calls
         skills += (f"\n{CALL}: skill, goal, tried, success, constraints. A coding assistant changes the skill and "
                    f"runs it on the robot (see above); {left} call{'s' if left != 1 else ''} left this task.")
+        if self.settings.coder.auto:
+            tries = self.settings.coder.tries
+            skills += (f" In this session a failed skill call goes to the coding assistant automatically, at most "
+                       f"{tries} times while that skill keeps failing; its result follows the failure in the recent "
+                       f"steps. Once a skill has failed you may call it at most {tries} more times until a call of "
+                       "it succeeds; use the results to decide whether another try can help, else choose "
+                       "something else or done.")
         hands = "; ".join(hand_status(side, self.context.carried.get(side)) for side in ("left", "right"))
         recent = self.history[-HISTORY_STEPS:]
         steps = "\n".join(json.dumps(rounded(history_line(entry, full=index >= len(recent) - DETAILED_STEPS)))
@@ -247,6 +256,7 @@ class Session:
         outcome = {"status": "error", "steps": 0, "model_claim": None}
         self.history.append({"operator_task": task})
         self.coder.reset(task_dir)  # coded skills live for one task
+        self.recovery.reset()
         try:
             if self.requires_reset:
                 raise PhysicsInvalid(self._physics_fault[1])
@@ -278,23 +288,13 @@ class Session:
                     break
                 if decision.arguments.get("hand") in ("left", "right"):
                     self.view_side = decision.arguments["hand"]
-                carried_before = {side: dict(carry) for side, carry in self.context.carried.items()}
-                if decision.skill == CALL:
-                    result = self.coder.call(decision.arguments, self)
-                elif decision.skill in self.coder.skills:
-                    result = self.runner.run(decision.skill, decision.arguments, frame,
-                                             skill=self.coder.module(decision.skill)).as_dict()
-                else:
-                    result = self.runner.run(decision.skill, decision.arguments, frame).as_dict()
-                entry = {"base_pose": frame.base_pose.tolist(), "decision": asdict(decision), "epoch": frame.epoch,
-                         "frame_sequence": frame.sequence, "result": prompted(result)}
-                if decision.skill != CALL and result["code"] != "PHYSICS_INVALID":  # for the coder's request
-                    entry["what_changed"] = harness.change_report(frame, self.observed.snapshot(), carried_before,
-                                                                  self.context.carried)
-                self.history.append(entry)
-                self.recorder.event("result", step=step, simulation_time=self.backend.time, result=result)
+                result = self.act(decision, frame, step)
                 if result["code"] == "PHYSICS_INVALID":
                     raise PhysicsInvalid(result["message"])
+                if self.settings.coder.auto and self.recovery.wants_coder(decision.skill, result["code"]):
+                    result = self.rescue(task, decision, result, step)
+                    if result["code"] == "PHYSICS_INVALID":
+                        raise PhysicsInvalid(result["message"])
             else:
                 outcome["status"] = "step_limit"
         except PhysicsInvalid as exc:
@@ -331,6 +331,44 @@ class Session:
             if not self.requires_reset:
                 self.update(outcome["status"], outcome.get("reason") or outcome.get("model_claim") or "")
         return outcome
+
+    def act(self, decision, frame, step):
+        """Run DECISION (a skill, a coded skill or a coder call) from FRAME; record it and return its result."""
+        carried_before = {side: dict(carry) for side, carry in self.context.carried.items()}
+        refused = self.recovery.admit(decision.skill) if self.settings.coder.auto and decision.skill != CALL else None
+        if refused is not None:
+            result = refused
+        elif decision.skill == CALL:
+            result = self.coder.call(decision.arguments, self)
+            if self.settings.coder.auto and result["code"] not in ("INVALID_ARGUMENT", "CODER_LIMIT", "CODER_NOT_YET"):
+                self.recovery.coder_done(decision.arguments.get("skill"), result["code"])
+        elif decision.skill in self.coder.skills:
+            result = self.runner.run(decision.skill, decision.arguments, frame,
+                                     skill=self.coder.module(decision.skill)).as_dict()
+        else:
+            result = self.runner.run(decision.skill, decision.arguments, frame).as_dict()
+        if decision.skill != CALL and refused is None:
+            self.recovery.settle(decision.skill, result["code"])
+        entry = {"base_pose": frame.base_pose.tolist(), "decision": asdict(decision), "epoch": frame.epoch,
+                 "frame_sequence": frame.sequence, "result": prompted(result)}
+        if decision.skill != CALL and refused is None and result["code"] != "PHYSICS_INVALID":  # for the coder
+            entry["what_changed"] = harness.change_report(frame, self.observed.snapshot(), carried_before,
+                                                          self.context.carried)
+        self.history.append(entry)
+        self.recorder.event("result", step=step, simulation_time=self.backend.time, result=result)
+        return result
+
+    def rescue(self, task, decision, failed, step):
+        """Auto mode: hand DECISION's FAILED result to the coder as a call the agent did not have to make."""
+        if self.coder.calls >= self.settings.coder.calls:
+            return failed
+        frame = self.observed.snapshot()
+        auto = type(decision)(text=f"Automatic coder call after {decision.skill} failed with {failed['code']}.",
+                              skill=CALL, arguments=request(task, decision, failed))
+        self.recorder.event("decision", step=step, epoch=frame.epoch, sequence=frame.sequence,
+                            simulation_time=self.backend.time, decision=auto, automatic=True)
+        self.update("Executing", auto.text)
+        return self.act(auto, frame, step)
 
     def _halt(self, status):
         """Stop the robot after a task; a finished task keeps its arm targets."""

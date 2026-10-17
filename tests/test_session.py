@@ -1000,3 +1000,23 @@ def test_older_steps_drop_result_details_but_keep_code_and_message():
              "result": {"skill": "pick", "code": "NO_GRASP", "message": "walls", "details": {"tried": 40}}}
     assert history_line(entry, full=True)["result"]["details"] == {"tried": 40}
     assert history_line(entry, full=False)["result"] == {"skill": "pick", "code": "NO_GRASP", "message": "walls"}
+
+
+def test_auto_mode_hands_each_failure_to_the_coder_and_bounds_the_retries(build, monkeypatch):
+    from homebody.skills.contract import Result
+
+    settings = replace(Settings(agent=Agent(done_settle_seconds=0.)), coder=Coder(auto=True, calls=9))
+    picks = [Decision("Try the cup.", "pick", {"hand": "right"}) for _ in range(5)]
+    session = build(Provider([*picks, Decision("Give up.", "done", {})]), settings=settings)
+    runs, asks = [], []
+    monkeypatch.setattr(session.runner, "run", lambda skill, arguments, frame, **kw: (
+        runs.append(skill), Result(skill, "NO_GRASP", "no grasp passed"))[1])
+
+    def call(arguments, _session):
+        asks.append(arguments)
+        return {"skill": "call_coder", "code": "CODER_FAILED", "message": "no fix", "details": {}}
+    monkeypatch.setattr(session.coder, "call", call)
+    assert session.run_task("Put the cup away.")["status"] == "model_done"
+    assert runs == ["pick"] * 4 and len(asks) == 3 and asks[0]["skill"] == "pick"
+    codes = [entry["result"]["code"] for entry in session.history if "result" in entry]
+    assert codes == ["NO_GRASP", "CODER_FAILED"] * 3 + ["NO_GRASP", "RECOVERY_LIMIT"]
