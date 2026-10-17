@@ -65,6 +65,20 @@ model = "gpt-6.1-sol"
 effort = "medium"
 parallel = 28
 
+[skills.pickcarry]
+# pick then the scripted carry walk, the coder off (evaluation costs no credits); Astra diagnoses and patches.
+# The end-to-end failures it targets: shallow grasps that drop on the walk, approach in bins, arm deadlines.
+name = "pick"
+episodes = "skillbench/pick_episodes"
+coder = false
+workdir = "pickcarry"
+prompts = "skill"
+editable = ["src/homebody/skills/pick.py", "src/homebody/motion/*", "src/homebody/helpers/*",
+            "src/homebody/toolkit/*", "tests/*"]
+model = "gpt-6-astra"
+effort = "medium"
+parallel = 28
+
 [skills.pick-dynamic]
 # pick plus one coder rescue; improved through helpers, the coder's instructions and reports, and pick's
 # structure, not by tuning pick's own decisions

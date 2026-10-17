@@ -13,7 +13,9 @@ object's visible pixels (the click the agent would give), then carries the objec
 carry path and stands still. No model is involved, and the physics is deterministic, so every
 version runs exactly the same episodes. Scored from physics: 0 not lifted, 1 lifted but not held at
 the end (dropped during the pick or the carry), 2 still held: success. An episode's value is its stage
-/ 2. Episodes whose stance or view failed before the skill ran are not scored.
+/ 2. Episodes whose stance or view failed before the skill ran are not scored. End to end, the costliest
+failure is a pick that reports OK and then loses the object on the walk: the object usually lands where
+it cannot be reached again. A grasp that will not survive carrying should be made firmer or refused.
 
 `results.md` lists every train episode: its stage, the skill's refusal code and message, lifted,
 held and seconds. `episodes/<id>/trace.json` is the skill's own record of that episode: each stage it
