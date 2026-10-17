@@ -355,7 +355,10 @@ class CoderCall:
         server = (f'{{command={json.dumps(sys.executable)}, args=["-m", "homebody.session.coder_mcp", '
                   f'{json.dumps(socket_path)}], env={{PYTHONPATH={json.dumps(str(source_root()))}}}, '
                   f'tool_timeout_sec={int(s.seconds)}, startup_timeout_sec=30, default_tools_approval_mode="approve"}}')
-        command = [os.environ.get("HOMEBODY_CODER_CODEX", s.codex), "exec", "--ignore-user-config", "--ignore-rules",
+        # The head image the agent decided from goes into the first prompt: the assistant otherwise works from text.
+        head = sorted((self.workspace / "observation").glob("image-1.*"))
+        command = [os.environ.get("HOMEBODY_CODER_CODEX", s.codex), "exec", *(["--image", str(head[0])] if head else []),
+                   "--ignore-user-config", "--ignore-rules",
                    "--skip-git-repo-check", "--ephemeral", "--json", "-s", "workspace-write",
                    "-C", str(self.workspace), "-m", os.environ.get("HOMEBODY_CODER_MODEL") or s.model,
                    "-c", f"model_reasoning_effort={s.effort}",

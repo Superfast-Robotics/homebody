@@ -127,3 +127,19 @@ def test_a_skill_result_with_unusual_details_still_converts():
         pass
     result = Result("probe", "OK", "done", {"plan": Plan, "rise": 0.1}).as_dict()
     assert result["code"] == "OK" and result["details"]["rise"] == 0.1 and result["details"]["plan"] is Plan
+
+
+def test_the_coder_sees_the_head_image_in_its_first_prompt(tmp_path):
+    from homebody.harness import CODER_START
+    from homebody.session.coder import CoderCall
+    from homebody.session.config import Coder as CoderSettings
+    call = CoderCall.__new__(CoderCall)
+    call.settings, call.workspace, call.call_dir = CoderSettings(), tmp_path / "workspace", tmp_path
+    (call.workspace / "observation").mkdir(parents=True)
+    command = call.command(str(tmp_path / "robot.sock"))
+    assert "--image" not in command
+    (call.workspace / "observation" / "image-1.png").write_bytes(b"png")
+    command = call.command(str(tmp_path / "robot.sock"))
+    index = command.index("--image")
+    assert command[index + 1].endswith("observation/image-1.png") and command[index + 2].startswith("--")
+    assert command[-1] == CODER_START
