@@ -16,8 +16,11 @@ work = "/home/lohith/startup/homebody_claude/astra-evolve"
 # base checkout.
 train = ["assets/generated/train_*"]
 # Held out: results gate acceptance but nothing about them is ever shown to the proposer.
+# warehouse_shelf: the warehouse rack bay rebuilt from video on 2026-10-13 (copied unchanged from
+# group-volume/homebody_video_recon_20261013_03cb5ef0/scene into the base's assets/real2sim/).
 val = ["assets/generated/val_*", "assets/generated/heldout_*",
-       "assets/real2sim/src_kitchen::configs/continuous_four.json"]
+       "assets/real2sim/src_kitchen::configs/continuous_four.json",
+       "assets/real2sim/warehouse_shelf::configs/warehouse_shelf_four.json"]
 
 [agent]
 # The model playing HomeBody's agent in every evaluation episode (a session/config.py MODELS key).

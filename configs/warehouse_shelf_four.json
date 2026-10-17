@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "steps": [
+    {
+      "fixture_id": "can_1",
+      "label": "can_1",
+      "hand": "right",
+      "goal": [-0.82, -0.68, 1.5708],
+      "facing": [-0.82, -0.20],
+      "carry_goal": [-1.40, -0.68, 1.5708],
+      "carry_facing": [-1.40, -0.20],
+      "destination_label": "staging_area",
+      "release_map_xy_m": [-1.40, -0.20],
+      "release_delta_z_m": 0.0,
+      "evaluator_target": {
+        "bounds": [[-1.50, -0.30, 0.72], [-0.90, 0.30, 1.05]],
+        "support_contacts": ["staging_area"]
+      }
+    },
+    {
+      "fixture_id": "jar_1",
+      "label": "jar_1",
+      "hand": "right",
+      "goal": [-0.46, -0.68, 1.5708],
+      "facing": [-0.46, -0.20],
+      "carry_goal": [-1.00, -0.68, 1.5708],
+      "carry_facing": [-1.00, -0.20],
+      "destination_label": "staging_area",
+      "release_map_xy_m": [-1.00, -0.20],
+      "release_delta_z_m": 0.0,
+      "evaluator_target": {
+        "bounds": [[-1.50, -0.30, 0.72], [-0.90, 0.30, 1.05]],
+        "support_contacts": ["staging_area"]
+      }
+    },
+    {
+      "fixture_id": "tray_1",
+      "label": "tray_1",
+      "hand": "right",
+      "goal": [0.02, -0.67, 1.5708],
+      "facing": [0.02, -0.19],
+      "carry_goal": [-1.20, -0.60, 1.5708],
+      "carry_facing": [-1.20, -0.08],
+      "destination_label": "staging_area",
+      "release_map_xy_m": [-1.20, -0.08],
+      "release_delta_z_m": 0.0,
+      "evaluator_target": {
+        "bounds": [[-1.50, -0.30, 0.72], [-0.90, 0.30, 1.05]],
+        "support_contacts": ["staging_area"]
+      }
+    },
+    {
+      "fixture_id": "bowl_1",
+      "label": "bowl_1",
+      "hand": "right",
+      "goal": [0.62, -0.66, 1.5708],
+      "facing": [0.62, -0.18],
+      "carry_goal": [-1.20, -0.70, 1.5708],
+      "carry_facing": [-1.20, -0.22],
+      "destination_label": "staging_area",
+      "release_map_xy_m": [-1.20, -0.22],
+      "release_delta_z_m": 0.0,
+      "evaluator_target": {
+        "bounds": [[-1.50, -0.30, 0.72], [-0.90, 0.30, 1.05]],
+        "support_contacts": ["staging_area"]
+      }
+    }
+  ]
+}

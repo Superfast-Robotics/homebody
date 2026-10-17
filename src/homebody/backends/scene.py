@@ -12,8 +12,11 @@ from homebody.helpers.kinematics import camera_mount
 from homebody.session.config import DEFAULT_SCENE
 
 SPAWN_HEIGHT = 0.76
-# Wrist cameras above the wrist yaw link, looking along the hand (+x of the link).
+# Wrist cameras above the wrist yaw link, aimed halfway between along the hand (+x of the link) and the
+# open hand's jaw (calibration palm_to_jaw): both what the grasp closes on and the scene beyond it in view.
 WRIST_CAMERA_POS = (0.02, 0.0, 0.06)
+WRIST_CAMERA_XYAXES = {"left": (-0.2146, -0.9754, 0.0509, 0.2307, 0.0, 0.9730),
+                       "right": (0.2146, -0.9754, -0.0509, 0.2307, 0.0, 0.9730)}
 WRIST_CAMERA_FOVY = 70.0
 
 
@@ -59,7 +62,7 @@ def load(root: Path, settings, scene: Path | None = DEFAULT_SCENE):
     for side in ("left", "right"):
         wrist = next(b for b in xml.iter("body") if b.get("name") == f"{side}_wrist_yaw_link")
         ET.SubElement(wrist, "camera", name=f"{side}_wrist", pos=numbers(WRIST_CAMERA_POS),
-                      xyaxes="0 -1 0 0 0 1", fovy=str(WRIST_CAMERA_FOVY))
+                      xyaxes=numbers(WRIST_CAMERA_XYAXES[side]), fovy=str(WRIST_CAMERA_FOVY))
     model = mujoco.MjModel.from_xml_string(ET.tostring(xml, encoding="unicode"))
     data = mujoco.MjData(model)
     from holosoma_inference.g1_control.config import amo_profile
