@@ -10,10 +10,10 @@ import numpy as np
 
 from homebody.helpers.geometry import transform
 from homebody.primitives.actions import ActionLimits, PhysicsInvalid
-from homebody.primitives.observations import Frame, HandState, Measurement, NavigationMap
+from homebody.primitives.observations import Frame, HandState, Measurement, NavigationMap, WristView
 
 from .controller import SIDES, Controller
-from .scene import DEFAULT_SCENE, load
+from .scene import DEFAULT_SCENE, WRIST_CAMERA_FOVY, load
 
 ARM_LINKS = ("_hand_", "_wrist_", "_elbow_")
 SPAWN_CEILING = 1.3  # m above the ground plane
@@ -233,12 +233,7 @@ class MujocoBackend:
             raise RuntimeError("Camera rendering was disabled for this backend")
         if self._frame_cache is not None and self._frame_cache.time == self.time:
             return self._frame_cache
-        rgb, depth, segmentation = self._render_ego()
-        ids = segmentation[:, :, 0]
-        valid = (segmentation[:, :, 1] == int(mujoco.mjtObj.mjOBJ_GEOM)) & (ids >= 0)
-        labels = np.zeros(ids.shape, dtype=np.int32)
-        labels[valid] = self._labels[ids[valid]]
-        depth[(depth >= self.settings.camera.far) | ~np.isfinite(depth)] = np.nan
+        rgb, depth, labels = self._render("ego")
         state = self.measure()
         self._frame_cache = Frame(state.epoch, state.sequence, state.time, rgb, depth, self._intrinsics,
                                  state.world_camera, state.world_torso, state.base_pose, state.joints,
@@ -262,10 +257,10 @@ class MujocoBackend:
                           controller.closed[side], self.data.qfrc_actuator[self.model.jnt_dofadr[joints]],
                           np.max(np.abs(self.model.jnt_actfrcrange[joints]), axis=1), names)
 
-    def _render_ego(self):
-        """The ego camera's RGB, depth and segmentation images."""
+    def _render(self, camera):
+        """CAMERA's RGB, depth (NaN beyond the far plane) and per-object labels."""
         renderer = self._render_context()
-        renderer.update_scene(self.data, camera="ego")
+        renderer.update_scene(self.data, camera=camera)
         rgb = renderer.render().copy()
         renderer.enable_depth_rendering()
         depth = renderer.render().copy()
@@ -273,7 +268,25 @@ class MujocoBackend:
         renderer.enable_segmentation_rendering()
         segmentation = renderer.render().copy()
         renderer.disable_segmentation_rendering()
-        return rgb, depth, segmentation
+        ids = segmentation[:, :, 0]
+        valid = (segmentation[:, :, 1] == int(mujoco.mjtObj.mjOBJ_GEOM)) & (ids >= 0)
+        labels = np.zeros(ids.shape, dtype=np.int32)
+        labels[valid] = self._labels[ids[valid]]
+        depth[(depth >= self.settings.camera.far) | ~np.isfinite(depth)] = np.nan
+        return rgb, depth, labels
+
+    def wrist_view(self, side):
+        """SIDE's wrist camera: RGB, depth and labels on the ego image size, and its pose."""
+        if side not in ("left", "right"):
+            raise ValueError("side must be left or right")
+        camera = self.model.camera(f"{side}_wrist").id
+        rgb, depth, labels = self._render(camera)
+        height, width = depth.shape
+        focal = height / (2 * math.tan(math.radians(WRIST_CAMERA_FOVY) / 2))  # MuJoCo's fovy is vertical
+        intrinsics = np.array([[focal, 0, (width - 1) / 2], [0, focal, (height - 1) / 2], [0, 0, 1]])
+        rotation = self.data.cam_xmat[camera].reshape(3, 3) @ np.diag([1, -1, -1])
+        return WristView(self.epoch, self.time, side, rgb, depth, labels, intrinsics,
+                         transform(self.data.cam_xpos[camera], rotation))
 
     def wrist_views(self):
         """RGB from the left and right wrist cameras, on the ego image size (not part of Robot)."""

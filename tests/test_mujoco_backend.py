@@ -32,14 +32,35 @@ def test_the_robot_camera_draws_single_samples_and_the_operator_views_keep_the_m
     model = mujoco.MjModel.from_xml_string('''<mujoco><visual><global offwidth="960" offheight="540"/>
       </visual><worldbody><camera name="ego"/><geom type="sphere" size=".1"/></worldbody></mujoco>''')
     backend = bare_backend(model=model, data=mujoco.MjData(model), settings=Settings(),
-                           _renderer=None, _observer_renderer=None)
+                           _renderer=None, _observer_renderer=None, _labels=np.zeros(model.ngeom, dtype=np.int32))
     samples = model.vis.quality.offsamples
     try:
         assert samples > 0 and backend._render_context()._mjr_context.offSamples == 0
         assert backend._observer_context()._mjr_context.offSamples == samples == model.vis.quality.offsamples
-        rgb, depth, segmentation = backend._render_ego()
+        rgb, depth, labels = backend._render("ego")
         assert rgb.shape == (480, 640, 3) and depth.shape == (480, 640)
-        assert set(np.unique(segmentation[:, :, 0])) <= {-1, 0}
+        assert set(np.unique(labels)) <= {0}
+    finally:
+        backend.close()
+
+
+def test_a_wrist_view_sees_a_labelled_object_where_it_is():
+    """A wrist camera 1 m above a sphere of radius .1 looks straight down at it: its points lie
+    around the origin, the nearest at the sphere's top."""
+    model = mujoco.MjModel.from_xml_string('''<mujoco><visual><global offwidth="960" offheight="540"/>
+      </visual><worldbody><camera name="ego"/><camera name="left_wrist" pos="0 0 1" fovy="70"/>
+      <geom type="sphere" size=".1"/></worldbody></mujoco>''')
+    backend = bare_backend(model=model, data=mujoco.MjData(model), settings=Settings(), epoch=3,
+                           _renderer=None, _observer_renderer=None, _labels=np.array([5], dtype=np.int32))
+    try:
+        mujoco.mj_forward(model, backend.data)
+        view = backend.wrist_view("left")
+        assert view.epoch == 3 and view.side == "left" and view.visible(5)
+        points = view.target_points(5)
+        assert np.allclose(points[:, :2].mean(axis=0), 0, atol=0.01)
+        assert points[:, 2].max() == pytest.approx(0.1, abs=0.01)
+        with pytest.raises(ValueError):
+            backend.wrist_view("middle")
     finally:
         backend.close()
 

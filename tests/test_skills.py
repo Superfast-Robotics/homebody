@@ -158,3 +158,10 @@ def test_normalized_click_converts_once_on_captured_dimensions():
     for bad in ([True, 500], [1001, 500], [0, float("nan")], "500,500"):
         with pytest.raises(ObservationError):
             captured.normalized_pixel(bad)
+
+
+def test_a_refusal_carries_its_details_into_the_result():
+    from homebody.skills.contract import SkillFailure
+    error = SkillFailure("UNREACHABLE", "below the shoulder", {"final": True})
+    assert error.code == "UNREACHABLE" and error.details == {"final": True}
+    assert SkillFailure("NO_GRASP", "none").details == {}

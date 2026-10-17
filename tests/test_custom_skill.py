@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 
 from homebody.primitives.actions import ActionRejected
-from homebody.primitives.observations import ARM, Frame, HandState, NavigationMap
+from homebody.primitives.observations import ARM, Frame, HandState, NavigationMap, WristView
 from homebody.primitives.robot import Robot
 from homebody.session.settings import Settings
 from homebody.skills.contract import Context, Result, Runner, SkillFailure, declared, side_argument
@@ -100,6 +100,10 @@ class FakeRobot:
 
     def measure(self):
         return self.snapshot()
+
+    def wrist_view(self, side):
+        return WristView(self.epoch, self.time, side, np.zeros((4, 4, 3), np.uint8), np.ones((4, 4)),
+                         np.zeros((4, 4), int), np.eye(3), np.eye(4))
 
     def snapshot(self):
         self.sequence += 1
@@ -215,3 +219,10 @@ def test_the_skill_settings_group_loads_and_validates_like_the_others(tmp_path):
     assert WaveSettings.load(path).wave == Wave(lift=0.8, swings=3)
     with pytest.raises(ValueError, match="wave.swing must contain positive"):
         WaveSettings(wave=Wave(swing=-0.4))
+
+
+def test_a_skill_reads_a_wrist_view_through_its_context():
+    from homebody.skills.contract import Context
+    context = Context(observations=FakeRobot(), actions=FakeRobot(), arms={})
+    view = context.wrist(1, "right")
+    assert view.side == "right" and view.epoch == 1

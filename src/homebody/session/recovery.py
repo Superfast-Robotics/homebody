@@ -36,9 +36,13 @@ class Recovery:
             point = self.points.get(skill, {"retries": 0, "coder": 0, "failures": 0})
             self.points[skill] = {**point, "failures": point["failures"] + 1}
 
-    def wants_coder(self, skill: str, code: str) -> bool:
-        point = self.points.get(skill)
-        return code not in NOT_A_FAILURE and code != "OK" and point is not None and point["coder"] < self.tries
+    def wants_coder(self, skill: str, result: dict) -> bool:
+        """Whether RESULT of SKILL goes to the coder: a counted failure, coder calls left at its stuck point,
+        and not one its skill marked final (no code change can succeed until the situation changes)."""
+        point, code = self.points.get(skill), result["code"]
+        final = bool((result.get("details") or {}).get("final"))
+        return (code not in NOT_A_FAILURE and code != "OK" and not final and point is not None
+                and point["coder"] < self.tries)
 
     def coder_done(self, skill: str, code: str):
         """After a coder call for SKILL ended with CODE: an OK version ends the stuck point."""

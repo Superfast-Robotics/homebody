@@ -289,7 +289,7 @@ class Transit:
             if recovery.status != "verified":
                 code = "CARRY_CLEARED" if recovery.status == "cleared" else "HOLD_UNCERTAIN"
                 raise SkillFailure(code, f"Navigation carry recovery stopped for {side} at {recovery.gate}; "
-                                   f"recovery_history={recovery.history}")
+                                   f"recovery_history={recovery.history}", {"final": code == "CARRY_CLEARED"})
             self.best = math.inf
 
     def recover_carry(self, side):

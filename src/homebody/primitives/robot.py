@@ -1,9 +1,9 @@
-"""The robot interface skills use: an epoch, a clock, frames, measurements and five commands."""
+"""The robot interface skills use: an epoch, a clock, frames, measurements, wrist views and five commands."""
 from typing import Protocol, runtime_checkable
 
 import numpy as np
 
-from .observations import Frame, Measurement
+from .observations import Frame, Measurement, WristView
 
 
 @runtime_checkable
@@ -24,6 +24,10 @@ class Robot(Protocol):
 
     def measure(self) -> Measurement:
         """The newest joints, hands and poses, without rendering the camera."""
+
+    def wrist_view(self, side: str) -> WristView:
+        """SIDE's wrist camera now, rendered only on request: for when the head camera cannot see
+        what a hand is doing (the arm in the way, the inside of a container)."""
 
     def base_velocity(self, epoch: int, forward: float, lateral: float, yaw_rate: float) -> None:
         """Body-frame m/s and rad/s, dropped unless renewed within `physics.command_timeout`."""

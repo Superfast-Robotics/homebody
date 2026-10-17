@@ -78,6 +78,9 @@ class ObservedBackend:
     def measure(self):
         return self.__backend.measure()
 
+    def wrist_view(self, side):
+        return self.__backend.wrist_view(side)
+
     def wrist_views(self):
         """The wrist cameras' RGB, for skills whose policy takes them (not part of Robot)."""
         return self.__backend.wrist_views()
@@ -291,7 +294,7 @@ class Session:
                 result = self.act(decision, frame, step)
                 if result["code"] == "PHYSICS_INVALID":
                     raise PhysicsInvalid(result["message"])
-                if self.settings.coder.auto and self.recovery.wants_coder(decision.skill, result["code"]):
+                if self.settings.coder.auto and self.recovery.wants_coder(decision.skill, result):
                     result = self.rescue(task, decision, result, step)
                     if result["code"] == "PHYSICS_INVALID":
                         raise PhysicsInvalid(result["message"])

@@ -17,10 +17,12 @@ DECLARATIONS = ("NEEDS", "FAILURES", "PROMPT", "prepare", "execute")
 
 
 class SkillFailure(RuntimeError):
+    """A declared refusal. DETAILS go into the result; {"final": True} says no change to the skill can
+    succeed until the situation changes (the coder's auto mode then leaves it to the agent)."""
     def __init__(self, code, message, details=None):
         super().__init__(message)
         self.code = code
-        self.details = {} if details is None else details
+        self.details = dict(details or {})
 
 
 @dataclass(frozen=True)
@@ -98,6 +100,11 @@ class Context:
     def measure(self, epoch):
         """The current measurements of EPOCH without the camera, or STALE_OBSERVATION."""
         return self._current(epoch, self.observations.measure)
+
+    def wrist(self, epoch, side):
+        """SIDE's current wrist view of EPOCH (rendered on request; use the head frame first), or
+        STALE_OBSERVATION."""
+        return self._current(epoch, lambda: self.observations.wrist_view(side))
 
     def _current(self, epoch, read):
         self.check(epoch)

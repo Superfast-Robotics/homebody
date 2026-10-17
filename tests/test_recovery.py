@@ -9,7 +9,7 @@ def test_a_stuck_point_gets_three_coder_calls_and_three_retries():
     for call in range(4):
         assert recovery.admit("pick") is None
         recovery.settle("pick", "NO_GRASP")
-        if recovery.wants_coder("pick", "NO_GRASP"):
+        if recovery.wants_coder("pick", {"code": "NO_GRASP"}):
             coder_calls += 1
             recovery.coder_done("pick", "CODER_FAILED")
     assert coder_calls == 3
@@ -32,7 +32,7 @@ def test_success_ends_the_stuck_point():
 def test_bad_arguments_are_not_a_stuck_point():
     recovery = Recovery(3)
     recovery.settle("pick", "INVALID_ARGUMENT")
-    assert not recovery.wants_coder("pick", "INVALID_ARGUMENT") and "pick" not in recovery.points
+    assert not recovery.wants_coder("pick", {"code": "INVALID_ARGUMENT"}) and "pick" not in recovery.points
 
 
 def test_the_automatic_request_carries_the_failed_call():
@@ -40,3 +40,10 @@ def test_the_automatic_request_carries_the_failed_call():
     ask = request("Put the cup away.", decision, {"code": "NO_GRASP", "message": "no grasp passed"})
     assert ask["skill"] == "pick" and "NO_GRASP: no grasp passed" in ask["tried"]
     assert "Put the cup away." in ask["goal"] and ask["success"].startswith("pick returns OK")
+
+
+def test_a_final_refusal_is_left_to_the_agent():
+    recovery = Recovery(3)
+    recovery.settle("navigate", "CARRY_CLEARED")
+    assert not recovery.wants_coder("navigate", {"code": "CARRY_CLEARED", "details": {"final": True}})
+    assert recovery.wants_coder("navigate", {"code": "CARRY_CLEARED", "details": {}})

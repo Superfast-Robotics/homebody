@@ -190,7 +190,7 @@ def grasp_distance(side, shape, current, planning):
         where = "above" if rise > 0 else "below"
         raise SkillFailure("UNREACHABLE", f"The object's pre-grasp point is {abs(rise):.2f} m {where} "
                                           f"the shoulder; no stance brings it within the arm's "
-                                          f"grasp range of {settings.grasp_range:.2f} m")
+                                          f"grasp range of {settings.grasp_range:.2f} m", {"final": True})
     horizontal = np.sqrt(settings.grasp_range ** 2 - rise ** 2)
     jaw = np.mean([np.asarray(sample["palm_to_jaw"])[0, 3] for sample in planning.jaw_samples[side]])
     return float(arm.shoulder[0] + horizontal + jaw)

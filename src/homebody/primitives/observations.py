@@ -192,3 +192,35 @@ class Frame(RobotState):
         if len(cloud) < MIN_TARGET_PIXELS:
             raise ObservationError("Selected target is no longer sufficiently visible")
         return points_in(self.world_camera, cloud)
+
+
+@dataclass(frozen=True)
+class WristView:
+    """One wrist camera's images, rendered on request: rgb, depth (metres along the optical axis, NaN
+    where invalid) and labels (as Frame's) on one grid, its intrinsics and world_camera (x right, y down,
+    z ahead), at TIME of EPOCH."""
+    epoch: int
+    time: float
+    side: str
+    rgb: np.ndarray
+    depth: np.ndarray
+    labels: np.ndarray
+    intrinsics: np.ndarray
+    world_camera: np.ndarray
+
+    def __post_init__(self):
+        height, width = np.shape(self.depth)
+        for name, shape in (("rgb", (height, width, 3)), ("depth", (height, width)), ("labels", (height, width)),
+                            ("intrinsics", (3, 3)), ("world_camera", (4, 4))):
+            object.__setattr__(self, name, frozen_array(getattr(self, name), shape))
+
+    def visible(self, label):
+        """True when the label has enough valid depth pixels for geometry."""
+        return len(unproject(self.depth, self.intrinsics, self.labels == label)) >= MIN_TARGET_PIXELS
+
+    def target_points(self, label):
+        """The label's points in the world, as Frame.target_points."""
+        cloud = unproject(self.depth, self.intrinsics, self.labels == label)
+        if len(cloud) < MIN_TARGET_PIXELS:
+            raise ObservationError("Selected target is not visible from this wrist camera")
+        return points_in(self.world_camera, cloud)

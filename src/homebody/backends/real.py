@@ -2,7 +2,7 @@
 member raising NotReleased."""
 import numpy as np
 
-from homebody.primitives.observations import Frame, Measurement
+from homebody.primitives.observations import Frame, Measurement, WristView
 from homebody.primitives.release import NotReleased
 
 WHAT = "The real-G1 backend"
@@ -30,6 +30,10 @@ class RealG1Backend:
 
     def measure(self) -> Measurement:
         """Joints, hands and poses between camera frames."""
+        raise NotReleased(WHAT)
+
+    def wrist_view(self, side: str) -> WristView:
+        """One wrist camera's images and pose, captured together."""
         raise NotReleased(WHAT)
 
     def base_velocity(self, epoch: int, forward: float, lateral: float, yaw_rate: float) -> None:
