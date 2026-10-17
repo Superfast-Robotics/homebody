@@ -18,7 +18,6 @@ import sys
 import tempfile
 import time
 import traceback
-from dataclasses import asdict
 from pathlib import Path
 
 from homebody import harness
@@ -309,7 +308,7 @@ class CoderCall:
         module, version = self.checked["module"], self.checked["version"]
         before, carried_before = self.frame, {side: dict(c) for side, c in self.session.context.carried.items()}
         try:
-            result = asdict(self.session.runner.run(self.target, arguments, self.frame, skill=module))
+            result = self.session.runner.run(self.target, arguments, self.frame, skill=module).as_dict()
         except PhysicsInvalid as error:
             self.physics_error = str(error)
             result = {"code": "PHYSICS_INVALID", "message": str(error), "details": {}}

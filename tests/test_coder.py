@@ -118,3 +118,12 @@ def test_a_final_answer_with_the_value_inside_the_bold_label_is_still_read():
     assert answer_json("## Final Result\n\n**Status: success**\n\nHeld.")["status"] == "success"
     assert answer_json("**status**: `failed`\n\n**summary**: none")["status"] == "failed"
     assert answer_json("**Status:** failed (ran out of checks)")["status"] == "failed"
+
+
+def test_a_skill_result_with_unusual_details_still_converts():
+    from homebody.skills.contract import Result
+
+    class Plan:  # a class object in the details: deep-copying it fails (mappingproxy)
+        pass
+    result = Result("probe", "OK", "done", {"plan": Plan, "rise": 0.1}).as_dict()
+    assert result["code"] == "OK" and result["details"]["rise"] == 0.1 and result["details"]["plan"] is Plan

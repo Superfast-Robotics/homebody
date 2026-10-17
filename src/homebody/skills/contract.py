@@ -35,6 +35,11 @@ class Result:
     def ok(self):
         return self.code == "OK"
 
+    def as_dict(self):
+        """A shallow dict (dataclasses.asdict deep-copies the details, which fails on classes and modules a
+        customised skill may put there)."""
+        return {"skill": self.skill, "code": self.code, "message": self.message, "details": dict(self.details or {})}
+
 
 @dataclass(frozen=True)
 class Planning:

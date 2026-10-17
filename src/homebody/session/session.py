@@ -282,10 +282,10 @@ class Session:
                 if decision.skill == CALL:
                     result = self.coder.call(decision.arguments, self)
                 elif decision.skill in self.coder.skills:
-                    result = asdict(self.runner.run(decision.skill, decision.arguments, frame,
-                                                    skill=self.coder.module(decision.skill)))
+                    result = self.runner.run(decision.skill, decision.arguments, frame,
+                                             skill=self.coder.module(decision.skill)).as_dict()
                 else:
-                    result = asdict(self.runner.run(decision.skill, decision.arguments, frame))
+                    result = self.runner.run(decision.skill, decision.arguments, frame).as_dict()
                 entry = {"base_pose": frame.base_pose.tolist(), "decision": asdict(decision), "epoch": frame.epoch,
                          "frame_sequence": frame.sequence, "result": prompted(result)}
                 if decision.skill != CALL and result["code"] != "PHYSICS_INVALID":  # for the coder's request
