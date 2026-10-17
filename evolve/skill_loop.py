@@ -322,8 +322,12 @@ class SkillLoop:
             except Exception as error:  # noqa: BLE001 -- a failed proposal is recorded, not fatal
                 self.record({**entry, "status": "failed", "reason": f"proposer error: {error}"})
                 return None
-            subprocess.run([astra.settings()["ruff"], "check", "--fix", "--quiet", "src", "tests"], cwd=path,
-                           check=False, capture_output=True)
+            git("add", "-A", cwd=path)
+            changed = [f for f in git("diff", "--cached", "--name-only", "--diff-filter=AM", cwd=path).splitlines()
+                       if f.endswith(".py")]
+            if changed:  # tidy only what the proposal touched, so no other file is swept into its diff
+                subprocess.run([astra.settings()["ruff"], "check", "--fix", "--quiet", *changed], cwd=path,
+                               check=False, capture_output=True)
             git("add", "-A", cwd=path)
             if not git("status", "--porcelain", cwd=path):
                 self.record({**entry, "status": "rejected", "reason": "no change", "notes": note})

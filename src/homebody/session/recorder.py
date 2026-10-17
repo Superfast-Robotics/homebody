@@ -6,8 +6,8 @@ import subprocess
 import time
 import uuid
 from collections import Counter
-from concurrent.futures import ThreadPoolExecutor
 from collections.abc import Mapping
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, fields, is_dataclass
 from datetime import UTC, datetime
 from importlib import metadata
