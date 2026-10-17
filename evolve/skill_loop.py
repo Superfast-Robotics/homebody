@@ -147,15 +147,17 @@ class SkillLoop:
         """The remote candidate name and local worktree name of CID, unique per profile."""
         return f"{self.cfg.get('workdir', self.skill)}-{cid}"
 
-    def evaluate(self, cid, checkout, splits=SPLITS):
-        """Push CID's code and run every episode of SPLITS on the remote; collect and summarise."""
+    def evaluate(self, cid, checkout, splits=SPLITS, only=None, cand=None):
+        """Push CID's code and run every episode of SPLITS on the remote (or ONLY: split -> episode paths, under the
+        candidate copy CAND); collect and summarise."""
         local = self.work / "results" / cid
         if all((local / s / COMPLETE).exists() for s in splits):
             return self.summaries(cid)
-        self.loop.remote.push_candidate(self.cand(cid), checkout)
+        cand = cand or self.cand(cid)
+        self.loop.remote.push_candidate(cand, checkout)
         root = f"{self.remote.work}/skill/{self.cfg.get('workdir', self.skill)}/{cid}"
-        lines = [f"{self.remote.work}/cands/{self.cand(cid)} {self.remote.work}/{episode} {root}/{split}/{Path(episode).stem}"
-                 for split in splits for episode in self.episodes(split)]
+        lines = [f"{self.remote.work}/cands/{cand} {self.remote.work}/{episode} {root}/{split}/{Path(episode).stem}"
+                 for split in splits for episode in (only[split] if only else self.episodes(split))]
         jobs = f"{root}/jobs.txt"
         self.remote.ssh(f"rm -rf {root} && mkdir -p {root} && cat > {jobs} << 'EOF'\n" + "\n".join(lines) + "\nEOF")
         subprocess.run(["rsync", "-a", str(HERE / "skill_bench.py"), str(HERE / "skill_bench_tasks.py"), str(HERE / "run_skill_jobs.sh"),
@@ -345,7 +347,22 @@ class SkillLoop:
             (round_dir / f"{cid}_checks.txt").write_text(output)
             self.record({**entry, "status": "rejected", "reason": "lint or unit tests failed: " + output[-600:]})
             return None
+        crash = self.smoke(cid, path)
+        if crash:
+            self.record({**entry, "status": "rejected", "reason": f"crashed in a one-episode smoke run: {crash}"})
+            return None
         return entry
+
+    def smoke(self, cid, path):
+        """Run CID on one train episode before the full evaluation; the crash it raised, or None. A candidate whose
+        code breaks the episode itself (not the skill's own failure) is rejected in a minute, not a full run."""
+        episode = sorted(self.episodes("train"))[0]
+        self.evaluate(f"{cid}-smoke", path, splits=("train",), only={"train": [episode]}, cand=self.cand(cid))
+        result = self.work / "results" / f"{cid}-smoke" / "train" / Path(episode).stem / "result.json"
+        if not result.exists():
+            return "the episode wrote no result"
+        error = json.loads(result.read_text()).get("error")
+        return error[:300] if error else None
 
     def test(self, cid):
         """CID on the test episodes, which no round ever sees or judges by."""
