@@ -12,6 +12,7 @@ accept by the non-regression rule into an archive of versions.
 import argparse
 import json
 import re
+import shutil
 import subprocess
 import time
 import tomllib
@@ -299,6 +300,7 @@ class Loop:
             return {"cid": cid, "path": path, "meta": {"status": "rejected", "reason": "no change", "notes": note}}
         git("-c", "user.name=astra", "-c", "user.email=astra@localhost", "commit", "-q", "-m",
             f"evolve {cid}: mechanism {mechanism}\n\n{note[:3000]}", cwd=path)
+        shutil.rmtree(self.work / "results" / cid, ignore_errors=True)  # a new patch never reuses an old id's runs
         return {"cid": cid, "path": path, "meta": self.patch_meta(path, best, note, mechanism)}
 
     def patch_meta(self, path, best, note, mechanism):
