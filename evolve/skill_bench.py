@@ -40,7 +40,6 @@ from dataclasses import asdict
 from pathlib import Path
 from types import SimpleNamespace
 
-
 SOL_RATES = (50.0, 2.5, 250.0)  # coder credits per 1M tokens: input, cached input, output
 UNMETERED_CREDITS = 8.2  # a full coder call (~120k uncached, ~480k cached, ~4k output tokens)
 LIFT_M = 0.05  # rise of the object's lowest corner that counts as lifted
@@ -485,7 +484,8 @@ def main(root, episode_path, out):
     from homebody.session.settings import Settings
 
     scene = Path(episode["scene"])
-    settings = Settings.load(root / "configs/simulation.toml", scene=scene)
+    settings = Settings.load(root / "configs/simulation.toml", scene=scene,
+                             override=Path(episode["settings"]) if episode.get("settings") else None)
     recorder = Recorder(root, settings, out / "session")
     task = recorder.start_task(f"Skill benchmark: {episode['skill']} {episode['id']}", None)
     outcome = {"status": "error", "steps": [], "vlm_used": False}

@@ -64,3 +64,25 @@ def test_stepwise_gives_the_robot_the_same_calls_result_and_events(fail_after):
 def test_the_runtime_setting_is_checked():
     with pytest.raises(ValueError):
         Skills(runtime="threaded")
+
+
+def test_every_robot_access_happens_on_the_callers_thread():
+    import threading
+
+    class ThreadBound(Recording):
+        """A robot that, like a GL renderer, only works on the thread that made it."""
+
+        def __init__(self):
+            super().__init__()
+            self.owner, self.strays = threading.get_ident(), []
+
+        def __getattribute__(self, name):
+            state = object.__getattribute__(self, "__dict__")
+            if not name.startswith("_") and name not in state and threading.get_ident() != state.get(
+                    "owner", threading.get_ident()):
+                state["strays"].append(name)
+            return object.__getattribute__(self, name)
+
+    robot = ThreadBound()
+    navigate(robot, "stepwise")
+    assert len(robot.calls) > 5 and robot.strays == []

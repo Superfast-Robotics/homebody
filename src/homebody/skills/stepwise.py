@@ -1,6 +1,8 @@
 """A HomeBody skill in LeRobot's policy form (lerobot_skills). The skill's own `execute` loop runs on a worker
 thread against a proxy robot: its commands are held until the loop next reads the robot or lets time pass, and
-that batch, with the seconds to run it, is the step's action dict (`homebody.robots.g1` keys). The runner sends
+that batch, with the seconds to run it, is the step's action dict (`homebody.robots.g1` keys). Its reads run on
+the caller's thread too (a renderer's GL context belongs to the thread that made it), so only the caller's
+thread ever touches the robot. The runner sends
 it to the session's robot and advances, so the robot gets the same commands, in the same order, at the same
 simulated times as when the loop drives it directly; an error sending or running a step is raised in the loop
 where it read or advanced."""
@@ -23,33 +25,33 @@ class HarnessSkillConfig(SkillConfig):
 class _Proxy:
     """The worker's Robot: reads pass through once held commands are sent; commands are held for the step."""
 
-    def __init__(self, robot, request):
-        self._robot, self._request = robot, request
+    def __init__(self, robot, request, read):
+        self._robot, self._request, self._read = robot, request, read
         self._held, self._epoch = {}, None
 
     @property
     def epoch(self):
-        return self._robot.epoch
+        return self._read(lambda: self._robot.epoch)
 
     @property
     def time(self):
-        return self._robot.time
+        return self._read(lambda: self._robot.time)
 
     def snapshot(self):
         self._flush()
-        return self._robot.snapshot()
+        return self._read(lambda: self._robot.snapshot())
 
     def measure(self):
         self._flush()
-        return self._robot.measure()
+        return self._read(lambda: self._robot.measure())
 
     def wrist_view(self, side):
         self._flush()
-        return self._robot.wrist_view(side)
+        return self._read(lambda: self._robot.wrist_view(side))
 
     def wrist_views(self):
         self._flush()
-        return self._robot.wrist_views()
+        return self._read(lambda: self._robot.wrist_views())
 
     def base_velocity(self, epoch, forward, lateral, yaw_rate):
         self._hold(epoch, dict(zip(g1.BASE, (forward, lateral, yaw_rate))))
@@ -107,9 +109,15 @@ class HarnessSkill(Skill):
             self._worker = threading.Thread(target=self._work, name=f"skill-{self.config.skill}", daemon=True)
             self._worker.start()
         else:
-            self._replies.put(self._error)
+            self._replies.put((None, self._error))
             self._error = None
         kind, value = self._steps.get()
+        while kind == "read":  # the worker's robot reads, run here
+            try:
+                self._replies.put((value(), None))
+            except BaseException as error:  # noqa: BLE001 -- raised in the worker, where it read
+                self._replies.put((None, error))
+            kind, value = self._steps.get()
         if kind == "step":
             return value
         if kind == "error":
@@ -124,13 +132,20 @@ class HarnessSkill(Skill):
 
     def _request(self, action):
         self._steps.put(("step", action))
-        error = self._replies.get()
+        _, error = self._replies.get()
         if error is not None:
             raise error
 
+    def _read(self, read):
+        self._steps.put(("read", read))
+        value, error = self._replies.get()
+        if error is not None:
+            raise error
+        return value
+
     def _work(self):
         ctx = copy.copy(self.ctx)
-        proxy = _Proxy(self.ctx.actions, self._request)
+        proxy = _Proxy(self.ctx.actions, self._request, self._read)
         ctx.observations = ctx.actions = proxy
         try:
             result = self.module.execute(self.plan, ctx)
