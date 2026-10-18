@@ -14,6 +14,7 @@ from .coder import (
     coder_instructions,
     coder_request,
     execute_report,
+    fixes_for,
 )
 from .env import Env, Target
 
@@ -46,5 +47,6 @@ __all__ = [
     "coder_instructions",
     "coder_request",
     "execute_report",
+    "fixes_for",
     "plan_instructions",
 ]

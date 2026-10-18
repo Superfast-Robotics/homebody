@@ -91,7 +91,8 @@ class Remote:
         local.mkdir(parents=True)
         rsync("-a", "--include=*/", "--include=result.json", "--include=run.log", "--include=exit_code",
               "--include=events.jsonl", "--include=outcome.json", "--include=REQUEST.md", "--include=tools.jsonl",
-              "--include=start_*.py", "--include=**/workspace/skills/*.py", "--include=**/workspace/lib/*.py",
+              "--include=start_*.py", "--include=last_message.json", "--include=trace.json",
+              "--include=**/workspace/skills/*.py", "--include=**/workspace/lib/*.py",
               "--exclude=*", "--prune-empty-dirs", f"{self.host}:{results}/", f"{local}/")
         return local
 

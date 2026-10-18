@@ -275,6 +275,10 @@ class MujocoBackend:
         depth[(depth >= self.settings.camera.far) | ~np.isfinite(depth)] = np.nan
         return rgb, depth, labels
 
+    def ego_image(self):
+        """The head camera's RGB now, without a new measurement (a trace keyframe; not part of Robot)."""
+        return self._render("ego")[0]
+
     def wrist_view(self, side):
         """SIDE's wrist camera: RGB, depth and labels on the ego image size, and its pose."""
         if side not in ("left", "right"):

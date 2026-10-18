@@ -23,6 +23,8 @@ from pathlib import Path
 from homebody import harness
 from homebody.primitives.actions import PhysicsInvalid
 from homebody.session.skill_module import Loader, SkillLoadError, digest
+from homebody.session.trace import last_images as trace_images
+from homebody.session.trace import summary as trace_summary
 from homebody.skills.contract import SkillFailure
 from homebody.skills.registry import REGISTRY
 from homebody.vlm.observations import model_observation, rounded
@@ -213,6 +215,7 @@ class CoderCall:
         self.checks, self.executes, self.versions = 0, [], 0
         self.registered = None
         self.physics_error = None
+        self.failed_images = []  # the failed call's last keyframes, attached to the first prompt
         self.frame = None
         self.view = 0  # numbers the robot's current view; it changes whenever the robot moves
         self.deadline = 0.0
@@ -227,6 +230,10 @@ class CoderCall:
         self.frozen_lib = {path.name: digest([path]) for path in self.lib_dir.glob("*.py")}
         (self.workspace / "AGENTS.md").write_text(harness.coder_instructions())
         self.observe()
+        trace = getattr(self.session, "trace", None)  # a session without keyframes gives the coder none
+        failed = self.copy_trace(trace.latest(self.target) if trace else None, "failed")
+        self.failed_images = trace_images(failed) if failed else []
+        failed_code = json.loads((failed / "trace.json").read_text()).get("result", {}).get("code") if failed else None
         recent = [entry for entry in self.session.history if "decision" in entry][-harness.CODER_HISTORY_STEPS:]
         (self.workspace / "REQUEST.md").write_text(harness.coder_request(
             target=self.target, origin=origin, request=self.arguments,
@@ -235,8 +242,17 @@ class CoderCall:
                     for entry in recent],
             source_root=str(source_root()), python=sys.executable,
             limits={"seconds": self.settings.seconds, "checks": self.settings.checks, "executes": self.settings.executes},
-            library=sorted(self.frozen_lib)))
+            library=sorted(self.frozen_lib), trace=trace_summary(failed) if failed else None,
+            fixes=harness.fixes_for(self.target, failed_code) if failed_code else ()))
         (self.call_dir / "schema.json").write_text(json.dumps(OUTPUT_SCHEMA))
+
+    def copy_trace(self, folder, name):
+        """A skill call's trace folder copied into the workspace as trace/NAME, or None without one."""
+        if folder is None:
+            return None
+        target = self.workspace / "trace" / name
+        shutil.copytree(folder, target, dirs_exist_ok=True)
+        return target
 
     def observe(self):
         """Capture the current frame and show it in observation/ (what clicks in arguments refer to)."""
@@ -321,12 +337,15 @@ class CoderCall:
         if result["code"] == "OK":
             self.registered = (module, version, self.checked["source"])
         changed = []
+        recorded = getattr(self.session, "trace", None)
+        trace = self.copy_trace(recorded.latest(self.target) if recorded else None, f"execute-{len(self.executes)}")
         if self.physics_error is None:
             self.observe()
             changed = harness.change_report(before, self.frame, carried_before, self.session.context.carried)
         details = {key: value for key, value in result.get("details", {}).items() if key != "traceback"}
         return harness.execute_report({"version": version, "code": result["code"], "message": result["message"],
                                        "details": short(details, 800), "what_changed": changed, "view": self.view,
+                                       "trace": f"trace/{trace.name}/trace.json" if trace else None,
                                        "executes_left": self.settings.executes - len(self.executes)})
 
     def where(self, error):
@@ -355,9 +374,11 @@ class CoderCall:
         server = (f'{{command={json.dumps(sys.executable)}, args=["-m", "homebody.session.coder_mcp", '
                   f'{json.dumps(socket_path)}], env={{PYTHONPATH={json.dumps(str(source_root()))}}}, '
                   f'tool_timeout_sec={int(s.seconds)}, startup_timeout_sec=30, default_tools_approval_mode="approve"}}')
-        # The head image the agent decided from goes into the first prompt: the assistant otherwise works from text.
+        # The head image the agent decided from, and the failed call's last keyframes, go into the first prompt.
         head = sorted((self.workspace / "observation").glob("image-1.*"))
-        command = [os.environ.get("HOMEBODY_CODER_CODEX", s.codex), "exec", *(["--image", str(head[0])] if head else []),
+        images = [*head[:1], *self.failed_images]
+        command = [os.environ.get("HOMEBODY_CODER_CODEX", s.codex), "exec",
+                   *[arg for image in images for arg in ("--image", str(image))],
                    "--ignore-user-config", "--ignore-rules",
                    "--skip-git-repo-check", "--ephemeral", "--json", "-s", "workspace-write",
                    "-C", str(self.workspace), "-m", os.environ.get("HOMEBODY_CODER_MODEL") or s.model,

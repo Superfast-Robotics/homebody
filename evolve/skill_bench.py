@@ -165,6 +165,7 @@ def call_skill(session, episode, skill, arguments, frame, request):
     skill's own OK, or the coder's when it rescued the call."""
     started = time.monotonic()
     carried_before = {side: dict(carry) for side, carry in session.context.carried.items()}
+    session.trace_side = arguments.get("hand")
     result = session.runner.run(skill, arguments, frame)
     timing = {"call_wall": round(time.monotonic() - started, 1)}
     call = {key: value for key, value in asdict(result).items() if key != "details"}
@@ -215,7 +216,7 @@ def consult(session, ask, history):
     coder = Coder(coder_settings)
     coder.reset(session.task)
     agent = SimpleNamespace(history=history, observed=session.port, recorder=session.recorder,
-                            context=session.context, runner=session.runner)
+                            context=session.context, runner=session.runner, trace=getattr(session, "trace", None))
     started = time.monotonic()
     result = coder.call(ask, agent)
     seconds = round(time.monotonic() - started, 1)
@@ -450,6 +451,28 @@ def shorten(value, depth=0):
     return value
 
 
+def attach_trace(session, backend, task_dir, recorder):
+    """Per-stage keyframes of the episode's skill calls (session.trace) when the candidate's code has
+    homebody.session.trace: the coder then gets the failed call's trace, as in a task. Older code runs without."""
+    try:
+        from homebody.session.trace import Trace
+    except ImportError:
+        session.trace = None
+        return
+    trace = Trace(backend, lambda: session.context.carried)
+    trace.reset(task_dir)
+    session.trace, session.trace_side = trace, None
+    emit = session.context.emit
+
+    def both(event):
+        emit(event)
+        try:
+            trace.on_event(event, session.trace_side)
+        except Exception as error:  # noqa: BLE001 -- a keyframe never fails the episode it records
+            recorder.event("trace_error", error=f"{type(error).__name__}: {error}")
+    session.context.emit = both
+
+
 def main(root, episode_path, out):
     root, out = Path(root).resolve(), Path(out)
     os.environ["HOMEBODY_BENCH_ROOT"] = str(root)
@@ -474,6 +497,7 @@ def main(root, episode_path, out):
         fields = {f.name for f in dataclasses.fields(cm.Step)}  # a task step's extra block stays in the episode
         step = cm.resolved(cm.Step(**{k: v for k, v in episode["step"].items() if k in fields}), backend.label_ids)
         session = cm.ScriptedSession(backend, recorder, task, outcome, root, settings, args, start)
+        attach_trace(session, backend, task, recorder)
         session.begin_cycle(0, step)
         record.update(DRIVERS[episode["skill"]][0](cm, session, episode, step))
     except Exception as error:  # noqa: BLE001 -- an episode that crashes is recorded, not fatal

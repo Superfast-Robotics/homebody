@@ -54,6 +54,7 @@ class Recording:
     shoulder_period: float = 0.25
     physics_period: float = 0.1
     publish_period: float = 0.5
+    keyframes: bool = False  # per-stage head and wrist keyframes of every skill call (session/trace.py)
 
 @dataclass(frozen=True)
 class Servo:

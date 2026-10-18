@@ -187,6 +187,32 @@ effort = "medium"
 proposals = 3               # per round: the diagnosis's three highest-impact mechanisms, in order
 parallel = 24               # more concurrent coder sessions starve the GPU: at 54, nearly every call timed out
 
+[skills.pickcoder-seed]
+# phase 1 measurement: the round-trip pickcarry episodes with one coder rescue per failed pick (Sol, 5 minutes),
+# astra-seed code: the coder works from text and the head image; baseline only, the two arms compared episode by episode.
+name = "pick"
+episodes = "skillbench/pickcarry_episodes"
+coder = true
+workdir = "pickcoder-seed"
+prompts = "dynamic_open"
+editable = ["src/homebody/skills/pick.py", "tests/*"]
+model = "gpt-6-astra"
+effort = "medium"
+parallel = 24
+
+[skills.pickcoder-traces]
+# phase 1 measurement: the round-trip pickcarry episodes with one coder rescue per failed pick (Sol, 5 minutes),
+# phase1-traces code: the coder also gets the failed call's keyframe trace; baseline only, the two arms compared episode by episode.
+name = "pick"
+episodes = "skillbench/pickcarry_episodes"
+coder = true
+workdir = "pickcoder-traces"
+prompts = "dynamic_open"
+editable = ["src/homebody/skills/pick.py", "tests/*"]
+model = "gpt-6-astra"
+effort = "medium"
+parallel = 24
+
 [skills.pick-dynamic-sol-open]
 # pick plus one coder rescue by GPT-6.1 Sol (the default coder model, 5-minute calls); Astra may also change
 # pick's own decisions when evidence across episodes supports a general change (prompts dynamic_open)
