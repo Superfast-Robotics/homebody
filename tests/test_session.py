@@ -1020,3 +1020,21 @@ def test_auto_mode_hands_each_failure_to_the_coder_and_bounds_the_retries(build,
     assert runs == ["pick"] * 4 and len(asks) == 3 and asks[0]["skill"] == "pick"
     codes = [entry["result"]["code"] for entry in session.history if "result" in entry]
     assert codes == ["NO_GRASP", "CODER_FAILED"] * 3 + ["NO_GRASP", "RECOVERY_LIMIT"]
+
+
+def test_plan_mode_plans_then_works_goal_by_goal(build, monkeypatch):
+    from homebody.session.config import PlanMode
+    from homebody.skills.contract import Result
+
+    tree = {"type": "sequence", "children": [{"type": "goal", "id": "g1", "goal": "pick the cup", "check": None}]}
+    decisions = [Decision("Plan.", "plan", {"tree": tree}), Decision("Pick.", "pick", {"hand": "right"}),
+                 Decision("Held.", "goal_done", {"reason": "held"}), Decision("Finished.", "done", {})]
+    settings = replace(Settings(agent=Agent(done_settle_seconds=0.)), plan=PlanMode(enabled=True))
+    provider = Provider(decisions)
+    session = build(provider, settings=settings)
+    monkeypatch.setattr(session.runner, "run", lambda skill, arguments, frame, **kw: Result(skill, "OK", "held"))
+    assert session.run_task("Pick up the cup.")["status"] == "model_done"
+    assert provider.names[0] == ("plan",) and "goal_done" in provider.names[1] and provider.names[3] == ("done",)
+    assert "This turn: write the plan" in provider.prompts[0] and "Active goal g1" in provider.prompts[1]
+    codes = [entry["result"]["code"] for entry in session.history if "result" in entry]
+    assert codes == ["OK", "OK", "OK"] and session.planner.plan.status == {"g1": "done"}

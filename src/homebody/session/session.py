@@ -9,6 +9,8 @@ from dataclasses import asdict
 from homebody import harness
 from homebody.primitives.actions import PhysicsInvalid
 from homebody.session.coder import CALL, Coder
+from homebody.session.planned import OWN as PLAN_DECISIONS
+from homebody.session.planned import PlanRunner
 from homebody.session.recovery import Recovery, request
 from homebody.skills.contract import COMMON_FAILURES, Context, Runner
 from homebody.skills.registry import PROMPTS, REGISTRY
@@ -137,6 +139,7 @@ class Session:
         self.runner = Runner(self.context)
         self.coder = Coder(settings.coder)
         self.recovery = Recovery(settings.coder.tries, settings.coder.rescues)
+        self.planner = None
         self.history = []
         self.status = "Ready"
         self._physics_fault = None
@@ -261,17 +264,22 @@ class Session:
         self.history.append({"operator_task": task})
         self.coder.reset(task_dir)  # coded skills live for one task
         self.recovery.reset()
+        self.planner = PlanRunner(self.settings.plan.replans) if self.settings.plan.enabled else None
         try:
             if self.requires_reset:
                 raise PhysicsInvalid(self._physics_fault[1])
             self.backend.set_evaluation_sink(self.recorder.physics)
             for step in range(self.settings.agent.max_steps):
                 names = tuple(dict.fromkeys((*PROMPTS, *self.coder.names(), CALL, "done")))
+                if self.planner is not None:
+                    names = self.planner.names(names)
                 if self.controls.cancel.is_set():
                     raise Cancelled("Task stopped by operator")
                 frame = self.observed.snapshot()
                 images = self.recorder.agent_images(frame)
                 prompt = self.prompt(task, frame)
+                if self.planner is not None and (note := self.planner.note()):
+                    prompt += "\n\n" + harness.plan_instructions(vars(self.settings)) + "\n\n" + note
                 self.update("Thinking")
                 decision = self.decide(prompt, images, names, task_dir / "decisions" / f"step-{step:03d}")
                 if self.controls.cancel.is_set() or frame.epoch != self.backend.epoch:
@@ -290,6 +298,12 @@ class Session:
                         raise ProviderError("done.summary must be text")
                     outcome.update(status="model_done", model_claim=summary)
                     break
+                if self.planner is not None and decision.skill in PLAN_DECISIONS:
+                    result = self.planner.handle(decision, self.context.carried)
+                    self.history.append({"base_pose": frame.base_pose.tolist(), "decision": asdict(decision),
+                                         "epoch": frame.epoch, "frame_sequence": frame.sequence, "result": result})
+                    self.recorder.event("result", step=step, simulation_time=self.backend.time, result=result)
+                    continue
                 if decision.arguments.get("hand") in ("left", "right"):
                     self.view_side = decision.arguments["hand"]
                 result = self.act(decision, frame, step)
@@ -299,6 +313,8 @@ class Session:
                     result = self.rescue(task, decision, result, step)
                     if result["code"] == "PHYSICS_INVALID":
                         raise PhysicsInvalid(result["message"])
+                if self.planner is not None:
+                    self.planner.observe(result, self.context.carried)
             else:
                 outcome["status"] = "step_limit"
         except PhysicsInvalid as exc:

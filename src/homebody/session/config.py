@@ -179,6 +179,14 @@ class Coder:
 
 
 @dataclass(frozen=True)
+class PlanMode:
+    """Plan mode (session/planned.py): the agent first writes the task as a behavior tree of goals and works through
+    it goal by goal; a failed tree may be rewritten at most `replans` times."""
+    enabled: bool = False
+    replans: int = 2
+
+
+@dataclass(frozen=True)
 class SharedMotion:
     arm_timeout: float = 15.0
     palm_tolerance: float = 0.015

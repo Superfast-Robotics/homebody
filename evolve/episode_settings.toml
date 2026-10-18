@@ -10,3 +10,7 @@ auto = true
 tries = 3
 rescues = 1
 calls = 3
+
+[plan]
+enabled = true  # the agent writes a behavior-tree plan and works through it goal by goal (session/planned.py)
+replans = 2

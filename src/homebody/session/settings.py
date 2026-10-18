@@ -16,6 +16,7 @@ from .config import (
     Navigate,
     Physics,
     Placement,
+    PlanMode,
     Recording,
     Servo,
     SharedMotion,
@@ -78,6 +79,7 @@ class Settings:
     blind_finish: BlindFinish = field(default_factory=BlindFinish)
     curobo: Curobo = field(default_factory=Curobo)
     coder: Coder = field(default_factory=Coder)
+    plan: PlanMode = field(default_factory=PlanMode)
 
     def __post_init__(self):
         for group in fields(self):

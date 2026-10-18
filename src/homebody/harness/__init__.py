@@ -24,6 +24,11 @@ def api_doc():
     return (HERE / "API.md").read_text()
 
 
+def plan_instructions(settings):
+    """How the agent writes and works through a plan (plan mode); SETTINGS fills its {group.value} fields."""
+    return (HERE / "plan_prompt.md").read_text().format_map(settings).strip()
+
+
 def agent_instructions(settings):
     """The instructions that open every turn's prompt; SETTINGS fills its {group.value} fields."""
     return (HERE / "agent_prompt.md").read_text().format_map(settings).strip()
@@ -41,4 +46,5 @@ __all__ = [
     "coder_instructions",
     "coder_request",
     "execute_report",
+    "plan_instructions",
 ]
