@@ -30,6 +30,7 @@ upstream Stanford-TML/homebody `main` (the real2sim release); see "Upstream" bel
 | Phase | State |
 |---|---|
 | 0 | Done 2026-10-18 on loki-sim1: `~/lerobot-work/.venv` (Python 3.12) with lerobot 0.6.1, mujoco 3.11.0, mani_skill 3.0.1, sapien 3.0.3, numpy 2.2.6, torch 2.11.0+cu128 (CUDA available); MuJoCo renders through EGL, ManiSkill through Vulkan (SO-100 PickCube frame); the harness's 598 tests pass in it. Built by `setup_lerobot_env.sh` (local operator script). Notes: the hosts' 570 driver needs the cu128 torch wheels; draccus 0.11.6 ships a stray top-level `tests/` package that shadows ours, removed in the environment |
+| 1 | Done 2026-10-19: `homebody_g1` (packages/lerobot_robot_homebody_sim) is the G1 as a LeRobot robot, observations and actions as dicts named after `unitree_g1` (`homebody.robots.g1`); `LeRobotSurface` reads it as the harness's Robot; `--robot.type` (mujoco default, homebody_g1) in the CLI, the scripted check and the skill benchmark. Checks: 611 tests on loki-sim1; the scripted four-object run is identical line for line with both robot types; the held-out split with homebody_g1 on loki-sim1 scored 0.481 against v007r's 0.477 (+0.008 +- 0.046). Draccus configs cover the robot choice; the harness settings stay TOML (upstream's one-home rule) |
 
 ## Layout
 
