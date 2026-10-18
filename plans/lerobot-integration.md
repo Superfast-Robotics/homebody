@@ -54,12 +54,16 @@ src/homebody/                  # harness: agents, plan mode, coder, traces; talk
 | 0 | Second A10: pinned lerobot 0.6.1, mujoco, mani_skill; both simulators render | — | one frame from each | 0 |
 | 1 | LeRobot-style configs; `homebody_g1` plugin; harness only uses the `Robot` interface | LeRobot `Robot`/`RobotConfig`, plugin discovery, camera configs; our plan mode, coder, recovery, tree | unit tests pass; G1 val subset within +-1 SE of v007 | 1 small run |
 | 2 | `lerobot_skills`: pick, place, look, navigate, carry as stepwise `select_action` skills; LeRobot policy wrapper; coder writes in this form | `RobotKinematics` + its end-effector processor steps, mink, RynnMotion's phased pick-place, our VLA chunk interface (`vla-skills` branch) | free G1 pick benchmark matches v007 | 0 |
-| 3 | ManiSkill backend; new 29-DoF G1 with AMO driven each physics substep (`before_simulation_step` + `set_qf`) | holosoma `g1_29dof.urdf` and its PD/IMU/odometry bridge | stands 60 s, walks 10 m and turns without falling; then the G1 val subset on ManiSkill | 1 small run |
-| 4 | Tier A: SO-101, Koch v1.1, OMX | Menagerie SO-101, ManiSkill Koch, ROBOTIS OMX; `lerobot/so101-tabletop-mujoco` as env template | reachability check + one scripted pick | 0 |
-| 5 | Tier B: LeKiwi, bimanual SO-101, OpenARM | Ekumen LeKiwi (arm swapped to SO-101), ManiSkill XLeRobot agent, `enactic/openarm_mujoco` | same, plus base motion | 0 |
-| 6 | Tier C: Reachy2, reBot B601, G1 Dex1 | `pollen-robotics/reachy2_mujoco`, Menagerie `seeed_rebot_devarm`, Hub G1 Dex1 | same | 0 |
-| 7 | Per-robot val tasks | `mujoco_scanned_objects`; new small-scale shelf scene | task lists reviewed | 0 |
-| 8 | Runs: 11 robots x 2 simulators x their tasks; SO-101 first, its cost reported before the rest | — | results table per simulator | ~110 episodes |
+| 3 | Tier A on MuJoCo: SO-101, Koch v1.1, OMX, each a LeRobot robot; the first native robot-agnostic skills (pick and place for arms on `RobotKinematics` and mink) in `lerobot_skills` | Menagerie SO-101, ROBOTIS OMX, Koch v1.1 converted from ManiSkill's URDF; `lerobot/so101-tabletop-mujoco` as env template | reachability check + one scripted pick per robot | 0 |
+| 4 | Tier B on MuJoCo: LeKiwi, bimanual SO-101, OpenARM | Ekumen LeKiwi (arm swapped to SO-101), `enactic/openarm_mujoco` | same, plus base motion | 0 |
+| 5 | Tier C on MuJoCo: Reachy2, reBot B601, G1 Dex1 | `pollen-robotics/reachy2_mujoco`, Menagerie `seeed_rebot_devarm`, Hub G1 Dex1 | same | 0 |
+| 6 | Per-robot val tasks | `mujoco_scanned_objects`; new small-scale shelf scene | task lists reviewed | 0 |
+| 7 | MuJoCo runs: 11 robots x their tasks; SO-101 first, its cost reported before the rest | — | results table (MuJoCo) | ~55 episodes |
+| 8 | ManiSkill backend: our own registered 29-DoF G1 agent with Dex3 hands (the URDF the MuJoCo side uses, joints mapped by name, not sliced), AMO run each physics substep (`before_simulation_step` + `set_qf`, fallback PD drives with AMO's gains), MuJoCo's armature, damping, friction and foot contacts carried over; then every other robot as a ManiSkill agent (built-ins for SO-100, Koch, XLeRobot) | ManiSkill agent skeletons, holosoma's PD/IMU/odometry bridge | the G1 stands 60 s, walks 10 m and turns without falling; then the G1 val split on ManiSkill; each robot's reachability check and scripted pick | 1 small run |
+| 9 | ManiSkill runs: the same robots and tasks | — | results table (ManiSkill), beside MuJoCo's | ~55 episodes |
+
+Order (2026-10-19, user decision): every robot runs on MuJoCo first; the ManiSkill backend comes last, so its
+risk (no learned humanoid walker has run in ManiSkill) holds up nothing else.
 
 ## Model sources
 
