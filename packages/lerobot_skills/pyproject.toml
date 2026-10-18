@@ -9,5 +9,8 @@ description = "Robot skills in LeRobot's policy form: a registered config, reset
 requires-python = ">=3.11"
 dependencies = ["draccus>=0.11.6,<0.12", "numpy"]
 
+[project.optional-dependencies]
+arm = ["mujoco>=3.3"]  # kinematics.py: an arm's IK from its MJCF
+
 [tool.setuptools.packages.find]
 include = ["lerobot_skills*"]

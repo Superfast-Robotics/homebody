@@ -1,5 +1,6 @@
 """Robot skills in LeRobot's policy form: `SkillConfig` (a registered choice), `Skill` (reset, select_action,
-status) and `run_skill`; `PolicySkill` runs a LeRobot policy as a skill."""
+status) and `run_skill`; `PolicySkill` runs a LeRobot policy as a skill; `arm` (ArmPick, ArmPlace) and
+`kinematics` (ArmSpec, ArmKinematics) are any arm's pick and place, imported on their own (they need MuJoCo)."""
 from .policy import PolicySkill, PolicySkillConfig
 from .runner import run_skill
 from .skill import ADVANCE, EPOCH, FAILED, RUNNING, SUCCEEDED, Skill, SkillConfig, Status
