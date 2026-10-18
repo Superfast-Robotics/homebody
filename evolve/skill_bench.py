@@ -196,9 +196,13 @@ def coder_credits(task_dir):
 
 
 def score_pick(rows, episode, record):
-    """Pick's stage from physics: 0 not lifted, 1 lifted but not held at the end, 2 held."""
+    """Pick's stage from physics: 0 not lifted, 1 lifted but not held at the end, 2 held. Held counts only after
+    the walk the episode asks for: an object still in the hand because the pick refused (so nothing walked) is
+    lifted, not held, or a refusal would score better than an honest OK."""
     lifted, held, rise = physics_verdict(rows, episode["step"]["fixture_id"])
-    return {"lifted": lifted, "held": held, "max_rise": round(rise, 3), "stage": 2 if held else 1 if lifted else 0}
+    walked = record.get("carry") is not None or episode["step"].get("carry_goal") is None
+    stage = 2 if held and walked else 1 if lifted else 0
+    return {"lifted": lifted, "held": held, "walked": walked, "max_rise": round(rise, 3), "stage": stage}
 
 
 def run_place(cm, session, episode, step):
