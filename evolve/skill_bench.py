@@ -480,7 +480,7 @@ def main(root, episode_path, out):
     out.mkdir(parents=True, exist_ok=True)
     sys.path[:0] = [str(root / "src"), str(root / "vendor")]
     cm = load_check_manipulation(root)
-    from homebody.backends.mujoco import MujocoBackend
+    from homebody.robots.make import make_robot
     from homebody.session.recorder import Recorder
     from homebody.session.settings import Settings
 
@@ -493,7 +493,7 @@ def main(root, episode_path, out):
     start, session, record = time.monotonic(), None, {"episode": episode["id"], "skill": episode["skill"],
                                                     "scene": scene.name, "family": episode["family"]}
     try:
-        backend = MujocoBackend(root, settings, scene=scene)
+        backend = make_robot(episode.get("robot", "mujoco"), root, settings, scene)
         fields = {f.name for f in dataclasses.fields(cm.Step)}  # a task step's extra block stays in the episode
         step = cm.resolved(cm.Step(**{k: v for k, v in episode["step"].items() if k in fields}), backend.label_ids)
         session = cm.ScriptedSession(backend, recorder, task, outcome, root, settings, args, start)

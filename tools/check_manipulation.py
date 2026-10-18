@@ -548,7 +548,7 @@ def hand_contacts(backend):
     """Every contact touching a robot hand, with its signed distance and contact force."""
     import mujoco
 
-    model, data, contacts = backend.model, backend.data, []
+    model, data, contacts = backend.simulator.model, backend.simulator.data, []
     for index, contact in enumerate(data.contact):
         geoms = (contact.geom1, contact.geom2)
         bodies = [model.body(model.geom_bodyid[geom]).name for geom in geoms]
@@ -695,6 +695,8 @@ def parse_args(argv):
     parser.add_argument("--place-candidates", type=int, default=256,
                         help="Maximum distance-ranked visible supports checked by the "
                              "ordinary place planner")
+    from homebody.__main__ import add_robot_arguments
+    add_robot_arguments(parser)
     parser.add_argument("--width", type=int, help="Camera width (default: the settings' value)")
     parser.add_argument("--height", type=int, help="Camera height (default: the settings' value)")
     parser.add_argument("--settings", type=Path,
@@ -759,7 +761,7 @@ def setup(args):
 
 def run_attempt(args, root, attempt, settings, steps, scene):
     """Run the sequence on one backend, then close it and score whatever was recorded."""
-    from homebody.backends.mujoco import MujocoBackend
+    from homebody.robots.make import make_robot
     from homebody.session.recorder import Recorder
 
     recorder = Recorder(root, settings, attempt)
@@ -772,7 +774,8 @@ def run_attempt(args, root, attempt, settings, steps, scene):
     with (attempt / "stack.txt").open("w") as stack:
         faulthandler.enable(file=stack)
         try:
-            backend = MujocoBackend(root, settings, scene=scene)
+            backend = make_robot(args.robot_type, root, settings, scene, hands=args.robot_hands,
+                                 backend=args.robot_backend)
             print(f"INITIALIZED wall={time.monotonic() - start:.2f}s", flush=True)
             state = backend.evaluation_state()
             absent = sorted({step.fixture_id for step in steps} - state["objects"].keys())

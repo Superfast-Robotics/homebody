@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lerobot_robot_homebody_sim"
+version = "0.1.0"
+description = "HomeBody's simulated robots as LeRobot robots (found by LeRobot's lerobot_robot_ plugin prefix)"
+requires-python = ">=3.12"
+dependencies = ["lerobot>=0.6.1,<0.7", "homebody"]
+
+[tool.setuptools.packages.find]
+include = ["lerobot_robot_homebody_sim*"]

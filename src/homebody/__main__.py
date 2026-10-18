@@ -40,7 +40,19 @@ def parser():
     value.add_argument("--host", default="127.0.0.1", help="The console's address (default 127.0.0.1)")
     value.add_argument("--port", type=int, default=8080, help="The console's port (default 8080)")
     value.add_argument("--output", type=Path, help="Evidence root (default: ROOT/runs)")
+    add_robot_arguments(value)
     return value
+
+
+def add_robot_arguments(value):
+    """LeRobot's robot choice: `--robot.type` and that robot's options."""
+    from homebody.robots.make import ROBOT_TYPES
+    value.add_argument("--robot.type", dest="robot_type", choices=ROBOT_TYPES, default="mujoco",
+                       help="mujoco: the MuJoCo backend itself (default); homebody_g1: the same G1 as a LeRobot "
+                            "robot (needs LeRobot)")
+    value.add_argument("--robot.hands", dest="robot_hands", default="dex3", help="homebody_g1's hands (dex3)")
+    value.add_argument("--robot.backend", dest="robot_backend", default="mujoco",
+                       help="homebody_g1's simulator (mujoco)")
 
 
 def check(root: Path, scene: Path, settings) -> int:
@@ -104,8 +116,8 @@ def provider_check(settings, output):
 
 
 def run(args, settings, output):
-    from homebody.backends.mujoco import MujocoBackend
     from homebody.helpers.kinematics import Arm
+    from homebody.robots.make import make_robot
     from homebody.session.recorder import Recorder
     from homebody.session.session import Session
     from homebody.ui.console import Console, Controls
@@ -124,7 +136,8 @@ def run(args, settings, output):
                          scene_name=task_scene.get("name", "Simulation"),
                          model_name=model_label(settings.agent),
                          topdown_settings=settings.topdown, render_in_background=True)
-        backend = MujocoBackend(args.root, settings, scene=args.scene, spawns=args.spawns)
+        backend = make_robot(args.robot_type, args.root, settings, args.scene, args.spawns,
+                             hands=args.robot_hands, backend=args.robot_backend)
         scene_update = None
         if ui is not None:
             from homebody.ui.scene import SceneView

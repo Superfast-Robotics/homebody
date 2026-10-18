@@ -181,7 +181,7 @@ class SceneView:
         points = np.asarray(waypoints, dtype=float)
         if points.ndim != 2 or points.shape[1] != 2 or not len(points) or not np.isfinite(points).all():
             return
-        model, data = self.backend.model, self.backend.data
+        model, data = self.backend.simulator.model, self.backend.simulator.data
         floors = np.flatnonzero(model.geom_type == mujoco.mjtGeom.mjGEOM_PLANE)
         if len(floors) != 1:
             return
@@ -206,7 +206,7 @@ class SceneView:
                                                   STANCE))
 
     def update(self):
-        model, data = self.backend.model, self.backend.data
+        model, data = self.backend.simulator.model, self.backend.simulator.data
         stamp = self.backend.epoch, float(data.time)
         if model is not self.model:
             self.model = model

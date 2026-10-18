@@ -67,6 +67,11 @@ class MujocoBackend:
     def time(self):
         return float(self.data.time)
 
+    @property
+    def simulator(self):
+        """The MuJoCo backend itself: what a robot surface forwards simulator-only hooks to (not part of Robot)."""
+        return self
+
     def reset(self):
         self.close()
         self._evaluation_sink = None
