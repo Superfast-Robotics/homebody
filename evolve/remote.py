@@ -8,7 +8,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 # What a candidate checkout needs to run; assets come from the base by symlink.
-SYNCED = ("src", "tools", "tests", "configs", "evaluation", "vendor", "hardware", "pyproject.toml")
+SYNCED = ("src", "tools", "tests", "configs", "evaluation", "vendor", "hardware", "packages", "pyproject.toml")
 RETRIES, RETRY_WAIT = 5, 30  # a dropped network: attempts and seconds between them
 NOT_CONNECTED = ("connect to host", "Could not resolve", "Network is unreachable", "Connection refused")
 
@@ -37,6 +37,8 @@ class Remote:
     base: str
     work: str
     parallel: int
+    python: str | None = None  # the sessions' interpreter; the seed checkout's .venv when None
+    robot: str = "mujoco"      # their --robot.type
 
     @classmethod
     def from_config(cls, path=HERE / "config.toml", host=None):
@@ -87,7 +89,8 @@ class Remote:
         rsync("-a", str(HERE / "run_jobs.sh"), str(HERE / "score_episode.py"), str(HERE / "episode_settings.toml"),
               f"{self.host}:{self.work}/")
         waves = -(-len(lines) // self.parallel)
-        self.ssh(f"bash {self.work}/run_jobs.sh {self.base} {self.parallel} {jobs} {self.work} {model}",
+        self.ssh(f"bash {self.work}/run_jobs.sh {self.base} {self.parallel} {jobs} {self.work} {model} "
+                 f"{self.python or self.base + '/.venv/bin/python'} {self.robot}",
                  timeout=waves * 7500 + 600)
         return results
 

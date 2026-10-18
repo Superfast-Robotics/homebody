@@ -109,7 +109,7 @@ What upstream changes for this plan:
 - **Prepare/execute split** in the `Runner` (`prepare`, `execute`, `cancel`): the stepwise
   `select_action` skills of Phase 2 keep this lifecycle.
 - **"Every number has one home, and no environment variable sets it."** The draccus configs of Phase 1
-  follow it; the skill list (`HOMEBODY_SKILLS` today) moves into the config.
+  follow it; the `HOMEBODY_SKILLS` override is gone (nothing set it), so `SKILLS` in the registry is the one list until Phase 2 gives each robot its skill set.
 - **Exploration skills and the live context** (`session/live_context.py`, `skills/live.py`) are a second,
   asynchronous skill runtime; the skills library leaves it untouched.
 - The evolve loop now copies `hardware/` (upstream's tests read it), and the seed environment carries
