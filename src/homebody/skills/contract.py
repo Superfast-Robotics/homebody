@@ -241,7 +241,12 @@ class Attempt:
         ctx = self.ctx
         ctx.check(self.epoch)
         self.executing = True
-        result = self.skill.execute(self.plan, ctx)
+        settings = getattr(ctx, "settings", None)  # exploration's live context has none: its skills run directly
+        if settings is not None and settings.skills.runtime == "stepwise":
+            from .stepwise import execute_stepwise
+            result = execute_stepwise(self.skill, self.plan, ctx, self.name)
+        else:
+            result = self.skill.execute(self.plan, ctx)
         if result.skill != self.name or result.code not in {"OK", *self.declared}:
             raise RuntimeError("Skill returned an undeclared terminal result")
         return result

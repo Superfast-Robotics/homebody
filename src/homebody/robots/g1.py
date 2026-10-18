@@ -17,6 +17,7 @@ SIDES = ("left", "right")
 ARM_JOINTS = {"left": JOINTS[15:22], "right": JOINTS[22:29]}
 BASE = ("base.vx", "base.vy", "base.yaw_rate")  # body-frame m/s and rad/s
 EPOCH = "epoch"  # an action's command generation; the robot's current one when absent
+STOP = "stop"    # true: zero the base and keep both arms where they are (the Robot's stop)
 
 ACTION_FEATURES = {**{f"{joint}.q": float for side in SIDES for joint in ARM_JOINTS[side]},
                    **{f"{side}_hand.closure": float for side in SIDES},
@@ -108,12 +109,14 @@ def decode_wrist(observation, side):
 
 
 def apply_action(robot, action):
-    """Send ACTION's commands to ROBOT (HomeBody's Robot commands): the base takes all three velocities, an arm
-    all seven joints, a hand its closure; keys it leaves out keep their current command."""
-    unknown = set(action) - set(ACTION_FEATURES) - {EPOCH}
+    """Send ACTION's commands to ROBOT (HomeBody's Robot commands): STOP first, then the base takes all three
+    velocities, an arm all seven joints, a hand its closure; keys it leaves out keep their current command."""
+    unknown = set(action) - set(ACTION_FEATURES) - {EPOCH, STOP}
     if unknown:
         raise ValueError(f"unknown action keys: {', '.join(sorted(unknown))}")
     epoch = int(action.get(EPOCH, robot.epoch))
+    if action.get(STOP):
+        robot.stop(epoch)
     given = [key in action for key in BASE]
     if any(given):
         if not all(given):

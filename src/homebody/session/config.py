@@ -188,6 +188,18 @@ class PlanMode:
 
 
 @dataclass(frozen=True)
+class Skills:
+    """How a skill's execute loop meets the robot: "direct", it drives the robot itself; "stepwise", it runs in
+    LeRobot's policy form (skills/stepwise.py, the lerobot_skills package), each step an action dict sent to the
+    robot. The robot gets the same commands at the same times either way."""
+    runtime: str = "direct"
+
+    def __post_init__(self):
+        if self.runtime not in ("direct", "stepwise"):
+            raise ValueError("skills.runtime must be direct or stepwise")
+
+
+@dataclass(frozen=True)
 class SharedMotion:
     arm_timeout: float = 15.0
     palm_tolerance: float = 0.015

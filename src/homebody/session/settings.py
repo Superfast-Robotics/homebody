@@ -20,6 +20,7 @@ from .config import (
     Recording,
     Servo,
     SharedMotion,
+    Skills,
     Topdown,
 )
 
@@ -80,6 +81,7 @@ class Settings:
     curobo: Curobo = field(default_factory=Curobo)
     coder: Coder = field(default_factory=Coder)
     plan: PlanMode = field(default_factory=PlanMode)
+    skills: Skills = field(default_factory=Skills)
 
     def __post_init__(self):
         for group in fields(self):
