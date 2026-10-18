@@ -149,3 +149,18 @@ def test_a_first_round_counts_as_reasonable_only_with_a_promising_candidate():
     assert Loop.reasonable(stub(better, flat), 1)
     assert not Loop.reasonable(stub(flat, failed), 1)
     assert Loop.reasonable(stub(flat, {**flat, "id": "r001c4", "status": "accepted"}), 1)
+
+
+def test_each_candidate_and_its_splits_run_on_one_host(monkeypatch, tmp_path):
+    import threading
+    from types import SimpleNamespace
+
+    from evolve.loop import Loop
+    loop = Loop.__new__(Loop)
+    loop.remotes = [SimpleNamespace(host="a"), SimpleNamespace(host="b")]
+    loop._local, loop._lock = threading.local(), threading.Lock()
+    seen = []
+    monkeypatch.setattr(loop, "run_split", lambda cid, split, repeats, suffix="": seen.append((cid, split, loop.remote.host)))
+    loop._local.remote = loop.remotes[1]
+    loop.both_splits("c1", 1)
+    assert sorted(seen) == [("c1", "train", "b"), ("c1", "val", "b")]

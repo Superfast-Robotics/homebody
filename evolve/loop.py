@@ -15,6 +15,7 @@ import json
 import re
 import shutil
 import subprocess
+import threading
 import time
 import tomllib
 from concurrent.futures import ThreadPoolExecutor
@@ -48,7 +49,13 @@ class Loop:
         self.work = Path(self.cfg["local"]["work"])
         self.work.mkdir(parents=True, exist_ok=True)
         self.archive_path = self.work / "archive.jsonl"
-        self.remote = Remote.from_config()
+        self.remotes = Remote.all_from_config()
+        self._local = threading.local()  # the host a candidate's thread evaluates on
+        self._lock = threading.Lock()
+
+    @property
+    def remote(self):
+        return getattr(self._local, "remote", self.remotes[0])
 
     # --- archive ---
     def archive(self):
@@ -57,7 +64,7 @@ class Loop:
         return [json.loads(line) for line in self.archive_path.read_text().splitlines() if line.strip()]
 
     def record(self, entry):
-        with self.archive_path.open("a") as f:
+        with self._lock, self.archive_path.open("a") as f:
             f.write(json.dumps(entry) + "\n")
         self.log(f"archive: {entry['id']} {entry['status']} {entry.get('reason', '')}")
 
@@ -69,9 +76,10 @@ class Loop:
 
     def log(self, message):
         line = f"[{time.strftime('%H:%M:%S')}] {message}"
-        print(line, flush=True)
-        with (self.work / "loop.log").open("a") as f:
-            f.write(line + "\n")
+        with self._lock:
+            print(line, flush=True)
+            with (self.work / "loop.log").open("a") as f:
+                f.write(line + "\n")
 
     # --- worktrees and evaluation ---
     def worktree(self, cid, commit):
@@ -117,8 +125,13 @@ class Loop:
 
     def both_splits(self, cid, repeats, suffix=""):
         """Train and held-out at once: an evaluation waits for its slowest session, not two in turn."""
+        remote = self.remote  # the candidate's host: the split threads run there too
+
+        def on_host(split):
+            self._local.remote = remote
+            return self.run_split(cid, split, repeats, suffix)
         with ThreadPoolExecutor(2) as pool:
-            futures = {split: pool.submit(self.run_split, cid, split, repeats, suffix) for split in ("train", "val")}
+            futures = {split: pool.submit(on_host, split) for split in ("train", "val")}
             return {split: future.result() for split, future in futures.items()}
 
     def evaluate(self, cid, checkout, tier):
@@ -246,33 +259,14 @@ class Loop:
                                   zip(cids, mechanisms)))
         judged = {e["id"] for e in self.archive()}
         candidates = [c for c in notes if c is not None and c["cid"] not in judged]  # resuming: skip verdicts given
-        accepted = []
-        for cand in candidates:
-            entry = {"id": cand["cid"], "parent": best["id"], "round": number, **cand["meta"]}
-            if cand["meta"].get("status"):
-                self.record(entry)
-                continue
-            passed, output = self.remote_checks(cand["cid"], cand["path"])
-            if not passed:
-                (round_dir / f"{cand['cid']}_checks.txt").write_text(output)
-                self.record({**entry, "status": "rejected", "reason": "lint or unit tests failed: " + output[-600:]})
-                continue
-            crash = self.smoke(cand["cid"])
-            if crash:
-                self.record({**entry, "status": "rejected", "reason": "smoke run crashed: " + crash[-600:]})
-                continue
-            summaries = self.evaluate(cand["cid"], cand["path"], entry["tier"])
-            ok, d_train, d_val, _, _ = score.accept(best, summaries)
-            if ok:  # noise check: accept only if the pooled first and confirming runs still pass
-                self.log(f"{cand['cid']} passed ({score.describe(best, summaries)}); confirming")
-                summaries = self.confirm(cand["cid"], entry["tier"])
-                ok, d_train, d_val, _, _ = score.accept(best, summaries)
-            verdict = score.describe(best, summaries)
-            entry = {**entry, **summaries, "status": "accepted" if ok else "rejected", "reason": verdict,
-                     "d_train": d_train, "d_val": d_val}
-            (accepted if ok else []).append(entry)
-            if not ok:
-                self.record(entry)
+        # Each candidate on its own host (round-robin), all at once: checks, trial session, evaluation and any
+        # confirmation stay on that host, so a candidate's comparison never mixes machines.
+        hosts = len(self.remotes)
+        with ThreadPoolExecutor(hosts) as pool:
+            judged = list(pool.map(lambda pair: self.judge_candidate(pair[1], best, number, round_dir,
+                                                                     self.remotes[pair[0] % hosts]),
+                                   enumerate(candidates)))
+        accepted = [entry for entry in judged if entry is not None]
         if accepted:
             winner = max(accepted, key=lambda e: (e["d_train"] + e["d_val"], -e.get("lines_changed", 0)))
             for entry in accepted:
@@ -283,6 +277,36 @@ class Loop:
         (round_dir / DONE).write_text("done\n")
         self.log(f"round {number}: done; best is now {self.best()['id']}")
         return number
+
+    def judge_candidate(self, cand, best, number, round_dir, remote):
+        """Checks, trial session, evaluation and confirmation of one candidate on REMOTE: its entry when it
+        passed (recorded by the round, which picks the winner), else None after recording the rejection."""
+        self._local.remote = remote
+        entry = {"id": cand["cid"], "parent": best["id"], "round": number, "host": remote.host, **cand["meta"]}
+        if cand["meta"].get("status"):
+            self.record(entry)
+            return None
+        passed, output = self.remote_checks(cand["cid"], cand["path"])
+        if not passed:
+            (round_dir / f"{cand['cid']}_checks.txt").write_text(output)
+            self.record({**entry, "status": "rejected", "reason": "lint or unit tests failed: " + output[-600:]})
+            return None
+        crash = self.smoke(cand["cid"])
+        if crash:
+            self.record({**entry, "status": "rejected", "reason": "smoke run crashed: " + crash[-600:]})
+            return None
+        summaries = self.evaluate(cand["cid"], cand["path"], entry["tier"])
+        ok, d_train, d_val, _, _ = score.accept(best, summaries)
+        if ok:  # noise check: accept only if the pooled first and confirming runs still pass
+            self.log(f"{cand['cid']} passed ({score.describe(best, summaries)}); confirming")
+            summaries = self.confirm(cand["cid"], entry["tier"])
+            ok, d_train, d_val, _, _ = score.accept(best, summaries)
+        entry = {**entry, **summaries, "status": "accepted" if ok else "rejected",
+                 "reason": score.describe(best, summaries), "d_train": d_train, "d_val": d_val}
+        if not ok:
+            self.record(entry)
+            return None
+        return entry
 
     def reasonable(self, number):
         """Whether round NUMBER gave a candidate worth building on: accepted, or up by more than one

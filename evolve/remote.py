@@ -39,9 +39,16 @@ class Remote:
     parallel: int
 
     @classmethod
-    def from_config(cls, path=HERE / "config.toml"):
+    def from_config(cls, path=HERE / "config.toml", host=None):
         r = tomllib.loads(path.read_text())["remote"]
-        return cls(r["host"], r["root"], f"{r['root']}/{r['base']}", f"{r['root']}/{r['work']}", r["parallel"])
+        return cls(host or r["host"], r["root"], f"{r['root']}/{r['base']}", f"{r['root']}/{r['work']}", r["parallel"])
+
+    @classmethod
+    def all_from_config(cls, path=HERE / "config.toml"):
+        """One Remote per evaluation host: [remote] hosts, or just host. They share the group volume, so a
+        candidate's files and results are the same paths on each."""
+        r = tomllib.loads(path.read_text())["remote"]
+        return [cls.from_config(path, host) for host in r.get("hosts", [r["host"]])]
 
     def ssh(self, command, timeout=None, check=True):
         result = run(["ssh", "-o", "ServerAliveInterval=30", self.host, command], timeout=timeout)
