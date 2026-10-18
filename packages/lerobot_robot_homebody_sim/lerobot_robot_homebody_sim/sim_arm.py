@@ -67,10 +67,24 @@ def build_scene(embodiment, cubes):
         body.add_freejoint()
         body.add_geom(name=name, type=mujoco.mjtGeom.mjGEOM_BOX, size=[CUBE / 2] * 3, mass=0.03,
                       rgba=colours[index % len(colours)], friction=[1.5, 0.01, 0.0001], condim=4)
-    spec.worldbody.add_camera(name="front", pos=[0.55, 0.0, 0.3], xyaxes=[0, 1, 0, -0.45, 0, 0.89], fovy=60)
-    spec.worldbody.add_camera(name="top", pos=[0.22, 0.0, 0.55], xyaxes=[0, -1, 0, 1, 0, 0], fovy=60)
+    # both cameras frame the arm's own workspace: its pick spot, seen from beyond it and from above
+    spot = np.array([*embodiment.pick_xy, 0.0])
+    out = spot / np.linalg.norm(spot)
+    front = spot + out * 0.32 + np.array([0, 0, 0.26])
+    spec.worldbody.add_camera(name="front", pos=front.tolist(), xyaxes=look_at(front, spot * 0.6), fovy=58)
+    top = spot * 0.75 + np.array([0, 0, 0.5])
+    spec.worldbody.add_camera(name="top", pos=top.tolist(), xyaxes=look_at(top, spot * 0.75, up=out), fovy=58)
     spec.attach(arm, frame=spec.worldbody.add_frame(), prefix="")
     return spec.compile()
+
+
+def look_at(eye, target, up=(0.0, 0.0, 1.0)):
+    """A camera's xyaxes at EYE looking at TARGET with UP toward the image top (MuJoCo looks along -z)."""
+    forward = np.asarray(target, float) - np.asarray(eye, float)
+    forward /= np.linalg.norm(forward)
+    right = np.cross(forward, up)
+    right /= np.linalg.norm(right)
+    return [*right, *np.cross(right, forward)]
 
 
 class SimArm(Robot):
