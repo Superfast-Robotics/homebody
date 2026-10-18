@@ -25,6 +25,12 @@ upstream Stanford-TML/homebody `main` (the real2sim release); see "Upstream" bel
 | Real hardware | `SimRobot` uses LeRobot's interface, so hardware is a later `--robot.type` swap; no hardware runs in this plan |
 | Environment | New Python 3.12 environment on the second A10's local disk (LeRobot needs Python >= 3.12, numpy < 2.3; the shared 3.11 environment stays untouched). ManiSkill in its own environment if dependencies conflict |
 
+## Status
+
+| Phase | State |
+|---|---|
+| 0 | Done 2026-10-18 on loki-sim1: `~/lerobot-work/.venv` (Python 3.12) with lerobot 0.6.1, mujoco 3.11.0, mani_skill 3.0.1, sapien 3.0.3, numpy 2.2.6, torch 2.11.0+cu128 (CUDA available); MuJoCo renders through EGL, ManiSkill through Vulkan (SO-100 PickCube frame); the harness's 598 tests pass in it. Built by `setup_lerobot_env.sh` (local operator script). Notes: the hosts' 570 driver needs the cu128 torch wheels; draccus 0.11.6 ships a stray top-level `tests/` package that shadows ours, removed in the environment |
+
 ## Layout
 
 ```
