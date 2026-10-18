@@ -15,7 +15,9 @@ version runs exactly the same episodes. Scored from physics: 0 not lifted, 1 lif
 the end (dropped during the pick or the carry), 2 still held: success. An episode's value is its stage
 / 2. Episodes whose stance or view failed before the skill ran are not scored. End to end, the costliest
 failure is a pick that reports OK and then loses the object on the walk: the object usually lands where
-it cannot be reached again. A grasp that will not survive carrying should be made firmer or refused.
+it cannot be reached again. A grasp that will not survive carrying should be made firmer. Only a call
+that returns OK and keeps the object through the walk scores as held: when the skill refuses, nothing
+walks, so an object it leaves in the hand counts as lifted, the same as one dropped on the way.
 
 `results.md` lists every train episode: its stage, the skill's refusal code and message, lifted,
 held and seconds. `episodes/<id>/trace.json` is the skill's own record of that episode: each stage it
