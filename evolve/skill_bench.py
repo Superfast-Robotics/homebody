@@ -111,6 +111,54 @@ def run_pick(cm, session, episode, step):
             "side": side, "timing": timing}
 
 
+def run_picktree(cm, session, episode, step):
+    """Pick and carry through the pick_and_carry behavior tree (homebody.tree) instead of one scripted call: a
+    failed pick retries with a fresh click and then the other hand, and a carry leg that ends with the grasp
+    uncertain rechecks it and walks the leg again, all without a model. Scored like pick (held after the walk)."""
+    from homebody.tree import Board, pick_and_carry
+
+    port, execute = session.port, session.execute
+    if not execute("navigate", cm.navigate_arguments(episode["stance"], step.facing, step.hand), port.snapshot(),
+                   evidence_name="stance"):
+        return {"setup_failed": "stance navigation refused"}
+    frame = port.snapshot()
+    click = cm.target_click(frame, step.label)
+    if click is None:
+        return {"setup_failed": "object not visible from the stance"}
+    side = step.hand if step.hand != "auto" else ("left" if click[0] < frame.rgb.shape[1] / 2 else "right")
+    calls = []
+
+    def call(skill, arguments):
+        started = time.monotonic()
+        execute(skill, arguments, port.snapshot(), evidence_name=f"tree_{len(calls)}_{skill}")
+        result = session.outcome["steps"][-1] if session.outcome["steps"] else {"code": "?", "message": ""}
+        calls.append({"skill": skill, "code": result.get("code"), "seconds": round(time.monotonic() - started, 1)})
+        return result
+
+    def fresh_click(board):
+        view = port.snapshot()
+        found = cm.target_click(view, step.label)
+        return None if found is None else {"point_normalized_1000": cm.normalized(view, *found),
+                                           "hand": board.state["side"]}
+
+    def holding(board):
+        return board.state["side"] in session.context.carried
+
+    legs = [lambda board: cm.navigate_arguments(step.carry_goal, step.carry_facing, board.state["side"])]
+    if episode.get("return"):
+        legs.append(lambda board: cm.navigate_arguments(episode["stance"], step.facing, board.state["side"]))
+    board = Board(call=call, state={"side": side})
+    held = pick_and_carry(click=fresh_click, holding=holding, legs=legs, other_hand=True).run(board)
+    walked = sum(c["skill"] == "navigate" for c in calls) >= len(legs)
+    first_pick = next((c for c in calls if c["skill"] == "pick"), {"code": None})
+    if held:
+        for _ in range(int(SETTLE_SECONDS / 0.02)):
+            port.advance(port.epoch, 0.02)
+    return {"call": {"code": first_pick["code"]}, "carry": ({"code": calls[-1]["code"]} if walked else None),
+            "side": board.state["side"], "tree": {"held": held, "calls": calls, "failure": board.failure()},
+            "timing": {"skill_wall": round(sum(c["seconds"] for c in calls), 1)}}
+
+
 def call_skill(session, episode, skill, arguments, frame, request):
     """Call SKILL once from FRAME; if it refuses and the run enables the coder, one call_coder limited to
     that skill (REQUEST: goal, success, constraints, task). Returns {ok, call, coder?, timing}: ok is the
@@ -351,7 +399,8 @@ def load_evaluator():
 
 
 # skill name -> (run(cm, session, episode, step) -> record, score(rows, episode, record) -> {stage, ...})
-DRIVERS = {"pick": (run_pick, score_pick), "place": (run_place, score_place), "navigate": (run_move, score_move)}
+DRIVERS = {"pick": (run_pick, score_pick), "picktree": (run_picktree, score_pick), "place": (run_place, score_place),
+           "navigate": (run_move, score_move)}
 
 
 def load_task_drivers():

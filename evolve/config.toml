@@ -81,6 +81,20 @@ model = "gpt-6-astra"
 effort = "medium"
 parallel = 28
 
+[skills.picktree]
+# the round-trip pickcarry episodes driven by the pick_and_carry behavior tree (homebody.tree): pick retries with
+# a fresh click and the other hand, uncertain carries rechecked; no model; compare with pickcarry's baseline.
+name = "pick"
+episodes = "skillbench/picktree_episodes"
+coder = false
+workdir = "picktree"
+prompts = "skill"
+editable = ["src/homebody/skills/pick.py", "src/homebody/motion/*", "src/homebody/helpers/*",
+            "src/homebody/toolkit/*", "src/homebody/tree/*", "tests/*"]
+model = "gpt-6-astra"
+effort = "medium"
+parallel = 28
+
 [skills.pick-dynamic]
 # pick plus one coder rescue; improved through helpers, the coder's instructions and reports, and pick's
 # structure, not by tuning pick's own decisions
