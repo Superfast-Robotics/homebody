@@ -171,7 +171,7 @@ class SkillLoop:
             shutil.rmtree(local)
         local.mkdir(parents=True)
         rsync("-a", "--include=*/", "--include=result.json", "--include=trace.json", "--include=run.log",
-              "--include=REQUEST.md", "--include=tools.jsonl", "--include=start_*.py",
+              "--include=REQUEST.md", "--include=tools.jsonl", "--include=start_*.py", "--include=last_message.json",
               "--include=**/coder/call-*/events.jsonl", "--include=**/workspace/skills/*.py",
               "--include=**/workspace/lib/*.py", "--exclude=*", "--prune-empty-dirs",
               f"{self.remote.host}:{root}/", f"{local}/")

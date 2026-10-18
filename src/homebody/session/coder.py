@@ -230,7 +230,8 @@ class CoderCall:
         self.frozen_lib = {path.name: digest([path]) for path in self.lib_dir.glob("*.py")}
         (self.workspace / "AGENTS.md").write_text(harness.coder_instructions())
         self.observe()
-        failed = self.copy_trace(self.session.trace.latest(self.target), "failed")
+        trace = getattr(self.session, "trace", None)  # a session without keyframes gives the coder none
+        failed = self.copy_trace(trace.latest(self.target) if trace else None, "failed")
         self.failed_images = trace_images(failed) if failed else []
         failed_code = json.loads((failed / "trace.json").read_text()).get("result", {}).get("code") if failed else None
         recent = [entry for entry in self.session.history if "decision" in entry][-harness.CODER_HISTORY_STEPS:]
@@ -336,7 +337,8 @@ class CoderCall:
         if result["code"] == "OK":
             self.registered = (module, version, self.checked["source"])
         changed = []
-        trace = self.copy_trace(self.session.trace.latest(self.target), f"execute-{len(self.executes)}")
+        recorded = getattr(self.session, "trace", None)
+        trace = self.copy_trace(recorded.latest(self.target) if recorded else None, f"execute-{len(self.executes)}")
         if self.physics_error is None:
             self.observe()
             changed = harness.change_report(before, self.frame, carried_before, self.session.context.carried)

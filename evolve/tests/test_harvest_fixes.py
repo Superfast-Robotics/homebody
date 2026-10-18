@@ -9,7 +9,7 @@ from evolve import harvest_fixes
 def coder_call(root, status="success"):
     call = root / "train_00" / "r0" / "session" / "s1" / "tasks" / "task-000" / "coder" / "call-1"
     (call / "workspace" / "skills").mkdir(parents=True)
-    (call / "REQUEST.md").write_text("# Request: skill `pick`\n...\nresult: NO_GRASP: no grasp passed the gates\n")
+    (call / "workspace" / "REQUEST.md").write_text("# Request: skill `pick`\n...\nresult: NO_GRASP: no grasp passed the gates\n")
     (call / "last_message.json").write_text(json.dumps({"status": status, "summary": "Widened the aperture."}))
     (call / "start_pick.py").write_text("a = 1\nb = 2\n")
     (call / "workspace" / "skills" / "pick.py").write_text("a = 1\nb = 3\n")

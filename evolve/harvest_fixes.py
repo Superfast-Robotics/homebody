@@ -22,7 +22,7 @@ def calls(split_dir):
 
 def entry(call, split_dir):
     """A fix entry for one coder call that ended OK, or None."""
-    answer_path, request_path = call / "last_message.json", call / "REQUEST.md"
+    answer_path, request_path = call / "last_message.json", call / "workspace" / "REQUEST.md"
     if not answer_path.exists() or not request_path.exists():
         return None
     answer = json.loads(answer_path.read_text())
