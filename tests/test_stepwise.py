@@ -66,7 +66,7 @@ def test_the_runtime_setting_is_checked():
         Skills(runtime="threaded")
 
 
-def test_every_robot_access_happens_on_the_callers_thread():
+def test_only_the_callers_thread_renders_or_commands_the_robot():
     import threading
 
     class ThreadBound(Recording):
@@ -78,7 +78,8 @@ def test_every_robot_access_happens_on_the_callers_thread():
 
         def __getattribute__(self, name):
             state = object.__getattribute__(self, "__dict__")
-            if not name.startswith("_") and name not in state and threading.get_ident() != state.get(
+            if not name.startswith("_") and name not in state and name not in ("epoch", "time") and \
+                    threading.get_ident() != state.get(
                     "owner", threading.get_ident()):
                 state["strays"].append(name)
             return object.__getattribute__(self, name)

@@ -2,8 +2,8 @@
 thread against a proxy robot: its commands are held until the loop next reads the robot or lets time pass, and
 that batch, with the seconds to run it, is the step's action dict (`homebody.robots.g1` keys). Its reads run on
 the caller's thread too (a renderer's GL context belongs to the thread that made it), so only the caller's
-thread ever touches the robot. The runner sends
-it to the session's robot and advances, so the robot gets the same commands, in the same order, at the same
+thread renders or commands the robot (the worker reads only the epoch and the clock, while the caller waits).
+The runner sends each step to the session's robot and advances, so the robot gets the same commands, in the same order, at the same
 simulated times as when the loop drives it directly; an error sending or running a step is raised in the loop
 where it read or advanced."""
 import copy
@@ -30,12 +30,12 @@ class _Proxy:
         self._held, self._epoch = {}, None
 
     @property
-    def epoch(self):
-        return self._read(lambda: self._robot.epoch)
+    def epoch(self):  # plain numbers, read while the caller's thread waits: no handoff
+        return self._robot.epoch
 
     @property
     def time(self):
-        return self._read(lambda: self._robot.time)
+        return self._robot.time
 
     def snapshot(self):
         self._flush()
