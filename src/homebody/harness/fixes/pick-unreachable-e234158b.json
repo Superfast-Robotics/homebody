@@ -1,0 +1,11 @@
+{
+ "skill": "pick",
+ "code": "UNREACHABLE",
+ "when": "The nearest clear stance leaves the object 0.55 m ahead; the arm's grasp range is 0.45 m",
+ "repair": "Added a stationary grasp fallback using existing reach and collision checks. Pick returned OK; the blue packet is held with a verified lift of 0.105 m.",
+ "sketch": "@@ -73,3 +73,11 @@\n                                                f\"repeat pick with the {other} hand to recheck it\")\n-    return approach_stance(side, label, current, planning) or plan_target(side, label, current, planning)\n+    try:\n+        stance = approach_stance(side, label, current, planning)\n+    except SkillFailure as error:\n+        if error.code != \"UNREACHABLE\":\n+            raise\n+        # The stance estimate is conservative; actual IK and full collision\n+        # checks can still prove a stationary grasp without moving the base.\n+        return plan_target(side, label, current, planning)\n+    return stance or plan_target(side, label, current, planning)\n ",
+ "validated": 1,
+ "sources": [
+  "pktrain_17_counter_clutter_s0_v0/session/session-20261018T050144Z-3c4f9c1e/tasks/task-000/coder/call-1"
+ ]
+}

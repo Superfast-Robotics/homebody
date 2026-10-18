@@ -1,0 +1,11 @@
+{
+ "skill": "pick",
+ "code": "COLLISION",
+ "when": "Arm approach: finger 6 intersects visible environment",
+ "repair": "Changed pick to prefer a collision-checked initial lift before approaching. Execute returned OK; the red cup is held about 14 cm above its support.",
+ "sketch": "@@ -349,3 +349,3 @@\n         checked = {}\n-        for lift in (0., *self.settings.approach_start_lifts_m):\n+        for lift in (*reversed(self.settings.approach_start_lifts_m), 0.):\n             for grasp in ranked:",
+ "validated": 1,
+ "sources": [
+  "pktrain_07_shelf_return_s0_v0/session/session-20261018T052442Z-4ff5452e/tasks/task-000/coder/call-1"
+ ]
+}

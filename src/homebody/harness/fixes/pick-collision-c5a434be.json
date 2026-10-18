@@ -1,0 +1,11 @@
+{
+ "skill": "pick",
+ "code": "COLLISION",
+ "when": "Arm approach: finger 6 intersects visible environment",
+ "repair": "Updated pick with extra planning clearance and raised approaches. Execution returned OK; the red cup was lifted 0.139 m and its grasp verified.",
+ "sketch": "@@ -4,3 +4,3 @@\n from collections import Counter\n-from dataclasses import asdict, dataclass\n+from dataclasses import asdict, dataclass, replace\n \n@@ -261,3 +261,6 @@\n         self.torso = inverse(current.world_torso)\n-        collision = planning.settings.collision\n+        # Leave room for measured finger posture and tracking error between frames.\n+        # Execution keeps the original live collision checks.\n+        collision = replace(planning.settings.collision,\n+                            cloud_margin=planning.settings.collision.cloud_margin + 0.012)\n         # Recovery runs after opening, so use the measured fingers in that case.\n@@ -349,3 +352,3 @@\n         checked = {}\n-        for lift in (0., *self.settings.approach_start_lifts_m):\n+        for lift in (*self.settings.approach_start_lifts_m, 0.):\n             for grasp in ranked:",
+ "validated": 1,
+ "sources": [
+  "pktrain_07_shelf_return_s0_v0/session/session-20261018T045651Z-72165eb7/tasks/task-000/coder/call-1"
+ ]
+}

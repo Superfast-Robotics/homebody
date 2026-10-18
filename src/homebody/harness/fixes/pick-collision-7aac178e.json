@@ -1,0 +1,11 @@
+{
+ "skill": "pick",
+ "code": "COLLISION",
+ "when": "Arm approach: finger 5 intersects visible environment",
+ "repair": "Added 15 mm of approach planning clearance and prioritized checked upward starts. Pick returned OK; the grey cup lifted 15.2 cm and remained verified in the right hand.",
+ "sketch": "@@ -4,3 +4,3 @@\n from collections import Counter\n-from dataclasses import asdict, dataclass\n+from dataclasses import asdict, dataclass, replace\n \n@@ -265,3 +265,6 @@\n         self.descent = Clearance(current, planning.arms, side, collision, (label,), fingers=opened)\n-        self.approach = Clearance(current, planning.arms, side, collision, exempt_start=True, fingers=opened)\n+        # Reserve room for measured tracking error and newly visible table depth.\n+        approach_collision = replace(collision, cloud_margin=collision.cloud_margin + 0.015)\n+        self.approach = Clearance(current, planning.arms, side, approach_collision,\n+                                  exempt_start=True, fingers=opened)\n         self.counts = dict.fromkeys(self.GATES, 0)\n@@ -349,3 +352,3 @@\n         checked = {}\n-        for lift in (0., *self.settings.approach_start_lifts_m):\n+        for lift in (*self.settings.approach_start_lifts_m, 0.):\n             for grasp in ranked:",
+ "validated": 1,
+ "sources": [
+  "pktrain_10_shelf_return_s0_v1/session/session-20261018T052635Z-c2297c62/tasks/task-000/coder/call-1"
+ ]
+}

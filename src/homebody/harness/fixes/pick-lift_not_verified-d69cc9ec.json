@@ -1,0 +1,11 @@
+{
+ "skill": "pick",
+ "code": "LIFT_NOT_VERIFIED",
+ "when": "Repeated current evidence did not verify lift; grasp remains uncertain",
+ "repair": "Updated pick to try deeper grasps and retry after confirmed empty-hand recovery. Execution returned OK; the pink bottle rose 15 cm and remained verified after carry compaction.",
+ "sketch": "@@ -4,3 +4,3 @@\n from collections import Counter\n-from dataclasses import asdict, dataclass\n+from dataclasses import asdict, dataclass, replace\n \n@@ -121,2 +121,10 @@\n     status, _ = recover(ctx, plan.epoch, plan.side)\n+    if status == \"cleared\" and plan.resume_lift:\n+        ctx.stage(\"Clearing empty hand for a fresh grasp\")\n+        if not reset_arm(ctx, plan.epoch, plan.side):\n+            raise SkillFailure(\"ARM_NOT_REACHED\", \"Empty hand did not return for a fresh grasp\")\n+        ctx.advance(plan.epoch)\n+        frame = ctx.observe(plan.epoch)\n+        fresh = plan_target(plan.side, plan.label, frame, ctx.planning())\n+        return grasp(fresh, ctx)\n     if status == \"enclosed\" and plan.resume_lift:\n@@ -238,2 +246,4 @@\n     \"\"\"Grasp candidates whose measured width a calibrated jaw opening fits within aperture_error.\"\"\"\n+    settings = replace(settings, depth_max=0.075,\n+                       insertion_depth_scales=(1.0, 0.75, 0.5, 0.3))\n     apertures = [sample[\"aperture\"] for sample in samples]",
+ "validated": 1,
+ "sources": [
+  "pktrain_21_bin_to_carton_s1_v0/session/session-20261018T053111Z-c54c704a/tasks/task-000/coder/call-1"
+ ]
+}

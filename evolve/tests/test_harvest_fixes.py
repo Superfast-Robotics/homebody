@@ -33,3 +33,12 @@ def test_failed_calls_and_held_out_splits_are_never_harvested(tmp_path):
     assert not list((tmp_path / "fixes").glob("*.json"))
     with pytest.raises(SystemExit):
         harvest_fixes.main(str(tmp_path / "val"), str(tmp_path / "fixes"))
+
+
+def test_a_request_without_a_trace_gives_the_refusal_from_what_was_tried(tmp_path):
+    call = coder_call(tmp_path / "train")
+    (call / "workspace" / "REQUEST.md").write_text(
+        "# Request: skill `pick`\nTried so far: pick {\"hand\": \"right\"} returned COLLISION: finger 2 hits the bin\n")
+    harvest_fixes.main(str(tmp_path / "train"), str(tmp_path / "fixes"))
+    (entry,) = [json.loads(p.read_text()) for p in (tmp_path / "fixes").glob("*.json")]
+    assert entry["code"] == "COLLISION" and entry["when"] == "finger 2 hits the bin"

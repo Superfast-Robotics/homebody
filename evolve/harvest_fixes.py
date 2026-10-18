@@ -16,8 +16,9 @@ SKETCH_LINES = 40
 
 
 def calls(split_dir):
-    """Each coder call folder of the split (task/run/session/tasks/*/coder/call-N)."""
-    return sorted(Path(split_dir).glob("*/r*/session/*/tasks/*/coder/call-*"))
+    """Each coder call folder of the split, at any depth: end-to-end runs keep them under
+    task/run/session/*/tasks/*/coder/, skill-benchmark episodes under episode/session/*/tasks/*/coder/."""
+    return sorted(path for path in Path(split_dir).glob("**/coder/call-*") if path.is_dir())
 
 
 def entry(call, split_dir):
@@ -30,7 +31,8 @@ def entry(call, split_dir):
         return None
     request = request_path.read_text()
     skill = re.search(r"# Request: skill `([a-z0-9_]+)`", request)
-    failure = re.search(r"^result: ([A-Z_]+): (.*)$", request, flags=re.MULTILINE)
+    failure = (re.search(r"^result: ([A-Z_]+): (.*)$", request, flags=re.MULTILINE)  # the failed call's trace
+               or re.search(r"^Tried so far: .*? returned ([A-Z_]+): (.*)$", request, flags=re.MULTILINE))
     edited = call / "workspace" / "skills" / f"{skill.group(1)}.py" if skill else None
     started = call / f"start_{skill.group(1)}.py" if skill else None
     if not (skill and failure and edited and edited.exists() and started and started.exists()):

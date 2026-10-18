@@ -1,0 +1,11 @@
+{
+ "skill": "pick",
+ "code": "UNREACHABLE",
+ "when": "The nearest clear stance leaves the object 0.53 m ahead; the arm's grasp range is 0.45 m",
+ "repair": "Added direct grasp planning before the conservative stance estimate and fresh wrist-camera verification. Recovery returned OK with the lifted purple bottle verified in the right hand.",
+ "sketch": "@@ -4,3 +4,3 @@\n from collections import Counter\n-from dataclasses import asdict, dataclass\n+from dataclasses import asdict, dataclass, replace\n \n@@ -21,3 +21,3 @@\n     lift_pending,\n-    recover,\n+    recover as shared_recover,\n     recovery_result,\n@@ -37,3 +37,4 @@\n           'robot farther from furniture. With both hands loaded the robot may be unable to turn or back '\n-          'out, and a held object can be dragged out of the hand.')\n+          'out, and a held object can be dragged out of the hand. For an obscured held target, '\n+          'recover_held true rechecks the selected hand without a new click.')\n RETRIED_APPROACH_FAILURES = (\"COLLISION\", \"TARGET_LOST\")\n@@ -65,2 +66,4 @@\n     side = side_argument(arguments)\n+    if arguments.get(\"recover_held\") and side in planning.carried:\n+        return RecoveryPlan(current.epoch, side, planning.carried[side][\"label\"], resume_lift=True)\n     label, _ = click_argument(arguments, selected)\n@@ -73,3 +76,13 @@\n                                                f\"repeat pick with the {other} hand to recheck it\")\n-    return approach_stance(side, label, current, planning) or plan_target(side, label, current, planning)\n+    # The stance estimate is conservative: test actual grasp IK and clearance\n+    # before requiring a walk that furniture may prevent.\n+    try:\n+        return plan_target(side, label, current, planning)\n+    except SkillFailure as error:\n+        if error.code != \"NO_GRASP\":\n+            raise\n+        walk = approach_stance(side, label, current, planning)\n+        if walk is None:\n+            raise\n+        return walk\n \n@@ -117,2 +130,30 @@\n \n+\n+class _RecoveryView:",
+ "validated": 1,
+ "sources": [
+  "pktrain_11_counter_clutter_s0_v1/session/session-20261018T052648Z-44f1156e/tasks/task-000/coder/call-1"
+ ]
+}

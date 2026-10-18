@@ -1,0 +1,11 @@
+{
+ "skill": "pick",
+ "code": "COLLISION",
+ "when": "Arm approach: finger 5 intersects visible environment",
+ "repair": "Added 12 mm of approach-planning clearance in skills/pick.py. Check passed; execute returned OK with verified retention and a 15.2 cm cup lift.",
+ "sketch": "@@ -4,3 +4,3 @@\n from collections import Counter\n-from dataclasses import asdict, dataclass\n+from dataclasses import asdict, dataclass, replace\n \n@@ -265,3 +265,6 @@\n         self.descent = Clearance(current, planning.arms, side, collision, (label,), fingers=opened)\n-        self.approach = Clearance(current, planning.arms, side, collision, exempt_start=True, fingers=opened)\n+        # Leave reserve for measured tracking error and newly exposed depth during motion.\n+        approach_collision = replace(collision, cloud_margin=collision.cloud_margin + 0.012)\n+        self.approach = Clearance(current, planning.arms, side, approach_collision,\n+                                  exempt_start=True, fingers=opened)\n         self.counts = dict.fromkeys(self.GATES, 0)",
+ "validated": 1,
+ "sources": [
+  "pktrain_10_shelf_return_s0_v1/session/session-20261018T045846Z-d0cb3589/tasks/task-000/coder/call-1"
+ ]
+}

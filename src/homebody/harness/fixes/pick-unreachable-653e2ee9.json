@@ -1,0 +1,11 @@
+{
+ "skill": "pick",
+ "code": "UNREACHABLE",
+ "when": "The nearest clear stance leaves the object 0.55 m ahead; the arm's grasp range is 0.45 m",
+ "repair": "Changed pick to try calibrated IK and collision-checked grasp planning before the conservative stance estimate. Execute returned OK; the blue packet was lifted and its hold verified.",
+ "sketch": "@@ -73,2 +73,9 @@\n                                                f\"repeat pick with the {other} hand to recheck it\")\n+    # The scalar stance estimate is conservative; actual calibrated IK and\n+    # collision-checked routes decide whether a grasp is possible from here.\n+    try:\n+        return plan_target(side, label, current, planning)\n+    except SkillFailure as error:\n+        if error.code != \"NO_GRASP\":\n+            raise\n     return approach_stance(side, label, current, planning) or plan_target(side, label, current, planning)",
+ "validated": 1,
+ "sources": [
+  "pktrain_17_counter_clutter_s0_v1/session/session-20261018T052933Z-3612a88e/tasks/task-000/coder/call-1"
+ ]
+}
