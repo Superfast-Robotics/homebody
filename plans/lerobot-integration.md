@@ -4,8 +4,8 @@ Goal: the HomeBody harness and its skills run every Hugging Face LeRobot robot i
 MuJoCo and ManiSkill, and each robot is tested on a small, robot-specific subset of the val tasks just by
 changing the robot.
 
-Base: `superfast-agent` (v007: plan mode, traces, fix library; train 0.333, val 0.526). Upstream
-Stanford-TML/homebody `main` is not merged yet (see "Upstream" below).
+Base: `superfast-agent` (v007: plan mode, traces, fix library; train 0.333, val 0.526), rebased onto
+upstream Stanford-TML/homebody `main` (the real2sim release); see "Upstream" below.
 
 ## Decisions
 
@@ -88,8 +88,30 @@ src/homebody/                  # harness: agents, plan mode, coder, traces; talk
 
 ## Upstream
 
-Stanford-TML/homebody `main` has two commits after our base (`c09fcf3` README dates, `0db5c8d` real2sim
-release: 241 files, mostly a new real-robot exploration stack). A trial merge conflicts in `CLAUDE.md`,
-`pyproject.toml` and `src/homebody/skills/contract.py`. Upstream refactored the skill `Runner`
-(prepare/execute split, injected registry, `SURFACE`/`OPTIONAL` declarations); the simulator skills,
-backend and session code are otherwise unchanged. Not merged for now.
+`superfast-agent` is rebased onto Stanford-TML/homebody `main` at `0db5c8d` (the real2sim release: a G1
+exploration, capture and reconstruction stack). Three files conflicted and were merged by keeping both
+sides: `pyproject.toml` (their `exploration` extra, our `planning` extra), `CLAUDE.md` (their layout plus our
+harness row) and `src/homebody/skills/contract.py` (their `Runner`, with our `skill=` override for
+coder-written skills and our documented `SkillFailure`). The rebase is checked by `verify_rebase.sh`
+(every file upstream did not touch is unchanged, unit tests, lint) and by a v007 baseline re-run on it.
+
+What upstream changes for this plan:
+
+- **Skill surfaces.** A skill may declare `SURFACE` (the interface its `NEEDS`/`OPTIONAL` commands come
+  from) and the `Runner` takes a registry. Phase 1-2 build on this: each robot's `SimRobot` is a surface,
+  and a skill declares the capabilities it needs against it instead of a new mechanism.
+- **Prepare/execute split** in the `Runner` (`prepare`, `execute`, `cancel`): the stepwise
+  `select_action` skills of Phase 2 keep this lifecycle.
+- **"Every number has one home, and no environment variable sets it."** The draccus configs of Phase 1
+  follow it; the skill list (`HOMEBODY_SKILLS` today) moves into the config.
+- **Exploration skills and the live context** (`session/live_context.py`, `skills/live.py`) are a second,
+  asynchronous skill runtime; the skills library leaves it untouched.
+- The evolve loop now copies `hardware/` (upstream's tests read it), and the seed environment carries
+  upstream's test-only packages (`seed_test_deps.sh`).
+
+## Evaluation hosts
+
+`loki-behavior-gh` and `loki-sim1` (A10, same group volume). loki-sim1 needed its NVIDIA driver upgraded to
+570.195.03 for the EGL library (`upgrade_host_driver.sh`, then `setup_eval_host.sh`). A baseline runs train
+on the first host and held-out on the second; a round evaluates one candidate per host. The LeRobot work
+(Phase 0) gets its own environment on loki-sim1's local disk and runs there when no evaluation is.
