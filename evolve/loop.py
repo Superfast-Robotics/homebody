@@ -124,11 +124,13 @@ class Loop:
         return runs
 
     def both_splits(self, cid, repeats, suffix=""):
-        """Train and held-out at once: an evaluation waits for its slowest session, not two in turn."""
-        remote = self.remote  # the candidate's host: the split threads run there too
+        """Train and held-out at once: an evaluation waits for its slowest session, not two in turn. A
+        candidate's splits run on its host; a baseline's (no host pinned) on the first and last host."""
+        pinned = getattr(self._local, "remote", None)
+        hosts = {"train": pinned or self.remotes[0], "val": pinned or self.remotes[-1]}
 
         def on_host(split):
-            self._local.remote = remote
+            self._local.remote = hosts[split]
             return self.run_split(cid, split, repeats, suffix)
         with ThreadPoolExecutor(2) as pool:
             futures = {split: pool.submit(on_host, split) for split in ("train", "val")}

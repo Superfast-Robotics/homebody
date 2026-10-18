@@ -2,6 +2,7 @@
 
 [remote]
 host = "loki-behavior-gh"
+hosts = ["loki-behavior-gh", "loki-sim1"]  # evaluation hosts, one candidate each
 root = "/lambda/nfs/group-volume/workcell-sim/homebody-baseline"
 base = "homebody-astra"   # the seed checkout: its .venv runs every candidate, its assets hold the suite
 work = "astra-evolve"     # candidates and their results

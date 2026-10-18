@@ -164,3 +164,17 @@ def test_each_candidate_and_its_splits_run_on_one_host(monkeypatch, tmp_path):
     loop._local.remote = loop.remotes[1]
     loop.both_splits("c1", 1)
     assert sorted(seen) == [("c1", "train", "b"), ("c1", "val", "b")]
+
+
+def test_a_baseline_runs_train_and_val_on_separate_hosts(monkeypatch):
+    import threading
+    from types import SimpleNamespace
+
+    from evolve.loop import Loop
+    loop = Loop.__new__(Loop)
+    loop.remotes = [SimpleNamespace(host="a"), SimpleNamespace(host="b")]
+    loop._local, loop._lock = threading.local(), threading.Lock()
+    seen = []
+    monkeypatch.setattr(loop, "run_split", lambda cid, split, repeats, suffix="": seen.append((cid, split, loop.remote.host)))
+    loop.both_splits("v1", 1)
+    assert sorted(seen) == [("v1", "train", "a"), ("v1", "val", "b")]
