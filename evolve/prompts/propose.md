@@ -13,9 +13,15 @@ documented signature). Add or update unit tests under tests/harness/ for logic w
 Do basic testing of your change only (the simulator is not available, and the full suite runs
 later on the remote): run the unit tests you added or changed and the tests of the modules you
 touched, with `MUJOCO_GL=egl PYTHONPATH=src:vendor {python} -m pytest -q -x -p no:cacheprovider
-<test files>`, plus `tests/harness`; run `{ruff} check src tests`; fix every failure and finding.
+<test files>`, plus `tests/harness` and `tests/test_coder.py`; run `{ruff} check src tests`; fix every failure and finding.
 Compare floats with a tolerance, not equality. Do not run the whole suite or anything long. If you
 change names other code uses (skills, ui, tests), keep their users working.
+A built-in skill must stay loadable as the coding assistant's editable copy: its module may import only
+what `ALLOWED` in src/homebody/session/skill_module.py lists (numpy, scipy, standard math and data
+modules, homebody.skills, motion, helpers, toolkit, harness and primitives), never homebody.session,
+backends or remote, and it reads no files; calibrated hand data reaches it as `planning.jaw_samples`.
+tests/test_coder.py checks this.
+
 
 When done, reply with a short note in this form:
 Mechanism: <title>

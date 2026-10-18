@@ -8,7 +8,13 @@ current directory (a git checkout of the current version); do not read or write 
 Make a GENERAL change that helps create kinds of skill the train episodes do not ask for: a tested building block
 (documented in toolkit/API.md), a better new-skill template, clearer instructions in coder_agents.md, or better
 requests or reports in coder.py. Never name particular scenes, objects, colours, coordinates, episodes or the
-benchmark's skill names. Keep the built-in skills working. Add or update unit tests for logic worth pinning. Do basic
+benchmark's skill names. Keep the built-in skills working.
+A built-in skill must stay loadable as the coding assistant's editable copy: its module may import only
+what `ALLOWED` in src/homebody/session/skill_module.py lists (numpy, scipy, standard math and data
+modules, homebody.skills, motion, helpers, toolkit, harness and primitives), never homebody.session,
+backends or remote, and it reads no files; calibrated hand data reaches it as `planning.jaw_samples`.
+tests/test_coder.py checks this.
+Add or update unit tests for logic worth pinning. Do basic
 testing of your change only (the simulator is not available here): run the unit tests you added or changed and the
 tests of the modules you touched, with `MUJOCO_GL=egl PYTHONPATH=src:vendor {python} -m pytest -q -x -p
 no:cacheprovider <test files>`, plus tests/harness, tests/test_coder.py and tests/test_session.py, and `{ruff} check src tests`; fix every

@@ -11,7 +11,13 @@ instructions in coder_agents.md, better requests or reports in coder.py, or stru
 (stages, extension points, failure details), or a change to the skill's own decisions (how it chooses
 stances, ranks grasps, approaches, retries and verifies) when the diagnosis shows a general mechanism:
 prefer rules derived from what the robot senses over new constants. Never name particular scenes,
-objects, colours, coordinates or episodes. Keep the other skills that use shared code working. Add or update unit tests
+objects, colours, coordinates or episodes. Keep the other skills that use shared code working.
+A built-in skill must stay loadable as the coding assistant's editable copy: its module may import only
+what `ALLOWED` in src/homebody/session/skill_module.py lists (numpy, scipy, standard math and data
+modules, homebody.skills, motion, helpers, toolkit, harness and primitives), never homebody.session,
+backends or remote, and it reads no files; calibrated hand data reaches it as `planning.jaw_samples`.
+tests/test_coder.py checks this.
+Add or update unit tests
 for logic worth pinning. Do basic testing of your change only (the simulator is not available here, and
 the full suite runs later on the remote): run the unit tests you added or changed and the tests of the
 modules you touched, with `MUJOCO_GL=egl PYTHONPATH=src:vendor {python} -m pytest -q -x -p no:cacheprovider

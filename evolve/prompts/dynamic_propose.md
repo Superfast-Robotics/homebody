@@ -10,7 +10,13 @@ Make a GENERAL change: a tested helper the assistant can call (documented in too
 instructions in coder_agents.md, better requests or reports in coder.py, or structure in the skill
 (stages, extension points, failure details). Do not tune the skill's own decisions (thresholds,
 rankings, limits, verification rules), and never name particular scenes, objects, colours,
-coordinates or episodes. Keep the other skills that use shared code working. Add or update unit tests
+coordinates or episodes. Keep the other skills that use shared code working.
+A built-in skill must stay loadable as the coding assistant's editable copy: its module may import only
+what `ALLOWED` in src/homebody/session/skill_module.py lists (numpy, scipy, standard math and data
+modules, homebody.skills, motion, helpers, toolkit, harness and primitives), never homebody.session,
+backends or remote, and it reads no files; calibrated hand data reaches it as `planning.jaw_samples`.
+tests/test_coder.py checks this.
+Add or update unit tests
 for logic worth pinning. Do basic testing of your change only (the simulator is not available here, and
 the full suite runs later on the remote): run the unit tests you added or changed and the tests of the
 modules you touched, with `MUJOCO_GL=egl PYTHONPATH=src:vendor {python} -m pytest -q -x -p no:cacheprovider
