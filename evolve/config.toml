@@ -68,11 +68,12 @@ parallel = 28
 [skills.pickcarry]
 # pick, the scripted carry walk and the walk back to the pick stance (episodes with "return"), the coder off
 # (evaluation costs no credits); Astra diagnoses and patches. The end-to-end failures it targets: shallow
-# grasps that drop on the walk, approach in bins, arm deadlines. (Rounds 1-3 ran one-way, workdir pickcarry.)
+# grasps that drop on the walk, approach in bins, arm deadlines. (Rounds 1-3 ran one-way, workdir pickcarry;
+# pickcarry-return was scored before held needed the walk, a4ee5c7.)
 name = "pick"
 episodes = "skillbench/pickcarry_episodes"
 coder = false
-workdir = "pickcarry-return"
+workdir = "pickcarry-return2"
 prompts = "skill"
 editable = ["src/homebody/skills/pick.py", "src/homebody/motion/*", "src/homebody/helpers/*",
             "src/homebody/toolkit/*", "tests/*"]
