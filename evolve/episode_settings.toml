@@ -10,3 +10,6 @@ auto = true
 tries = 3
 rescues = 1
 calls = 3
+
+[recording]
+keyframes = true  # per-stage head and wrist keyframes for the coder (session/trace.py)

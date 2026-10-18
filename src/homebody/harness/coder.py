@@ -6,14 +6,27 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 CODER_HISTORY_STEPS = 6  # the agent's recent steps copied into REQUEST.md
 CODER_START = "Carry out REQUEST.md, following AGENTS.md."
+FIXES = HERE / "fixes"  # validated coder fixes from train runs (evolve/harvest_fixes.py); one JSON file each
+FIXES_SHOWN = 3
+
+
+def fixes_for(skill, code, limit=FIXES_SHOWN):
+    """The library fixes for SKILL's refusal CODE, most often validated first, as text for a request."""
+    entries = [json.loads(p.read_text()) for p in sorted(FIXES.glob("*.json"))] if FIXES.is_dir() else []
+    matching = [e for e in entries if e.get("skill") == skill and e.get("code") == code]
+    matching.sort(key=lambda e: -int(e.get("validated", 1)))
+    return [f"{e['code']} when {e.get('when', '')}: {e.get('repair', '')}\n  sketch:\n" +
+            "\n".join("    " + line for line in str(e.get("sketch", "")).splitlines()[:40]) for e in matching[:limit]]
 
 
 def coder_instructions():
     return (HERE / "coder_agents.md").read_text()
 
 
-def coder_request(*, target, origin, request, task, recent, source_root, python, limits, library):
-    """REQUEST.md for one call: the agent's request and the context it was made in."""
+def coder_request(*, target, origin, request, task, recent, source_root, python, limits, library, trace=None,
+                  fixes=()):
+    """REQUEST.md for one call: the agent's request and the context it was made in, the failed call's trace
+    and the library fixes for its refusal."""
     lines = [
         f"# Request: skill `{target}`",
         f"`skills/{target}.py` starts as {origin}.",
@@ -30,6 +43,10 @@ def coder_request(*, target, origin, request, task, recent, source_root, python,
         "",
         (f"Limits for this call: {limits['seconds']:g} s of wall time including motion, "
          f"{limits['checks']} checks, {limits['executes']} executes."),
+        *(["", "Trace of the failed call (keyframes in trace/failed/; the last ones are attached):", trace, ""]
+          if trace else []),
+        *(["Fixes that worked before for this refusal (check that they apply before reusing):",
+           *(f"- {fix}" for fix in fixes), ""] if fixes else []),
         f"Library files (read-only): {', '.join(library) or 'none yet'}.",
         f"Source tree (read-only reference): {source_root}/homebody",
         f"Python: {python}",

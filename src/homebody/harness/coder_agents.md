@@ -16,6 +16,11 @@ the robot as real: every execute moves it, and what it changes in the world stay
   `image-3` static map, `image-4` depth seen from above in the torso frame, and `state.json` (the
   observation the agent sees, and the hands). Clicks `[x, y]` (0-1000 from the top-left) in
   arguments refer to these images. Refreshed after every execute.
+- `trace/`: per-stage keyframes of skill calls: `trace/failed/` is the call you were asked to fix,
+  `trace/execute-N/` each of your executes. `trace.json` lists the stages in order (time, what the
+  hands held, the head and wrist image files), the plan outline and the result; the failed call's
+  last keyframes are attached to this prompt. Find the stage where things went wrong before
+  changing code.
 - Read-only reference, in the source tree named in REQUEST.md: `skills/` (the built-in skills and
   `contract.py`), `toolkit/API.md` (the robot interface and building blocks), `motion/`,
   `helpers/`, `harness/env.py` with `harness/API.md` (higher-level primitives: `Env(ctx, frame)`).

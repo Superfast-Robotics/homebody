@@ -10,6 +10,7 @@ from homebody import harness
 from homebody.primitives.actions import PhysicsInvalid
 from homebody.session.coder import CALL, Coder
 from homebody.session.recovery import Recovery, request
+from homebody.session.trace import Trace
 from homebody.skills.contract import COMMON_FAILURES, Context, Runner
 from homebody.skills.registry import PROMPTS, REGISTRY
 from homebody.vlm.observations import annotations, model_observation, rounded
@@ -137,6 +138,7 @@ class Session:
         self.runner = Runner(self.context)
         self.coder = Coder(settings.coder)
         self.recovery = Recovery(settings.coder.tries, settings.coder.rescues)
+        self.trace = Trace(backend, lambda: self.context.carried)
         self.history = []
         self.status = "Ready"
         self._physics_fault = None
@@ -184,6 +186,10 @@ class Session:
         if event["type"] == "observation":
             return
         self.recorder.event("skill", simulation_time=self.backend.time, event=event)
+        try:
+            self.trace.on_event(event, self.view_side)
+        except Exception as error:  # noqa: BLE001 -- a trace keyframe never fails the skill it records
+            self.recorder.event("trace_error", simulation_time=self.backend.time, error=f"{type(error).__name__}: {error}")
         if self.ui is not None:
             self.ui.skill_event({**event, "simulation_time": self.backend.time})
 
@@ -261,6 +267,7 @@ class Session:
         self.history.append({"operator_task": task})
         self.coder.reset(task_dir)  # coded skills live for one task
         self.recovery.reset()
+        self.trace.reset(task_dir if self.settings.recording.keyframes else None)
         try:
             if self.requires_reset:
                 raise PhysicsInvalid(self._physics_fault[1])

@@ -135,6 +135,7 @@ def test_the_coder_sees_the_head_image_in_its_first_prompt(tmp_path):
     from homebody.session.config import Coder as CoderSettings
     call = CoderCall.__new__(CoderCall)
     call.settings, call.workspace, call.call_dir = CoderSettings(), tmp_path / "workspace", tmp_path
+    call.failed_images = []
     (call.workspace / "observation").mkdir(parents=True)
     command = call.command(str(tmp_path / "robot.sock"))
     assert "--image" not in command
