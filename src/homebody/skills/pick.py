@@ -15,10 +15,15 @@ from homebody.helpers.trajectory import approach_path, servo_step
 from homebody.motion.arm import close_or_open, move_path, reset_arm, servo
 from homebody.motion.carry import (
     RECOVERY_FAILURES,
+    CarryState,
+    Evidence,
     RecoveryPlan,
     begin_pending,
     compact_carry,
+    evidence,
+    in_view,
     lift_pending,
+    payload_points,
     recover,
     recovery_result,
 )
@@ -106,10 +111,11 @@ def grasp(plan, ctx):
     if status != "verified":
         raise SkillFailure("LIFT_NOT_VERIFIED", "Repeated current evidence did not verify lift; grasp remains uncertain")
     frame = compact_carry(ctx, plan.epoch, plan.side)
+    frame = check_transport(plan, ctx, frame)
     shape = visible_shape(frame.target_points(plan.label), ctx.settings.grasp.shape_quantiles)
     palm = frame.palm(ctx.arms[plan.side], plan.side)
     record = ctx.carried[plan.side]
-    return Result("pick", "OK", "Repeated hand resistance and current visible lift verified",
+    return Result("pick", "OK", "Repeated hand resistance, visible lift and checked carry motion verified",
                   {"side": plan.side,
                    "observed_top_rise": float(shape.upper[2] - record["baseline_upper"]),
                    "palm_rise": float(palm[2, 3] - record["baseline_palm_height"])})
@@ -126,7 +132,8 @@ def recheck(plan, ctx):
         status, _ = recover(ctx, plan.epoch, plan.side)
     if status == "verified":
         if ctx.carried[plan.side]["label"] == plan.label:
-            compact_carry(ctx, plan.epoch, plan.side)
+            frame = compact_carry(ctx, plan.epoch, plan.side)
+            check_transport(plan, ctx, frame)
             return Result("pick", "OK", "Current repeated hand and visual evidence verifies the original grasp")
         return Result("pick", "HAND_OCCUPIED", "The original carried object is still verified; the hand was not opened")
     return recovery_result("pick", status)
@@ -452,12 +459,80 @@ def replan(plan, ctx, target, error, attempt):
 
 
 def squeeze(plan, ctx, frame):
-    """Close on by the squeeze past where the fingers stopped."""
-    closure = frame.hands[plan.side].closure + ctx.settings.grasp.squeeze
-    if closure <= 1.0:
-        return frame
-    ctx.stage("Squeezing")
-    return close_or_open(ctx, plan.epoch, plan.side, closure, ctx.settings.grasp.close_seconds)
+    """Seat contacting fingers with bounded increments of the commanded closure."""
+    settings = ctx.settings.grasp
+    for fraction in (0.5, 1.0):
+        contact = evidence(frame, ctx.arms[plan.side], plan.side,
+                           ctx.carried[plan.side], settings)
+        if settings.squeeze <= 0 or contact not in (Evidence.ENCLOSED, Evidence.HELD):
+            break
+        ctx.stage("Seating grasp")
+        frame = close_or_open(ctx, plan.epoch, plan.side, 1.0 + fraction * settings.squeeze,
+                              settings.close_seconds / 2)
+    return frame
+
+
+class TransportCheck:
+    """Keep the lifted surfaces anchored to the palm throughout a carry probe."""
+
+    def __init__(self, plan, ctx, frame):
+        self.plan, self.ctx = plan, ctx
+        self.anchor = cKDTree(points_in(inverse(frame.palm(ctx.arms[plan.side], plan.side)),
+                                       frame.target_points(plan.label)))
+
+    def update(self, frame):
+        plan, ctx = self.plan, self.ctx
+        settings, record = ctx.settings.grasp, ctx.carried[plan.side]
+        efforts = frame.hands[plan.side].finger_effort_fraction > settings.hold_effort_fraction
+        stable = bool(efforts[0] and np.any(efforts[1:]))
+        if isinstance(frame, Frame):
+            stable = stable and evidence(frame, ctx.arms[plan.side], plan.side, record,
+                                         settings) == Evidence.HELD
+            if stable:
+                local = points_in(inverse(frame.palm(ctx.arms[plan.side], plan.side)),
+                                  frame.target_points(plan.label))
+                residual = float(np.quantile(self.anchor.query(local)[0], settings.shape_quantiles[1]))
+                ctx.emit({"type": "pick_transport_evidence", "surface_residual": residual})
+                stable = residual <= settings.target_surface_tolerance
+        if not stable:
+            record["state"] = CarryState.UNCERTAIN
+            raise SkillFailure("HOLD_UNCERTAIN", "Carry motion lost opposing retention or stable visible surfaces")
+        return np.zeros(3)
+
+
+def check_transport(plan, ctx, frame):
+    """Probe a short retreat and reversal, with payload clearance and fresh hold checks."""
+    side, epoch = plan.side, plan.epoch
+    arm, record = ctx.arms[side], ctx.carried[side]
+    start = frame.palm(arm, side).copy()
+    seed = np.clip(frame.arm_joints(side), arm.lower, arm.upper)
+    clearance = Clearance(frame, ctx.arms, side, ctx.settings.collision, (plan.label,),
+                          record, exempt_start=True)
+    # Try toward the torso, then upward if the retreat is obstructed.
+    inward = -frame.world_torso[:3, 0] * 0.04
+    for delta in (inward, np.array([0., 0., 0.04])):
+        goal = start.copy()
+        goal[:3, 3] += delta
+        joints = arm.solve(inverse(frame.world_torso) @ goal, seed)
+        if (joints is not None and clearance.path_violation(seed, joints) is None
+                and clearance.path_violation(joints, seed) is None
+                and in_view(frame, payload_points(record, goal))):
+            break
+    else:
+        record["state"] = CarryState.UNCERTAIN
+        raise SkillFailure("HOLD_UNCERTAIN", "No clear, visible motion to verify transport retention")
+    check = TransportCheck(plan, ctx, frame)
+    record["state"] = CarryState.UNCERTAIN
+    ctx.stage("Checking transport retention")
+    for endpoint in (goal, start):
+        record["state"] = CarryState.UNCERTAIN
+        frame = servo(ctx, epoch, side, endpoint, tracked_target=check, exclude_labels=(plan.label,))
+        check.update(frame)
+        status, frame = recover(ctx, epoch, side)
+        if status != "verified":
+            raise SkillFailure("HOLD_UNCERTAIN", "Carry motion did not retain repeated hold evidence")
+        check.update(frame)
+    return frame
 
 
 def lift_above(frame, ctx, side):
