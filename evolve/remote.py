@@ -8,7 +8,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 # What a candidate checkout needs to run; assets come from the base by symlink.
-SYNCED = ("src", "tools", "tests", "configs", "evaluation", "vendor", "pyproject.toml")
+SYNCED = ("src", "tools", "tests", "configs", "evaluation", "vendor", "hardware", "pyproject.toml")
 RETRIES, RETRY_WAIT = 5, 30  # a dropped network: attempts and seconds between them
 NOT_CONNECTED = ("connect to host", "Could not resolve", "Network is unreachable", "Connection refused")
 
