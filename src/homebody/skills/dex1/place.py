@@ -1,7 +1,6 @@
 """The place skill: release a held object at an observed support or a captured torso XY and
 verify the observed outcome."""
 from dataclasses import dataclass, replace
-from functools import partial
 from itertools import product
 
 import numpy as np
@@ -12,26 +11,32 @@ from homebody.helpers.grasp import payload_offset, visible_shape
 from homebody.motion.arm import (
     close_or_open,
     move_joints,
-    reset_arm,
     servo,
-    servo_best_effort,
-    servo_unchecked,
 )
 from homebody.motion.carry import (
     RECOVERY_FAILURES,
     CarryState,
     RecoveryPlan,
-    compact_carry,
     continuing,
     recover,
     recovery_result,
 )
 from homebody.primitives.observations import FreshEvidence
+from homebody.skills import navigate
+from homebody.skills.contract import Result, SkillFailure, click_argument, side_argument
+from homebody.skills.dex1.place_geometry import (
+    extract,
+    hand_extent,
+    jaw_frame,
+    opened,
+    opening_clear,
+    opposed,
+    require_hold,
+    return_checked,
+    withdrawal,
+)
 from homebody.toolkit.release import release_alternatives
 from homebody.vlm.topdown import normalized_click
-
-from .. import navigate
-from ..contract import Result, SkillFailure, click_argument, side_argument
 
 NEEDS = ("base_velocity", "arm_target", "grip", "advance", "stop")
 
@@ -51,7 +56,7 @@ PROMPT = ('place: hand, the holding hand, and one destination. release_point_100
 
 @dataclass(frozen=True)
 class Plan:
-    """One checked release. `pre_joints` is None beyond reach, `point` is the original destination used to
+    """One checked release. `point` is the original destination used to
     verify landing (world), and `released` is the let-go object's (centre, footprint radius, top)."""
     epoch: int
     side: str
@@ -66,6 +71,7 @@ class Plan:
     target_key: tuple | None = None
     measured: np.ndarray | None = None
     selected_point: np.ndarray | None = None
+    jaw: np.ndarray | None = None
 
 
 def prepare(arguments, selected, current, planning):
@@ -78,7 +84,8 @@ def prepare(arguments, selected, current, planning):
     if carried is None:
         raise SkillFailure("NOT_HOLDING", "No carried object in this hand")
     arm, settings = planning.arms[side], planning.settings
-    if not continuing(current, arm, side, carried, settings.grasp):
+    if not (continuing(current, arm, side, carried, settings.grasp) and
+            opposed(current.hands[side], settings.grasp)):
         return RecoveryPlan(current.epoch, side, carried["label"])
     if surface == carried["label"]:
         raise SkillFailure("INVALID_ARGUMENT",
@@ -95,6 +102,7 @@ def plan_release(side, surface, point, height, selected, current, planning, targ
     """The checked release for a destination: a reachable pose, its pre-pose and a clear arm path."""
     carried, arm, settings = planning.carried[side], planning.arms[side], planning.settings
     withdraw = current.palm(arm, side)
+    jaw = jaw_frame(planning.jaw_samples.get(side), current.hands[side].closure)
     if surface is not None:
         palm, release = support_release(current, surface, point, height, carried, withdraw, settings)
         search = ReleaseSearch.support_click(settings)
@@ -117,18 +125,14 @@ def plan_release(side, surface, point, height, selected, current, planning, targ
                 max(abs(d) for d in search.drops), settings.collision.cloud_margin)
 
     pre, palm, pre_q, grasp_q = release_pose(
-        arm, current.world_torso, palm, center_offset, seed, search, alternatives())
+        arm, current.world_torso, palm, center_offset, seed, search, alternatives(),
+        clearance=clearance, jaw=jaw, carried=carried)
     selected_center = (palm @ carried["palm_to_payload"])[:3, 3]
     short = float(np.linalg.norm(selected_center[:2] - release[:2]))
-    blocked = None if grasp_q is None else (clearance.path_violation(seed, pre_q) or
-                                            clearance.path_violation(pre_q, grasp_q))
-    if blocked:
-        raise SkillFailure("COLLISION", f"The arm path to the selected release pose is blocked: {blocked}")
-    if grasp_q is None:  # beyond reach: let go where the arm gets
-        pre = palm.copy()
-        pre[2, 3] += search.approach_lift
+    if grasp_q is None:
+        raise SkillFailure("ARM_NOT_REACHED", "No reachable collision-checked loaded release path")
     return Plan(current.epoch, side, carried["label"], release, pre_q, pre, palm, surface is not None,
-                short_m=short, selected_point=selected_center.copy())
+                short_m=short, selected_point=selected_center.copy(), jaw=jaw)
 
 
 def execute(plan, ctx):
@@ -136,18 +140,22 @@ def execute(plan, ctx):
     if isinstance(plan, RecoveryPlan):
         ctx.stage("Checking carry")
         status, _ = recover(ctx, plan.epoch, plan.side)
+        if plan.side in ctx.carried and not opposed(ctx.observe(plan.epoch).hands[plan.side], ctx.settings.grasp):
+            ctx.carried[plan.side]['state'] = CarryState.UNCERTAIN
+            return Result('place', 'HOLD_UNCERTAIN', 'Both Dex1 jaws lack sustained hold evidence',
+                          {'hand': plan.side})
         return replace(recovery_result("place", status), details={"hand": plan.side})
     epoch, side, held, settings = plan.epoch, plan.side, (plan.label,), ctx.settings
 
     if plan.target_key is not None:
         ctx.carried[side]["place_target"] = (plan.target_key, plan.point.copy())
     ctx.stage("Approaching support" if plan.support else "Approaching release point")
-    reach = servo if plan.pre_joints is not None else partial(servo_best_effort, position_only=True)
+    reach = servo
     if plan.pre_joints is not None:
         move_joints(ctx, epoch, side, plan.pre_joints, held)
     reach(ctx, epoch, side, plan.pre, exclude_labels=held)
-    if plan.pre[2, 3] > plan.palm[2, 3]:
-        ctx.stage("Lowering")
+    if not np.allclose(plan.pre, plan.palm):
+        ctx.stage("Inserting held object")
         reach(ctx, epoch, side, plan.palm, exclude_labels=held)
     center_in_palm = attached_center(plan, ctx)
     measured = points_in(ctx.observe(epoch).palm(ctx.arms[side], side), center_in_palm)
@@ -158,40 +166,51 @@ def execute(plan, ctx):
     plan = replace(plan, measured=measured,
                    short_m=float(np.linalg.norm(measured[:2] - plan.point[:2])))
 
+    try:
+        current = require_hold(ctx, epoch, side)
+    except SkillFailure:
+        ctx.carried[side]['state'] = CarryState.UNCERTAIN
+        raise
+    blocked = opening_clear(current, ctx.planning(), side, plan.label)
+    if blocked:
+        raise SkillFailure('COLLISION', f'Jaw opening is blocked: {blocked}')
     ctx.carried[side]["state"] = CarryState.UNCERTAIN
     ctx.stage("Releasing")
     frame = close_or_open(ctx, epoch, side, 0.0, settings.grasp.open_seconds)
     ctx.stage("Checking release")
-    if frame.hands[side].closure > settings.placement.open_closure_limit:
+    if not opened(frame.hands[side], settings):
         raise SkillFailure("RELEASE_NOT_VERIFIED", f"The {side} hand's measured fingers did not open")
 
     ctx.stage("Retracting")
     current = ctx.observe(epoch)
     target = current.palm(ctx.arms[side], side)
-    plan = replace(plan, released=released_extent(target, ctx.carried[side]))
-    target[2, 3] += max(settings.placement.withdraw_height,
-                        object_top(target, ctx.carried[side]) + HAND_HANG_M
-                        + settings.placement.withdraw_clearance - target[2, 3])
-    back = current.world_torso[:2, 3] - target[:2, 3]
-    target[:2, 3] += settings.placement.withdraw_back * back / max(np.linalg.norm(back), 1e-9)
-    servo_unchecked(ctx, epoch, side, target)
+    plan = replace(plan, released=released_extent(target, ctx.carried[side],
+                                                  hand_extent(current, ctx.arms[side], side)))
+    open_jaw = jaw_frame(ctx.planning().jaw_samples.get(side), current.hands[side].closure)
+    target = withdrawal(target, open_jaw, ctx.carried[side], settings.placement.withdraw_clearance,
+                        hand_extent(current, ctx.arms[side], side))
+    extract(ctx, epoch, side, target)
 
     return verify_settled(plan, ctx, center_in_palm)
 
 
 def abort(plan, ctx):
-    """Keep a held object tucked; once the hand has opened, return the emptied arm to rest."""
+    """Withdraw a verified load along its jaw axis; stop if release is uncertain."""
     if isinstance(plan, RecoveryPlan) or ctx.observations.epoch != plan.epoch:
         return
-    if plan.side in ctx.carried and ctx.carried[plan.side]["state"] != CarryState.VERIFIED:
-        hand = ctx.observe(plan.epoch).hands[plan.side]
-        if hand.closure <= ctx.settings.placement.open_closure_limit and not hand.retained(ctx.settings.grasp):
-            ctx.carried.pop(plan.side)  # a tuck of an empty hand would refuse
     if plan.side not in ctx.carried:
-        return_arm(plan, ctx)
+        ctx.actions.stop(plan.epoch)
         return
-    ctx.stage("Returning arm")
-    compact_carry(ctx, plan.epoch, plan.side)
+    if ctx.carried[plan.side]['state'] != CarryState.VERIFIED:
+        # An opening or extraction failure must not start a blind tuck/reset.
+        ctx.actions.stop(plan.epoch)
+        return
+    require_hold(ctx, plan.epoch, plan.side)
+    ctx.stage("Withdrawing held object")
+    frame = ctx.observe(plan.epoch)
+    target = withdrawal(frame.palm(ctx.arms[plan.side], plan.side), plan.jaw,
+                        ctx.carried[plan.side], ctx.settings.placement.withdraw_clearance)
+    servo(ctx, plan.epoch, plan.side, target, exclude_labels=(plan.label,))
 
 
 def destination(arguments, selected, settings):
@@ -283,7 +302,8 @@ class ReleaseSearch:
                    placement.reach_margin_steps * placement.pull_step, 0.)
 
 
-def release_pose(arm, world_torso, palm, center_offset, seed, search, alternatives=()):
+def release_pose(arm, world_torso, palm, center_offset, seed, search, alternatives=(),
+                 *, clearance=None, jaw=None, carried=None):
     """The first solvable (pre, palm, pre_q, grasp_q) of the search, or (palm, palm, None, None).
     CENTER_OFFSET is palm to object centre in world axes. ALTERNATIVES are tried
     after unshifted yaw/drop candidates, before any pullback, without an outward probe."""
@@ -312,24 +332,33 @@ def release_pose(arm, world_torso, palm, center_offset, seed, search, alternativ
         candidate[2, 3] -= drop
         return candidate
 
-    for candidate, margin in candidates():
-        pre, probe = candidate.copy(), candidate.copy()
-        pre[2, 3] += search.approach_lift
-        probe[:2, 3] -= margin * toward
-        pre_q = arm.solve(inverse(world_torso) @ pre, seed)
-        grasp_q = None if pre_q is None else arm.solve(inverse(world_torso) @ candidate, pre_q)
-        if grasp_q is not None and arm.solve(inverse(world_torso) @ probe, grasp_q) is not None:
+    for candidate, _ in candidates():
+        preposes = [candidate.copy()]
+        preposes[0][2, 3] += search.approach_lift
+        if jaw is not None:
+            axial = withdrawal(candidate, jaw, carried, search.approach_lift + 0.02)
+            preposes.insert(0, axial)
+        for pre in preposes:
+            pre_q = arm.solve(inverse(world_torso) @ pre, seed)
+            grasp_q = None if pre_q is None else arm.solve(inverse(world_torso) @ candidate, pre_q)
+            if grasp_q is None:
+                continue
+            if clearance is not None and (clearance.path_violation(seed, pre_q) or
+                                          clearance.path_violation(pre_q, grasp_q)):
+                continue
+            # Reach-margin probes must not discard an otherwise reachable, clear target.
             return pre, candidate, pre_q, grasp_q
     return palm, palm, None, None
 
 
 
 
-def released_extent(palm, record):
+def released_extent(palm, record, hand_points):
     """The released object's world centre, footprint radius including the open hand, and top."""
     payload = palm @ record["palm_to_payload"]
     extent = np.abs(payload[:3, :3]) @ record["payload_half"]
-    return payload[:3, 3], float(np.linalg.norm(extent[:2]) + HAND_WIDTH_M), float(payload[2, 3] + extent[2])
+    return payload[:3, 3], float(np.linalg.norm(extent[:2]) +
+                                 np.max(np.linalg.norm(hand_points[:, :2] - palm[:2, 3], axis=1))), float(payload[2, 3] + extent[2])
 
 
 def object_top(palm, record):
@@ -387,8 +416,8 @@ class Settling:
         """Whether this frame completes the stable run. The carry clears on repeated separation."""
         plan, ctx, settings = self.plan, self.ctx, self.ctx.settings
         hand = frame.hands[plan.side]
-        opened = hand.closure <= settings.placement.open_closure_limit and not hand.retained(settings.grasp)
-        self.open_hand.update(frame, opened)
+        is_open = opened(hand, settings)
+        self.open_hand.update(frame, is_open)
         if not frame.visible(plan.label):
             self.landed.update(frame, False)
             self.separated.update(frame, False)
@@ -397,7 +426,7 @@ class Settling:
         self.seen = True
         shape = visible_shape(frame.target_points(plan.label), settings.grasp.shape_quantiles)
         attached = points_in(frame.palm(ctx.arms[plan.side], plan.side), self.center_in_palm)
-        separated = opened and np.linalg.norm(shape.center - attached) > min(
+        separated = is_open and np.linalg.norm(shape.center - attached) > min(
             settings.grasp.recovery_separation, settings.placement.withdraw_height * .5)
         count = self.separated.update(frame, separated)
         if count is not None and count >= settings.grasp.recovery_confirmations:
@@ -430,11 +459,11 @@ def unseen_release(plan, ctx, open_count):
         ctx.carried.pop(plan.side, None)
         return failed
     final = ctx.observe(plan.epoch).hands[plan.side]
-    if final.closure > ctx.settings.placement.open_closure_limit or final.retained(ctx.settings.grasp):
+    if not opened(final, ctx.settings):
         raise SkillFailure("OUTCOME_UNKNOWN",
                            f"The target is not visible and the returned {plan.side} hand may still retain it")
     ctx.carried.pop(plan.side, None)
-    return placed(plan, "the hand opened and is empty")
+    raise SkillFailure("PLACEMENT_NOT_VERIFIED", "Both jaws opened, but the landing is not visible")
 
 
 def placed(plan, message, landing=None):
@@ -457,17 +486,6 @@ def complete_return(plan, ctx):
     return None
 
 
-HAND_HANG_M = 0.05  # the open hand hangs 4-5 cm below the palm
-HAND_WIDTH_M = 0.10  # the open hand's reach sideways from the palm
-
-
 def return_arm(plan, ctx):
-    """The one arm reset (`reset_arm`), kept over the object just released while over it."""
-    above = None
-    if plan.released is not None:
-        frame = ctx.observe(plan.epoch)
-        center, radius, top = plan.released
-        local = points_in(inverse(frame.world_torso), np.r_[center[:2], top])
-        above = (local[:2], radius, local[2] + HAND_HANG_M + ctx.settings.placement.withdraw_clearance)
-    if not reset_arm(ctx, plan.epoch, plan.side, above):
-        raise SkillFailure("ARM_NOT_REACHED", "Measured arm did not return near its rest pose")
+    """Return the empty arm against live depth, including the released object."""
+    return_checked(ctx, plan.epoch, plan.side)
