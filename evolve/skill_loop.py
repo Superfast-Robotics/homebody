@@ -5,6 +5,8 @@ as the skill baseline.
     python3 -m evolve.skill_loop [--profile P] init COMMIT       Astra writes the skill's first version from COMMIT
     python3 -m evolve.skill_loop [--profile P] baseline COMMIT   measure COMMIT on every episode
     python3 -m evolve.skill_loop [--profile P] run --rounds N    diagnose, patch, evaluate, accept
+        [--strategy greedy|evolve]   greedy (one patch per mechanism, from the best) or evolve (evo_loop.py:
+                                     a population search); default: the profile's `strategy`, else greedy
     python3 -m evolve.skill_loop [--profile P] test CID          the version on the test episodes
     python3 -m evolve.skill_loop [--profile P] status
 
@@ -452,10 +454,14 @@ def main(argv=None):
     run = sub.add_parser("run")
     run.add_argument("--rounds", type=int, required=True)
     run.add_argument("--diagnose-model", help="Codex model for the diagnoses of this run (default: [skill] model)")
+    run.add_argument("--strategy", choices=("greedy", "evolve"), help="the round's search (default: profile strategy)")
     sub.add_parser("test").add_argument("cid")
     sub.add_parser("status")
     args = parser.parse_args(argv)
     loop = SkillLoop(args.profile)
+    if args.command == "run" and (args.strategy or loop.cfg.get("strategy", "greedy")) == "evolve":
+        from .evo_loop import EvoLoop
+        loop = EvoLoop(args.profile)
     if args.command == "init":
         print(loop.init(args.commit))
     elif args.command == "baseline":
