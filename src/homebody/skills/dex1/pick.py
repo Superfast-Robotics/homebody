@@ -8,24 +8,22 @@ import numpy as np
 from scipy.spatial import cKDTree
 
 from homebody.helpers.collision import HAND_END_LINKS, Clearance
-from homebody.helpers.geometry import inverse, points_in, rotation_error, wrap
-from homebody.helpers.grasp import Shape, candidates, visible_shape
+from homebody.helpers.geometry import inverse, points_in, rotation_error, transform, wrap
+from homebody.helpers.grasp import Shape, closing_angles, visible_shape
 from homebody.helpers.target import TargetTrack, arm_occlusion_evidence
 from homebody.helpers.trajectory import approach_path, servo_step
-from homebody.motion.arm import close_or_open, move_path, reset_arm, servo
+from homebody.motion.arm import close_or_open, move_path, reset_arm, servo, servo_best_effort
 from homebody.motion.carry import (
     RECOVERY_FAILURES,
     RecoveryPlan,
     begin_pending,
     compact_carry,
-    lift_pending,
     recover,
     recovery_result,
 )
 from homebody.primitives.observations import Frame, FreshEvidence, ObservationError
-
-from .. import navigate
-from ..contract import Result, SkillFailure, click_argument, side_argument
+from homebody.skills import navigate
+from homebody.skills.contract import Result, SkillFailure, click_argument, side_argument
 
 NEEDS = ("base_velocity", "arm_target", "grip", "advance", "stop")
 
@@ -92,6 +90,7 @@ def grasp(plan, ctx):
     ctx.stage("Closing hand")
     frame = close_or_open(ctx, plan.epoch, plan.side, 1.0, ctx.settings.grasp.close_seconds)
     frame = squeeze(plan, ctx, frame)
+    require_contact(plan, ctx, frame)
     ctx.carried[plan.side]["lift_target"] = lift_above(frame, ctx, plan.side)
     ctx.stage("Lifting")
     lift_pending(ctx, plan.epoch, plan.side)
@@ -120,6 +119,8 @@ def recheck(plan, ctx):
     ctx.stage("Checking carry")
     status, _ = recover(ctx, plan.epoch, plan.side)
     if status == "enclosed" and plan.resume_lift:
+        frame = squeeze(plan, ctx, ctx.observe(plan.epoch))
+        require_contact(plan, ctx, frame)
         ctx.stage("Lifting")
         lift_pending(ctx, plan.epoch, plan.side)
         ctx.stage("Verifying grasp")
@@ -166,18 +167,21 @@ def approach_stance(side, label, current, planning):
 
 
 def grasp_distance(side, shape, current, planning):
-    """How far ahead of the base (m) the object's centre sits when the pre-grasp palm is
-    grasp_range from the shoulder. UNREACHABLE when no stance brings it that close."""
+    """Estimate a stance for a level or oblique wrist; exact reach is gated by IK."""
     settings, arm = planning.settings.grasp, planning.arms[side]
-    top = points_in(inverse(current.world_torso), shape.upper)[2]
-    rise = top + settings.approach_height - arm.shoulder[2]
+    jaw = np.mean([np.asarray(sample["palm_to_jaw"])[0, 3] for sample in planning.jaw_samples[side]])
+    center = points_in(inverse(current.world_torso), shape.center)[2]
+    upper = points_in(inverse(current.world_torso), shape.upper)[2]
+    # An oblique insertion raises the wrist behind the pads. Do not reject a low
+    # target on the assumption that its wrist must be at the object's mid-height.
+    height = np.clip(arm.shoulder[2], center, upper + jaw * np.sin(np.pi / 3))
+    rise = height - arm.shoulder[2]
     if abs(rise) >= settings.grasp_range:
         where = "above" if rise > 0 else "below"
         raise SkillFailure("UNREACHABLE", f"The object's pre-grasp point is {abs(rise):.2f} m {where} "
                                           f"the shoulder; no stance brings it within the arm's "
                                           f"grasp range of {settings.grasp_range:.2f} m", {"final": True})
     horizontal = np.sqrt(settings.grasp_range ** 2 - rise ** 2)
-    jaw = np.mean([np.asarray(sample["palm_to_jaw"])[0, 3] for sample in planning.jaw_samples[side]])
     return float(arm.shoulder[0] + horizontal + jaw)
 
 
@@ -204,7 +208,9 @@ def plan_target(side, label, current, planning, blocked=()):
         raise SkillFailure("CALIBRATION_MISSING", "Robot-only jaw calibration is required")
     points = current.target_points(label)
     search = GraspSearch(side, label, current, planning, blocked)
-    fitted = _width_fitted_candidates(points, samples, planning.settings.grasp, planning.cancelled)
+    shoulder = points_in(current.world_torso, planning.arms[side].shoulder)
+    forward = visible_shape(points, planning.settings.grasp.shape_quantiles).center - shoulder
+    fitted = _width_fitted_candidates(points, samples, planning.settings.grasp, planning.cancelled, forward)
     best = search.best(list(search.reachable(fitted)))
     if planning.cancelled():
         raise SkillFailure("CANCELLED", "Operator cancelled grasp preparation")
@@ -234,18 +240,52 @@ class ReachableGrasp:
     clearance: float = 0.0
 
 
-def _width_fitted_candidates(points, samples, settings, cancelled):
-    """Grasp candidates whose measured width a calibrated jaw opening fits within aperture_error."""
-    apertures = [sample["aperture"] for sample in samples]
-    limits = min(apertures) - settings.aperture_error, max(apertures) + settings.aperture_error
-    for sample in samples:
+def _width_fitted_candidates(points, samples, settings, cancelled, forward=None):
+    """Forward and oblique insertions, with either horizontal or vertical jaw closure.
+
+    Fit the full visible span between the jaws, never a narrow slice hiding a wider
+    obstruction. Use one calibrated frame per width, rather than repeating identical
+    parallel-jaw poses at every closure. The pad origin sits inside the near surface;
+    the wrist stays behind it along the calibrated approach axis.
+    """
+    shape = visible_shape(points, settings.shape_quantiles)
+    forward = np.array([1., 0., 0.]) if forward is None else np.array(forward, dtype=float)
+    forward[2] = 0.
+    forward /= max(np.linalg.norm(forward), 1e-9)
+    heading = np.arctan2(forward[1], forward[0])
+    angles = np.unique(np.mod(np.r_[heading, closing_angles(points, settings.yaw_samples)], 2 * np.pi))
+    apertures = np.array([sample["aperture"] for sample in samples])
+    # Leave real entry clearance; aperture_error is not extra mechanical travel.
+    minimum, maximum = apertures.min(), apertures.max() - settings.aperture_error
+    for angle in angles:
         if cancelled():
             raise SkillFailure("CANCELLED", "Operator cancelled grasp preparation")
-        palm_to_jaw = np.asarray(sample["palm_to_jaw"])
-        for tier, pre, palm, shape in candidates(points, palm_to_jaw, limits, settings):
-            width = np.ptp(points @ (palm @ palm_to_jaw)[:3, 0])
-            if abs(sample["aperture"] - width) <= settings.aperture_error:
-                yield GraspCandidate(tier, width, pre, palm, shape)
+        horizontal = np.array([np.cos(angle), np.sin(angle), 0.])
+        if horizontal @ forward < 0.5 - 1e-9:
+            continue
+        for pitch_index, pitch in enumerate((0., np.pi / 6, np.pi / 3)):
+            approach = horizontal * np.cos(pitch) + np.array([0., 0., -np.sin(pitch)])
+            lateral = np.array([-np.sin(angle), np.cos(angle), 0.])
+            up = np.cross(approach, lateral)
+            for roll in range(4):
+                closing = (lateral, up, -lateral, -up)[roll]
+                across = np.cross(approach, closing)
+                rotation = np.column_stack((closing, across, approach))
+                local = points @ rotation
+                lower, upper = np.quantile(local, settings.shape_quantiles, axis=0)
+                width = np.ptp(local[:, 0])
+                if not minimum < width <= maximum:
+                    continue
+                sample = samples[int(np.argmin(abs(apertures - width)))]
+                palm_jaw = np.asarray(sample["palm_to_jaw"])
+                insertion = min(settings.depth_max, (upper[2] - lower[2]) * settings.depth_fraction)
+                for tier, scale in enumerate(settings.insertion_depth_scales):
+                    center = (lower + upper) / 2
+                    center[2] = lower[2] + insertion * scale
+                    palm = transform(rotation @ center, rotation) @ inverse(palm_jaw)
+                    pre = palm.copy()
+                    pre[:3, 3] -= approach * settings.approach_height
+                    yield GraspCandidate(tier * 3 + pitch_index, width, pre, palm, shape)
 
 
 class GraspSearch:
@@ -389,11 +429,11 @@ def approach(plan, ctx, target):
     if len(plan.approach_joints):
         ctx.stage("Following grasp path")
         move_path(ctx, plan.epoch, plan.side, plan.approach_joints, tracked_target=target)
-    ctx.stage("Aligning above target")
+    ctx.stage("Aligning with target")
     correct_alignment(plan, ctx, target)
     servo(ctx, plan.epoch, plan.side, plan.pre, tracked_target=target)
     target.begin_descent()
-    ctx.stage("Descending to grasp")
+    ctx.stage("Inserting jaws")
     return servo(ctx, plan.epoch, plan.side, plan.palm, tracked_target=target, exclude_labels=(plan.label,))
 
 
@@ -452,12 +492,35 @@ def replan(plan, ctx, target, error, attempt):
 
 
 def squeeze(plan, ctx, frame):
-    """Close on by the squeeze past where the fingers stopped."""
-    closure = frame.hands[plan.side].closure + ctx.settings.grasp.squeeze
-    if closure <= 1.0:
-        return frame
+    """Keep the position servos loaded even when a wide object stops closure early."""
     ctx.stage("Squeezing")
-    return close_or_open(ctx, plan.epoch, plan.side, closure, ctx.settings.grasp.close_seconds)
+    return close_or_open(ctx, plan.epoch, plan.side, 1.0 + ctx.settings.grasp.squeeze,
+                         ctx.settings.grasp.close_seconds)
+
+
+def opposed_jaws(hand, settings):
+    """Index and middle are aliases for jaw 2, not two independent contacts."""
+    return bool(np.all(hand.finger_effort_fraction[:2] > settings.hold_effort_fraction))
+
+
+def require_contact(plan, ctx, frame):
+    """Do not lift on a single jaw or a transient impact. Ownership stays pending."""
+    samples = FreshEvidence(plan.epoch)
+    settings = ctx.settings.grasp
+    for index in range(settings.recovery_samples):
+        if index:
+            ctx.advance(plan.epoch, settings.recovery_tick)
+            frame = ctx.observe(plan.epoch)
+        count = samples.update(frame, opposed_jaws(frame.hands[plan.side], settings))
+        if count is not None and count >= settings.recovery_confirmations:
+            return
+    raise SkillFailure("LIFT_NOT_VERIFIED", "Both jaws did not sustain contact before lift; grasp remains uncertain")
+
+
+def lift_pending(ctx, epoch, side):
+    """Translate upward with the grasp orientation and measured jaw/payload geometry."""
+    record = ctx.carried[side]
+    return servo_best_effort(ctx, epoch, side, record["lift_target"], exclude_labels=(record["label"],))
 
 
 def lift_above(frame, ctx, side):
@@ -622,8 +685,13 @@ class PickTarget:
         """TARGET_LOST unless the palm lies within the planned descent's corridor."""
         grasp, motion = self.ctx.settings.grasp, self.ctx.settings.motion
         offset = palm[:3, 3] - goal[:3, 3]
-        if (np.linalg.norm(offset[:2]) > grasp.approach_height or
-                not -motion.palm_tolerance <= offset[2] <= grasp.approach_height + grasp.target_shift or
+        retreat = self.plan.pre[:3, 3] - self.plan.palm[:3, 3]
+        length = float(np.linalg.norm(retreat))
+        axis = retreat / max(length, 1e-9)
+        along = float(offset @ axis)
+        across = offset - along * axis
+        if (np.linalg.norm(across) > motion.palm_tolerance + grasp.target_surface_tolerance or
+                not -motion.palm_tolerance <= along <= length + grasp.target_shift or
                 np.linalg.norm(rotation_error(goal[:3, :3], palm[:3, :3])) > self.limits.palm_turn):
             raise SkillFailure("TARGET_LOST", "Partial target view outside the final approach corridor")
 
