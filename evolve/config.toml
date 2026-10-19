@@ -387,3 +387,71 @@ it for extraction or carrying, which it cannot model. Whether pick uses it at al
 Both the train and the held-out episodes of this benchmark are development data (versions have been judged
 on them many times); claims about unseen layouts need episodes no round has used.
 """
+
+[skills.dex1-place-wh]
+# the G1 with Dex1-1 grippers (configs/dex1.toml): its own place (skills/dex1/place.py) on warehouse-weighted place
+# episodes (evolve/warehouse_episodes.py ... place): the Dex1 pick (e006c5) picks and carries as setup
+name = "place"
+source = "src/homebody/skills/dex1/{skill}.py"
+episodes = "skillbench/dex1_warehouse_place_episodes"
+coder = false
+workdir = "dex1-place-wh"
+prompts = "skill"
+strategy = "evolve"
+objective = "held"           # stage 2: placed (the evaluator's placement test); the same completed-outcome rule
+weights = { wh = 2.0 }
+speed_acceptance = false
+evo_candidates = 5
+evo_models = ["gpt-6-astra", "gpt-6.1-sol"]
+evo_lesson_model = "gpt-6.1-sol"
+services = ["/lambda/nfs/group-volume/workcell-sim/homebody-baseline/curobo_dex1/curobo_dex1_server.sh start > /dev/null 2>&1 < /dev/null"]
+editable = ["src/homebody/skills/dex1/place.py", "src/homebody/skills/dex1/place_*.py", "tests/*"]
+model = "gpt-6-astra"
+effort = "medium"
+parallel = 28
+brief_note = """
+This benchmark's robot is the G1 with Unitree Dex1-1 two-jaw parallel grippers in place of the Dex3
+hands (settings `[robot] hands = "dex1"`, model and calibration in assets/robot/dex1, built by
+tools/build_dex1_hand.py). Its pick and place are `src/homebody/skills/dex1/`; the evaluated pick is a Dex1-specific
+forward/oblique grasp search (inspect the evaluated commit); the Dex3 skills, which other robots still
+use, and the shared code (`motion/`, `helpers/`, `toolkit/`)
+is read-only here: put anything Dex1-specific in `src/homebody/skills/dex1/` (new modules there are
+fine) and tests.
+
+The gripper: two jaws on prismatic joints (`<side>_hand_finger_1_joint` / `_2_joint`, 0.0245 m open,
+sliding toward each other along the palm frame's y axis); jaw opening about 0.095 m fully open down to
+about 0.006 m; read the jaw actuator limits from the model and calibration (realized contact force depends
+on closure error and contact geometry); the pads sit 0.09-0.14 m out along the palm frame's +x axis, which
+points straight out of the wrist along the forearm. So the jaws approach along the forearm, unlike
+Dex3, whose fingers close beside the palm and approach perpendicular to the forearm: the copied
+pick's top-down grasps need the forearm vertical, which this arm cannot reach at table height (the
+copy refuses NO_GRASP with nothing reachable). `planning.jaw_samples[side]` holds the calibrated jaw
+frames (columns closing, across, approach; origin between the pads) across the closure. A hand's
+`HandState` joints count from the open pose; its finger evidence is thumb = jaw 1, index and middle =
+jaw 2; `grip` closure 0 opens and 1 closes most of the way, with the squeeze (up to 1.12) for a firm
+hold.
+
+Most of this benchmark's episodes (names starting `wh`) are in two warehouse scene packages: the robot picks a
+front-row product with the built-in Dex1 pick (setup, not scored), carries it along an aisle to the destination
+(a free patch of another shelf bay, or a staging table) and calls place there with a release point on it; the
+rest are generated place scenes. Warehouse placing is the priority: warehouse episodes count twice when versions
+are judged, and results are reported separately for warehouse and generated episodes.
+
+A collision-aware arm planner is available (cuRobo; `settings.curobo` in configs/dex1.toml points at
+three planning servers per evaluation host): `homebody.helpers.curobo.CuroboPlanner(ctx.settings).plan(frame,
+side, pre_world_poses, palm_world_poses, exclude_labels)` takes WORLD-frame palm poses and integer label ids
+and returns the first (pre-grasp, grasp) pair it reaches without collision against the head camera's
+depth (the excluded labels removed), with arm joint paths for the approach and the descent; the harness's
+`env.plan_path(pre_poses, goal_poses, side, exempt=targets)` takes TORSO-frame poses and target objects
+(src/homebody/harness/env.py, API.md). A request takes about 1.5-3 s on an idle server and longer while
+other episodes queue on it. Its limits: it sees only the current depth (unseen space counts as free,
+voxels near the arm's start are cleared), it plans with the gripper's own collision spheres (slightly
+inflated), the planning hand open and the waist, the other arm and the other hand as measured when the
+request is made (a server whose posture differs rebuilds first, 30-40 s, and the reply's `reconfigured_for`
+names the joints), and it has no model of a held object, so it does not plan loaded extraction or carry paths. Use it only for the unloaded approach (before the jaws close) and
+execute its path with `env.move_through` (live-checked), never `env.follow` (thinned, unchecked); do not use
+it for extraction or carrying, which it cannot model. Whether pick uses it at all is the skill's decision.
+
+Both the train and the held-out episodes of this benchmark are development data (versions have been judged
+on them many times); claims about unseen layouts need episodes no round has used.
+"""

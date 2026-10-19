@@ -1,10 +1,13 @@
-"""warehouse_episodes.py BASE OUT [SETTINGS [MIXED_FROM]]: pick episodes in the warehouse scene packages.
+"""warehouse_episodes.py BASE OUT [SETTINGS [MIXED_FROM [SKILL]]]: pick (default) or place episodes in the warehouse
+scene packages.
 
 For every warehouse scene with a task sequence (configs/warehouse_*.json, its scene under
 assets/real2sim/), one episode per movable object in the front rows (within ROW_DEPTH_M of the
 frontmost object): the robot stands in front of it at the sequence's stance distance, picks it with the
 right hand, carries it along the sequence's carry path to its destination and walks back. Every third
-object (by position) is val, the rest train; each object also gets a second stance shifted by up to 8 cm.
+object (by position) is val, the rest train; each object also gets a second stance shifted by up to 8 cm. A place
+episode (SKILL place) picks the object as setup, carries it to the sequence's destination stance and calls place
+there with the sequence's release (skill_bench.py run_place).
 SETTINGS (relative to the candidate root, e.g. configs/dex1.toml) goes into every episode. MIXED_FROM, an
 episodes folder, adds every third of its train and every second of its val episodes, so the benchmark
 stays mostly warehouse but still covers other scenes. Run on the remote with BASE's .venv (needs mujoco).
@@ -29,7 +32,7 @@ def objects(scene):
     return [(model.body(b).name, *map(float, data.xpos[b][:2])) for b in bodies]
 
 
-def scene_episodes(base, sequence, settings):
+def scene_episodes(base, sequence, settings, skill="pick"):
     steps = json.loads(sequence.read_text())["steps"]
     first = steps[0]
     scene = base / "assets/real2sim" / sequence.stem.split("_three")[0].split("_four")[0]
@@ -47,19 +50,21 @@ def scene_episodes(base, sequence, settings):
         for variant in range(2):
             rng = random.Random(f"{scene.name}/{name}/{variant}")
             dx, dy = (rng.uniform(-SHIFT_M, SHIFT_M) for _ in range(2)) if variant else (0.0, 0.0)
-            episode = {"id": f"wh{split}_{scene.name}_{name}_v{variant}", "skill": "pick", "scene": str(scene),
+            episode = {"id": f"wh{split}_{scene.name}_{name}_v{variant}", "skill": skill, "scene": str(scene),
                        "family": scene.name, "step": step,
-                       "stance": [step["goal"][0] + dx, step["goal"][1] + dy, step["goal"][2]], "return": True}
+                       "stance": [step["goal"][0] + dx, step["goal"][1] + dy, step["goal"][2]]}
+            if skill == "pick":  # the pick benchmark walks back to the stance after the carry
+                episode["return"] = True
             if settings:
                 episode["settings"] = settings
             episodes.append((split, episode))
     return episodes
 
 
-def main(base, out, settings="", mixed_from=""):
+def main(base, out, settings="", mixed_from="", skill="pick"):
     base, out = Path(base).resolve(), Path(out)
     episodes = [item for sequence in sorted((base / "configs").glob("warehouse_*.json"))
-                for item in scene_episodes(base, sequence, settings)]
+                for item in scene_episodes(base, sequence, settings, skill)]
     if mixed_from:
         for split, every in (("train", 3), ("val", 2)):
             for path in sorted((Path(mixed_from) / split).glob("*.json"))[::every]:
@@ -77,4 +82,4 @@ def main(base, out, settings="", mixed_from=""):
 
 
 if __name__ == "__main__":
-    main(*sys.argv[1:5])
+    main(*sys.argv[1:6])
