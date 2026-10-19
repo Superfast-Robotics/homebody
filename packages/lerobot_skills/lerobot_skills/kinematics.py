@@ -61,11 +61,13 @@ class ArmKinematics:
 
     def solve(self, position, q0, approach=(0.0, 0.0, -1.0), tolerance=0.004, axis_tolerance=AXIS_TOLERANCE,
               axis_weight=0.15, damping=0.02, iterations=400):
-        """Joint angles (radians) putting the site at POSITION with its approach axis along APPROACH, from seeds
-        Q0 then the joint-range midpoint; None when no seed converges within the tolerances."""
+        """Joint angles (radians) putting the site at POSITION with its approach axis along APPROACH, from the seed
+        Q0 (or each of a list of seeds) then the joint-range midpoint; None when none converges within the
+        tolerances."""
         position, approach = np.asarray(position, float), np.asarray(approach, float)
         approach = approach / np.linalg.norm(approach)
-        for seed in (np.asarray(q0, float), (self.low + self.high) / 2):
+        seeds = [np.asarray(q0, float)] if np.ndim(q0) == 1 else [np.asarray(q, float) for q in q0]
+        for seed in (*seeds, (self.low + self.high) / 2):
             q = np.clip(seed.copy(), self.low, self.high)
             for _ in range(iterations):
                 pos, rotation = self.forward(q)

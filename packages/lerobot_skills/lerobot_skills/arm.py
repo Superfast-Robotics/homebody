@@ -49,9 +49,10 @@ class _Phases(Skill):
     def _waypoints(self, observation, positions):
         """Joint angles reaching each of POSITIONS in turn, each solved from the last; None when one is out of
         reach."""
-        q, solved = self._joints(observation), []
-        for position in positions:
-            q = self.kinematics.solve(position, q)
+        current = self._joints(observation)
+        q, solved = current, []
+        for position in positions:  # from the last waypoint, else from where the arm is
+            q = self.kinematics.solve(position, [q, current])
             if q is None:
                 return None
             solved.append(q)

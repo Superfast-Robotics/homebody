@@ -14,7 +14,7 @@ from lerobot_skills.kinematics import ArmSpec
 from .models import model_dir
 
 MOTORS = ("shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll")
-PREPARED = "homebody-3"  # the prepared models' version: a change here rebuilds them
+PREPARED = "homebody-4"  # the prepared models' version: a change here rebuilds them
 
 
 @dataclass(frozen=True)
@@ -48,6 +48,26 @@ class ArmEmbodiment:
         return ArmSpec(tuple(prefix + motor for motor in self.motors), prefix + "gripper", str(self.xml_path()),
                        self.ee_site, self.approach_axis, gripper_open=opened, gripper_closed=closed,
                        home=self.home[:-1], model_joints=self.joints)
+
+
+def jaw_tip(model, data, body, along):
+    """The point of BODY's collision geoms furthest along ALONG (world): a jaw's tip."""
+    best = None
+    for geom in range(model.ngeom):
+        if model.geom_bodyid[geom] != body or not (model.geom_contype[geom] or model.geom_conaffinity[geom]):
+            continue
+        rotation, centre = data.geom_xmat[geom].reshape(3, 3), data.geom_xpos[geom]
+        if model.geom_type[geom] == mujoco.mjtGeom.mjGEOM_MESH:
+            mesh = model.geom_dataid[geom]
+            start, count = model.mesh_vertadr[mesh], model.mesh_vertnum[mesh]
+            points = centre + model.mesh_vert[start:start + count] @ rotation.T
+        else:  # a primitive: its bounding box's corners
+            corners = np.array([[i, j, k] for i in (-1, 1) for j in (-1, 1) for k in (-1, 1)])
+            points = centre + (corners * model.geom_size[geom]) @ rotation.T
+        candidate = points[np.argmax(points @ along)]
+        if best is None or candidate @ along > best @ along:
+            best = candidate
+    return best
 
 
 def prepare_omx(source, prepared):
