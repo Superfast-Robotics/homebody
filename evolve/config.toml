@@ -329,7 +329,8 @@ workdir = "dex1-pick-wh"
 prompts = "skill"
 strategy = "evolve"
 objective = "held"           # accept on completed holds (stage value is reported, not decisive)
-weights = { wh = 2.0 }       # warehouse episodes count twice in acceptance and parent selection          # run --strategy greedy for the earlier one-patch-per-mechanism loop
+weights = { wh = 2.0 }       # warehouse episodes count twice in acceptance and parent selection
+speed_acceptance = false     # timings vary with host load and planner queues: no time-only or cost-only wins          # run --strategy greedy for the earlier one-patch-per-mechanism loop
 evo_candidates = 5           # per round: focused diffs, plus a crossover and (after barren rounds) a rewrite
 evo_models = ["gpt-6-astra", "gpt-6.1-sol"]
 evo_lesson_model = "gpt-6.1-sol"
@@ -379,7 +380,10 @@ other episodes queue on it. Its limits: it sees only the current depth (unseen s
 voxels near the arm's start are cleared), it plans with the gripper's own collision spheres (slightly
 inflated), the planning hand open and the waist, the other arm and the other hand as measured when the
 request is made (a server whose posture differs rebuilds first, 30-40 s, and the reply's `reconfigured_for`
-names the joints), and it has no model of a held object, so it does not plan loaded extraction or carry paths. `env.follow` streams a thinned path without the live collision
-check (`env.move_through` keeps it): revalidate what a plan's execution actually did. Whether and how pick
-uses it is the skill's decision.
+names the joints), and it has no model of a held object, so it does not plan loaded extraction or carry paths. Use it only for the unloaded approach (before the jaws close) and
+execute its path with `env.move_through` (live-checked), never `env.follow` (thinned, unchecked); do not use
+it for extraction or carrying, which it cannot model. Whether pick uses it at all is the skill's decision.
+
+Both the train and the held-out episodes of this benchmark are development data (versions have been judged
+on them many times); claims about unseen layouts need episodes no round has used.
 """

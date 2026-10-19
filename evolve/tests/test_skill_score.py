@@ -18,7 +18,7 @@ def test_setup_failures_are_left_out_and_outcomes_are_counted(tmp_path):
     write(tmp_path, "train", "d", setup_failed="object not visible from the stance")
     summary = skill_score.summary(skill_score.read(tmp_path / "train"))
     assert summary["episodes"] == 3 and summary["value"] == 0.5
-    assert summary["outcomes"] == {"OK (held)": 1, "OK but dropped": 1, "NO_GRASP": 1}
+    assert summary["outcomes"] == {"OK (held)": 1, "OK, then dropped": 1, "NO_GRASP": 1}
 
 
 def summaries(values, seconds=None):

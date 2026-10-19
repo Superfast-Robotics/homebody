@@ -283,11 +283,14 @@ class EvoLoop(SkillLoop):
                 self.log(f"remeasure {cid}: lint or unit tests fail on {best['id']}: {output[-300:]}")
                 continue
             commit = git("rev-parse", "HEAD", cwd=path)
-            self.verify_checkout(path, commit)
+            manifest = self.manifest(path, commit)
             summaries = self.evaluate(new, path)
-            verdict = skill_score.judge(self.summaries(best["id"]), summaries, self.objective, self.weights)
+            verdict = skill_score.judge(self.summaries(best["id"]), summaries, self.objective, self.weights, self.speed)
+            if self.manifest(path, commit) != manifest:
+                self.log(f"remeasure {cid}: the experiment changed while it ran; not recorded")
+                continue
             self.record({"id": new, "round": old.get("round"), "parent": best["id"], "parents": [best["id"], cid],
-                         "operator": "remeasure", "commit": commit, "status": "remeasured",
+                         "operator": "remeasure", "commit": commit, "status": "remeasured", "manifest": manifest,
                          "notes": old.get("notes", ""), **summaries, "verdict": verdict,
                          "reason": "remeasured on " + best["id"] + ": " + skill_score.describe(verdict)})
 
@@ -345,7 +348,8 @@ class EvoLoop(SkillLoop):
         if git("rev-parse", "HEAD", cwd=path) == parent["commit"]:
             other = population[slot["parents"][1]] if slot["operator"] == "crossover" else None
             prompt = (HERE / "prompts" / f"evo_{slot['operator']}.md").read_text().format(
-                workspace=ws, skill=self.skill, source=self.source, diagnosis=diagnosis, mechanism=slot["mechanism"],
+                workspace=ws, skill=self.skill, source=self.source, diagnosis=diagnosis,
+                mechanism=slot.get("focus") or slot["mechanism"],
                 parent=parent["id"], parent_results=self.parent_results(ws, parent["id"], summaries),
                 other=other["id"] if other else "", other_results=self.parent_results(ws, other["id"], summaries) if other else "",
                 other_diff=self.skill_diff(parent["commit"], other["commit"])[:20000] if other else "",
@@ -425,10 +429,13 @@ class EvoLoop(SkillLoop):
         return entry
 
     def judge_candidate(self, entry, best):
-        self.verify_checkout(Path(entry["path"]), entry["commit"])
+        before = self.manifest(Path(entry["path"]), entry["commit"])
         summaries = self.evaluate(entry["id"], Path(entry["path"]))
-        verdict = skill_score.judge(self.summaries(best["id"]), summaries, self.objective, self.weights)
-        return {**entry, **summaries, "status": "accepted" if verdict["ok"] else "rejected",
+        after = self.manifest(Path(entry["path"]), entry["commit"])
+        verdict = skill_score.judge(self.summaries(best["id"]), summaries, self.objective, self.weights, self.speed)
+        if after != before:
+            verdict = {**verdict, "ok": False, "basis": f"the experiment changed while it ran ({before} -> {after})"}
+        return {**entry, **summaries, "status": "accepted" if verdict["ok"] else "rejected", "manifest": before,
                 "reason": skill_score.describe(verdict), "verdict": verdict}
 
     def lessons(self, round_dir):

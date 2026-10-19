@@ -135,6 +135,7 @@ class SkillLoop:
         # what accepts a candidate: "value" (stage / 2) or "held" (completed holds), episodes weighted by id prefix
         self.objective = "held_values" if self.cfg.get("objective", "value") == "held" else "values"
         self.weights = dict(self.cfg.get("weights", {}))
+        self.speed = bool(self.cfg.get("speed_acceptance", True))  # whether a time or cost win alone may accept
 
     # --- bookkeeping ---
     def archive(self):
@@ -203,8 +204,11 @@ class SkillLoop:
         """Push CID's code and run every episode of SPLITS on the remote (or ONLY: split -> episode paths, under the
         candidate copy CAND); collect and summarise."""
         local = self.work / "results" / cid
-        if all((local / s / COMPLETE).exists() for s in splits):
-            return self.summaries(cid)
+        identity = {"commit": git("rev-parse", "HEAD", cwd=checkout), "setup": self.setup_fingerprint()}
+        recorded = local / "identity.json"
+        if all((local / s / COMPLETE).exists() for s in splits) and recorded.exists() \
+                and json.loads(recorded.read_text()) == identity:  # results are reused only for the same code and setup
+            return self.summaries(cid, splits) if splits != SPLITS else self.summaries(cid)
         cand = cand or self.cand(cid)
         self.loop.remote.push_candidate(cand, checkout)
         root = f"{self.remote.work}/skill/{self.cfg.get('workdir', self.skill)}/{cid}"
@@ -242,6 +246,7 @@ class SkillLoop:
         for split in splits:
             (local / split).mkdir(exist_ok=True)
         self.fill_missing(local, lines)
+        recorded.write_text(json.dumps(identity))
         for split in splits:
             (local / split / COMPLETE).write_text("done\n")
         if splits != SPLITS:
@@ -488,7 +493,7 @@ class SkillLoop:
         accepted = []
         for entry in ready:  # one at a time: the coder shares one GPU, and three evaluations at once starve it
             summaries = self.evaluate(entry["id"], paths[entry["mechanism"]])
-            verdict = skill_score.judge(self.summaries(best["id"]), summaries, self.objective, self.weights)
+            verdict = skill_score.judge(self.summaries(best["id"]), summaries, self.objective, self.weights, self.speed)
             entry = {**entry, **summaries, "status": "accepted" if verdict["ok"] else "rejected",
                      "reason": skill_score.describe(verdict), "verdict": verdict}
             (accepted.append(entry) if verdict["ok"] else self.record(entry))

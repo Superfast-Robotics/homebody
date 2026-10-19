@@ -55,8 +55,8 @@ def summary(results):
         code = call(row).get("code", "ERROR" if row.get("error") else "?")
         if row["success"]:
             code = "OK (held)"
-        elif code == "OK":
-            code = "OK but dropped"
+        elif code == "OK":  # a carry that stalled with the object still in the hand is not a drop
+            code = "OK, carry did not arrive (still held)" if row.get("held") else "OK, then dropped"
         codes[code] = codes.get(code, 0) + 1
     coder = [r["coder"] for r in rows if r.get("coder")]
     return {"episodes": len(rows), "errors": sum(bool(r.get("crashed")) for r in rows),
@@ -147,7 +147,7 @@ def pooled(side):
             for key in ("values", "held_values", "seconds", "credit_values")}
 
 
-def judge(parent, child, key="values", weights=None):
+def judge(parent, child, key="values", weights=None, speed=True):
     """Accuracy first (KEY: "values", stage / 2, or "held_values", completed holds; WEIGHTS by episode prefix):
     no split may fall by more than Z_DROP standard errors; accepted when train and val pooled (every episode
     paired) rise by more than Z_RISE; with accuracy unchanged, also when the skill's time per call falls by
@@ -173,6 +173,8 @@ def judge(parent, child, key="values", weights=None):
         return {**out, "ok": True, "basis": "accuracy (enough to outweigh the extra time or cost)" if heavier else "accuracy"}
     if out["pooled"][0] - Z_RISE * out["pooled"][1] > 0:
         return {**out, "ok": False, "basis": f"accuracy gain too small for {out['time']:+.0%} time, {out['cost']:+.0%} cost"}
+    if not speed:
+        return {**out, "ok": False, "basis": "no clear gain (time and cost wins are off for this profile)"}
     if crashed or untimed:  # a crashed, lost or untimed episode's time is not a measurement: no time or cost win
         return {**out, "ok": False, "basis": f"no clear gain ({crashed} crashed or lost, {untimed} untimed episodes: "
                                              f"no time or cost acceptance)"}
