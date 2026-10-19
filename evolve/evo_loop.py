@@ -15,8 +15,9 @@ Each round:
 4. Each diff's model is picked by a UCB1 bandit over `evo_models`, rewarded by its train gain over its
    parent, so a cheaper model writes more of them when it does as well; crossovers and rewrites take the
    first (strongest) model.
-5. Probe: the candidate runs a few train episodes (one per outcome of its parent); a crash is rejected, and
-   so is a candidate that behaves exactly like its parent there (its change never ran).
+5. Probe: the candidate runs the train episodes its note expects it to change and one per outcome of its
+   parent; a crash rejects it. Whether its new code reported acting (mechanism_active events its parent's
+   runs of those episodes lack) and whether outcomes changed are recorded for the diagnosis, not judged.
 6. Survivors are evaluated in full one after another, each spread over all evaluation hosts, and judged
    against the current best with the greedy loop's rule (skill_score.judge); the largest accepted gain
    becomes the best.
@@ -225,9 +226,10 @@ class EvoLoop(SkillLoop):
     # --- a round ---
     def plan(self, best, population, summaries, mechanisms):
         """The round's candidates: [{operator, parents, mechanism, model}]."""
-        pool = self.parent_pool(self.lineage(population), summaries)
+        lineage = self.lineage(population)  # parents and crossover donors share today's scenes and sensors
+        pool = self.parent_pool(lineage, summaries)
         offspring, stats, slots = self.offspring(), self.bandit(), []
-        pair = self.complementary(pool, list(population), summaries) if len(population) > 1 else None
+        pair = self.complementary(pool, list(lineage), summaries) if len(lineage) > 1 else None
         extra = (["crossover"] if pair else []) + (["rewrite"] if self.stalled() else [])
         diffs = max(1, self.candidates - len(extra))
         for index in range(diffs):
@@ -250,6 +252,7 @@ class EvoLoop(SkillLoop):
     def remeasure(self, ids):
         """Re-apply each older version's own skill change (against its parent) on top of the current best and
         score it there, so it can be a parent or crossover donor measured in today's scenes and sensors."""
+        self.check_frozen()
         best, archive = self.best(), {e["id"]: e for e in self.archive()}
         folder = str(Path(self.source).parent)
         for cid in ids:
@@ -267,6 +270,10 @@ class EvoLoop(SkillLoop):
                 git("add", "-A", cwd=path)
                 git("-c", "user.name=astra", "-c", "user.email=astra@localhost", "commit", "-q", "-m",
                     f"skill {self.skill} {new}: {cid}'s change on {best['id']}", cwd=path)
+            passed, output = self.loop.remote_checks(self.cand(new), path)
+            if not passed:
+                self.log(f"remeasure {cid}: lint or unit tests fail on {best['id']}: {output[-300:]}")
+                continue
             summaries = self.evaluate(new, path)
             verdict = skill_score.judge(self.summaries(best["id"]), summaries, self.objective, self.weights)
             self.record({"id": new, "round": old.get("round"), "parent": best["id"], "parents": [best["id"], cid],
@@ -372,7 +379,8 @@ class EvoLoop(SkillLoop):
         per outcome of PARENT (its stage and result code), up to PROBE_EPISODES more; the benchmark's priority
         episodes (profile `evo_probe_prefix`, e.g. the warehouse's) first."""
         rows = skill_score.read(self.work / "results" / parent / "train")
-        named = [e for e in sorted(rows) if e in note][:PROBE_EPISODES]
+        expected = note.split("Expected effect", 1)[-1].split("Risks", 1)[0] if "Expected effect" in note else ""
+        named = [e for e in sorted(rows) if e in expected][:PROBE_EPISODES]
         prefix = self.cfg.get("evo_probe_prefix", "")
         chosen = {}
         for episode, row in sorted(rows.items(), key=lambda item: (not item[0].startswith(prefix), item[0])):
@@ -393,16 +401,17 @@ class EvoLoop(SkillLoop):
             self.record({**entry, "status": "rejected", "reason": "crashed on probe episodes: "
                          + (str(child[crashed[0]].get("error"))[:300] if crashed else "no results")})
             return None
-        traces = [self.work / "results" / f"{cid}-probe" / "train" / e / "trace.json" for e in child]
-        activations = sum(1 for path in traces if path.exists()
-                          for event in json.loads(path.read_text()) if event.get("type") == ACTIVATION_EVENT)
+        def mechanisms(version, episode):
+            path = self.work / "results" / version / "train" / episode / "trace.json"
+            events = json.loads(path.read_text()) if path.exists() else []
+            return [str(e.get("mechanism")) for e in events if e.get("type") == ACTIVATION_EVENT]
+        new = {e: [m for m in mechanisms(f"{cid}-probe", e) if m not in set(mechanisms(parent, e))] for e in child}
+        activations = sum(len(found) for found in new.values())
         unchanged = all(fingerprint(r) == fingerprint(before.get(e, {})) for e, r in child.items())
-        entry = {**entry, "probe": {"episodes": len(child), "activations": activations, "unchanged": unchanged}}
-        if unchanged and activations == 0:  # proven: the new code reported never running, and nothing changed
-            self.record({**entry, "status": "rejected", "reason": f"inert: no {ACTIVATION_EVENT} event and the same "
-                         f"outcomes as {parent} on {len(child)} probe episodes (one per outcome)"})
-            return None
-        self.log(f"{cid}: probe {activations} activations, outcomes {'unchanged' if unchanged else 'changed'}")
+        entry = {**entry, "probe": {"episodes": len(child), "new_activations": activations, "unchanged": unchanged,
+                                    "activated_in": sorted(e for e, found in new.items() if found)}}
+        self.log(f"{cid}: probe {activations} new activations, outcomes {'unchanged' if unchanged else 'changed'} "
+                 f"on {len(child)} episodes (evaluated in full either way)")
         return entry
 
     def judge_candidate(self, entry, best):

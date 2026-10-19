@@ -9,8 +9,7 @@ checkout of version {parent}; its own results on the train episodes are in {pare
 
 The current directory is version {parent}. The other version is {other}: its results are in
 {other_results}, and its code against {parent} is the diff below (it may also include differences that
-come from an older baseline; port only {other}'s own behaviour change). Treat complementary outcomes as a hypothesis: {other} was
-measured in its own time (possibly older scenes or sensors). Compare the two result tables episode by
+come from an older baseline; port only {other}'s own behaviour change). Treat complementary outcomes as a hypothesis: {other} was measured on the same scenes and sensors (donors come from the current lineage). Compare the two result tables episode by
 episode, identify the separable component of {other} that plausibly causes its wins, and port that
 component alone into {parent}, keeping {parent}'s successes; say which component you ported and which you
 left out, and why. If the two
@@ -36,8 +35,7 @@ finding. Compare floats with a tolerance. Do not run the whole suite or anything
 Make the new code report when it acts: where it changes a decision, emit
 `ctx.emit({{"type": "mechanism_active", "mechanism": "<short name>", ...}})` with the values that decided
 it. The probe runs the candidate on the train episodes your note names under Expected effect and on one
-episode per outcome of its parent; one that reports no activation and changes no outcome there is
-rejected as inert, so name the episodes where the change should act.
+episode per outcome of its parent; whether it reported acting there and changed outcomes is recorded for the diagnosis (only a crash is rejected), so name, under Expected effect, the episodes where the change should act.
 
 When done, reply with a short note in this form:
 Mechanism: <what each version contributes>

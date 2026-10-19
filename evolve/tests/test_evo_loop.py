@@ -89,3 +89,38 @@ def test_a_carry_counts_only_when_every_leg_arrived():
     episode = {"step": {"fixture_id": "x", "carry_goal": [1, 0, 0]}}
     assert bench.score_pick([], episode, {"carry": {"code": "OK", "completed": True}})["stage"] == 2
     assert bench.score_pick([], episode, {"carry": {"code": "CARRY_CLEARED", "completed": False}})["stage"] == 1
+
+
+def test_stance_variants_of_one_object_count_as_one_sample():
+    from evolve import skill_score
+    parent = {"values": {"whtrain_jar_1_v0": 0.0, "whtrain_jar_1_v1": 0.0, "pk_bin_s0_v0": 0.0, "pk_bin_s0_v1": 0.0,
+                         "pk_shelf_s1_v0": 0.0}}
+    child = {"values": {**parent["values"], "whtrain_jar_1_v0": 1.0, "whtrain_jar_1_v1": 1.0}}
+    mean, clustered = skill_score.paired(parent, child, "values")
+    independent = {"values": {f"e{i}": v for i, v in enumerate(child["values"].values())}}
+    _, plain = skill_score.paired({"values": {f"e{i}": 0.0 for i in range(5)}}, independent, "values")
+    assert abs(mean - 0.4) < 1e-9 and clustered > plain  # one object's two stances are not two independent wins
+    assert skill_score.cluster("train/whtrain_jar_1_v1") == "whtrain_jar_1"
+
+
+def test_each_process_picks_one_of_the_hosts_planning_servers():
+    from types import SimpleNamespace
+    from homebody.helpers.curobo import endpoint
+    chosen = endpoint(SimpleNamespace(endpoint="tcp://127.0.0.1:5561", servers=3))
+    assert chosen.rsplit(":", 1)[0] == "tcp://127.0.0.1" and 5561 <= int(chosen.rsplit(":", 1)[1]) <= 5563
+    assert endpoint(SimpleNamespace(endpoint="tcp://127.0.0.1:5560", servers=1)) == "tcp://127.0.0.1:5560"
+
+
+def test_an_episode_without_a_result_scores_as_a_crashed_failure(tmp_path):
+    import json
+    from types import SimpleNamespace
+    from evolve import skill_score
+    from evolve.skill_loop import SkillLoop
+    loop = SimpleNamespace(work=tmp_path, skill="pick", log=lambda message: None)
+    (tmp_path / "results" / "train" / "ok_v0").mkdir(parents=True)
+    (tmp_path / "results" / "train" / "ok_v0" / "result.json").write_text(json.dumps(
+        {"episode": "ok_v0", "family": "f", "stage": 2, "success": True}))
+    lines = ["cand ep root/train/ok_v0", "cand ep root/train/lost_v0"]
+    SkillLoop.fill_missing(loop, tmp_path / "results", lines)
+    rows = skill_score.read(tmp_path / "results" / "train")
+    assert rows["lost_v0"]["stage"] == 0 and rows["lost_v0"]["crashed"] and rows["ok_v0"]["stage"] == 2

@@ -173,6 +173,7 @@ class Controller:
             acts = self.hand_act[side]
             current = self.data.ctrl[acts]
             self.data.ctrl[acts] = current + np.clip(self.hand_target[side] - current, -delta, delta)
+        self.applied = targets  # the effort-clamped arm references this tick sends (diagnostics)
         self.kernel.set_arm_targets(tuple(targets))
         if self.tick_count % (self.settings.control_hz // self.settings.policy_hz) == 0:
             self.kernel.tick()

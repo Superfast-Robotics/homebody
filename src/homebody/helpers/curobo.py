@@ -6,6 +6,7 @@ Poses go to the server in the pelvis frame; the robot's own pixels and the EXCLU
 target, or the carried object) are removed from the depth so the planner may reach them.
 """
 import json
+import os
 from pathlib import Path
 
 import numpy as np
@@ -35,7 +36,7 @@ class CuroboPlanner:
         self.hand_open = {side: dict(zip(calibration["hand_joints"][side],
                                          calibration.get("hand_open", {}).get(side, [0.0] * len(calibration["hand_joints"][side]))))
                           for side in ("left", "right")}
-        self.client = PolicyClient(self.settings.endpoint, self.settings.timeout)
+        self.client = PolicyClient(endpoint(self.settings), self.settings.timeout)
 
     def locks(self, joints):
         """The posture the non-planning joints are fixed at: the waist where it stands, both arms at
@@ -76,7 +77,7 @@ class CuroboPlanner:
                    "pre": pelvis_world @ np.asarray(pre_world)[:count],
                    "palm": pelvis_world @ np.asarray(pose_world)[:count],
                    "depth": depth, "intrinsics": np.asarray(frame.intrinsics, dtype=np.float64),
-                   "camera": pelvis_world @ frame.world_camera}
+                   "camera": pelvis_world @ frame.world_camera, "locks": self.locks(frame.joints)}
         try:
             return self.client.call("plan_grasp", request)
         except PolicyWireError as error:
@@ -84,6 +85,13 @@ class CuroboPlanner:
 
     def close(self):
         self.client.close()
+
+
+def endpoint(settings):
+    """One of the host's SERVERS planning servers (ports endpoint, endpoint + 1, ...), by this process: the
+    episodes running in parallel spread over them instead of queueing on one."""
+    base, port = settings.endpoint.rsplit(":", 1)
+    return f"{base}:{int(port) + os.getpid() % max(1, settings.servers)}"
 
 
 def thinned(rows, limit):

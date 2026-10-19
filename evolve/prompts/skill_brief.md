@@ -29,8 +29,7 @@ what earlier versions tried.
 By {objective}. On held-out episodes you never see as well as the train episodes, compared episode by
 episode with the current best: rejected when either split falls by more than two standard errors;
 accepted when train and held-out together rise by more than one and a half standard errors (two and a
-half when the skill becomes more than 30% slower per call); with the score unchanged, also when the
-skill's seconds per call fall by a fifth. So fix failure mechanisms that recur across many episodes, in
+half when the skill becomes more than 30% slower per call); with the score shown no worse (within 0.02), also when the skill's seconds per call fall by a fifth. Episodes of one scene step (its stance variants) count as one sample when the standard error is computed. So fix failure mechanisms that recur across many episodes, in
 general ways: never add anything about particular scenes, objects, colours or coordinates. More refusals
 are not an improvement: an honest refusal only helps when it avoids a worse outcome.
 

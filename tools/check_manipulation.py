@@ -313,20 +313,20 @@ def support_options(frame, target_label, palm, destination_label=None):
 
 
 def arm_control(backend):
-    """The arms' commanded targets, the rate-limited references the gates apply, the measured joints and the base
-    pose (x, y, yaw), for diagnosing a servo that stops short: recorded physics, never shown to a skill."""
+    """The arms' commanded targets, the references the controller last sent (rate-, range- and effort-limited),
+    the measured joints and the base pose (position and wxyz quaternion), for diagnosing a servo that stops
+    short: recorded physics, never shown to a skill."""
     from homebody.primitives.observations import ARMS
 
     controller = getattr(backend, "controller", None)
     if controller is None:
         return None
-    gates = {side: gate.q for side, gate in controller.gates.items()}
     q = backend.data.qpos
-    w, z = q[3], q[6]
+    applied = getattr(controller, "applied", None)
     return {"target": np.round(controller.arm_target, 3).tolist(),
-            "reference": np.round(np.concatenate([gates["left"], gates["right"]]), 3).tolist(),
+            "applied": None if applied is None else np.round(applied, 3).tolist(),
             "measured": np.round(q[controller.port.q[ARMS]], 3).tolist(),
-            "base": [round(float(q[0]), 3), round(float(q[1]), 3), round(float(2 * np.arctan2(z, w)), 3)]}
+            "base": np.round(q[:7], 4).tolist()}
 
 
 def support_click(frame, target_label, palm, side, planning, max_candidates, record,

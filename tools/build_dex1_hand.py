@@ -202,8 +202,9 @@ def build_calibration(model_path, out):
 
 
 def curobo_spheres(model_path, out):
-    """cuRobo's view of the gripper (tools/curobo_server.py --hand): spheres filling each hand link's collision
-    geometry (its box in the link frame, sphere radius its smallest half extent, spaced at the radius), the
+    """cuRobo's view of the gripper (tools/curobo_server.py --hand): spheres covering each hand link's collision
+    geometry (its box in the link frame cut into cells half as wide as its thinnest side, one sphere per cell
+    reaching the cell's corners, so the box is covered and slightly inflated), the
     finger joints with their open value, and the link pairs that may touch."""
     model = mujoco.MjModel.from_xml_path(str(model_path))
     links, joints = {}, {}
@@ -221,10 +222,12 @@ def curobo_spheres(model_path, out):
                 mujoco.mju_quat2Mat(rotation, model.geom_quat[g])
                 points.append(vertices @ rotation.reshape(3, 3).T + model.geom_pos[g])
             low, high = np.vstack(points).min(axis=0), np.vstack(points).max(axis=0)
-            radius = float(np.clip((high - low).min() / 2, 0.006, 0.03))
-            axes = [np.linspace(lo + radius, hi - radius, max(1, int(np.ceil((hi - lo - 2 * radius) / radius)) + 1))
-                    if hi - lo > 2 * radius else np.array([(lo + hi) / 2]) for lo, hi in zip(low, high)]
+            step = float(np.clip((high - low).min() / 2, 0.006, 0.03))  # cells half as wide as the thinnest side
+            counts = np.maximum(1, np.ceil((high - low) / step)).astype(int)
+            cell = (high - low) / counts
+            axes = [lo + cell_i * (np.arange(n) + 0.5) for lo, cell_i, n in zip(low, cell, counts)]
             grid = np.stack(np.meshgrid(*axes, indexing="ij"), axis=-1).reshape(-1, 3)
+            radius = float(np.linalg.norm(cell) / 2)  # each sphere covers its whole cell, corners included
             links[name] = [{"center": np.round(c, 4).tolist(), "radius": round(radius, 4)} for c in grid]
         joints[side] = [f"{side}_hand_finger_{i}_joint" for i in (1, 2)]
     ignore = {}

@@ -334,7 +334,7 @@ evo_candidates = 5           # per round: focused diffs, plus a crossover and (a
 evo_models = ["gpt-6-astra", "gpt-6.1-sol"]
 evo_lesson_model = "gpt-6.1-sol"
 evo_probe_prefix = "wh"      # probe warehouse episodes first
-services = ["/lambda/nfs/group-volume/workcell-sim/homebody-baseline/curobo_dex1/curobo_dex1_server.sh start"]
+services = ["/lambda/nfs/group-volume/workcell-sim/homebody-baseline/curobo_dex1/curobo_dex1_server.sh start > /dev/null 2>&1 < /dev/null"]
 editable = ["src/homebody/skills/dex1/*", "tests/*"]
 model = "gpt-6-astra"
 effort = "medium"
@@ -368,12 +368,18 @@ side or behind, then carries it along an aisle and walks back. The rest are gene
 shelves, counters) that keep the skill general. Warehouse picking is the priority: warehouse episodes count twice when versions are judged, and results
 are reported separately for warehouse and generated episodes.
 
-A collision-aware arm planner is available (cuRobo, a server on every evaluation host; configs/dex1.toml
-points `settings.curobo.endpoint` at it): `homebody.helpers.curobo.CuroboPlanner(ctx.settings).plan(frame,
-side, pre_world_poses, palm_world_poses, exclude_labels)` returns the first (pre-grasp, grasp) palm pose pair
-it can reach without collision against the head camera's depth (the excluded labels, e.g. the target, are
-removed from that depth), with joint paths for the approach and the final descent, in 1-3 s per request;
-the harness wraps it as `env.plan_path` and `env.follow` (src/homebody/harness/env.py, API.md). It plans
-with this gripper's own collision spheres, jaws open. Whether and how pick uses it (candidate generation,
-approach and extraction routes, alternative wrist postures) is the skill's decision.
+A collision-aware arm planner is available (cuRobo; `settings.curobo` in configs/dex1.toml points at
+three planning servers per evaluation host): `homebody.helpers.curobo.CuroboPlanner(ctx.settings).plan(frame,
+side, pre_world_poses, palm_world_poses, exclude_labels)` takes WORLD-frame palm poses and integer label ids
+and returns the first (pre-grasp, grasp) pair it reaches without collision against the head camera's
+depth (the excluded labels removed), with arm joint paths for the approach and the descent; the harness's
+`env.plan_path(pre_poses, goal_poses, side, exempt=targets)` takes TORSO-frame poses and target objects
+(src/homebody/harness/env.py, API.md). A request takes about 1.5-3 s on an idle server and longer while
+other episodes queue on it. Its limits: it sees only the current depth (unseen space counts as free,
+voxels near the arm's start are cleared), it plans with the gripper's own collision spheres (slightly
+inflated), jaws open, the waist and the other arm at the posture the server was first configured with
+(a reply's `posture_mismatch` lists joints that differ), and it has no model of a held object, so it does
+not plan loaded extraction or carry paths. `env.follow` streams a thinned path without the live collision
+check (`env.move_through` keeps it): revalidate what a plan's execution actually did. Whether and how pick
+uses it is the skill's decision.
 """

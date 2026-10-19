@@ -47,6 +47,7 @@ LEG_LINKS = [f"{side}_{part}_link" for side in SIDES for part in
 SPHERE_BUFFER_M = 0.0
 ACTIVATION_M = 0.005
 MAX_GOALSET = 48
+POSTURE_TOLERANCE = 0.05  # rad (m for slides): a requester's locked joint further than this from the configured one
 MAX_CANDIDATE_TRIES = 6  # candidates tried (approach then descent) before giving up
 IK_SEEDS = 128  # random restarts per IK solve; obstacle-dense scenes (a basket) need many  # grasp candidates planned per request (the client sends its best-ranked)
 
@@ -146,6 +147,10 @@ class Planners:
         self.root, self.planners, self.locks, self.dump, self.hand = curobo_root, {}, None, None, hand
 
     def configure(self, locks):
+        """Build the planners with LOCKS; a server already built is kept (the first configuration wins, so
+        concurrent clients cannot rebuild it under each other) and each plan reports the joints that differ."""
+        if self.planners:
+            return {"joint_names": {side: list(p.joint_names) for side, p in self.planners.items()}, "locks": self.locks}
         self.locks = dict(locks)
         self.planners = {}
         for side in SIDES:
@@ -244,6 +249,12 @@ class Planners:
             return None
         return self.arm_rows(planner, result.get_interpolated_plan(), side)
 
+    def posture_mismatch(self, locks):
+        """The joints whose value in LOCKS (the requester's posture) differs from the configured lock by more than
+        POSTURE_TOLERANCE: the plan assumed the configured posture there."""
+        return {name: [round(float(self.locks[name]), 3), round(float(value), 3)] for name, value in (locks or {}).items()
+                if name in self.locks and abs(float(self.locks[name]) - float(value)) > POSTURE_TOLERANCE}
+
     def plan_grasp(self, request):
         started = time.monotonic()
         side = request["side"]
@@ -252,7 +263,8 @@ class Planners:
         planner = self.planners[side]
         planner.update_world(self.world(request, planner))
         pre, palm = np.asarray(request["pre"])[:MAX_GOALSET], np.asarray(request["palm"])[:MAX_GOALSET]
-        reply = {"success": False, "index": -1, "approach": np.zeros((0, 7)), "descent": np.zeros((0, 7))}
+        reply = {"success": False, "index": -1, "approach": np.zeros((0, 7)), "descent": np.zeros((0, 7)),
+                 "posture_mismatch": self.posture_mismatch(request.get("locks"))}
         remaining, failures = list(range(len(pre))), []
         for _ in range(MAX_CANDIDATE_TRIES):
             if not remaining:

@@ -1,5 +1,5 @@
 You are restructuring the built-in `{skill}` skill ({source}): the last rounds of small fixes have
-not been accepted, so this candidate may change more than one mechanism at once.
+not been accepted, so this candidate may restructure a whole stage of the skill.
 
 Read {workspace}/BRIEF.md first: it says how versions are judged and what you may change. Then
 {workspace}/lessons.md (what earlier versions taught: do not repeat a change that already failed unless
@@ -30,8 +30,7 @@ finding. Compare floats with a tolerance. Do not run the whole suite or anything
 Make the new code report when it acts: where it changes a decision, emit
 `ctx.emit({{"type": "mechanism_active", "mechanism": "<short name>", ...}})` with the values that decided
 it. The probe runs the candidate on the train episodes your note names under Expected effect and on one
-episode per outcome of its parent; one that reports no activation and changes no outcome there is
-rejected as inert, so name the episodes where the change should act.
+episode per outcome of its parent; whether it reported acting there and changed outcomes is recorded for the diagnosis (only a crash is rejected), so name, under Expected effect, the episodes where the change should act.
 
 When done, reply with a short note in this form:
 Mechanisms: <titles>

@@ -165,6 +165,23 @@ class SkillLoop:
         listing = self.remote.ssh(f"cd {self.remote.work} && ls {self.cfg['episodes']}/{split}/*.json")
         return listing.split()
 
+    def fill_missing(self, local, lines):
+        """An episode that left no result (its process died or timed out) scores as a crashed failure, not as an
+        episode the version did not run: every job line has a result.json."""
+        for line in lines:
+            _, episode, out = line.split()
+            split, name = Path(out).parent.name, Path(out).name
+            path = local / split / name / "result.json"
+            if path.exists():
+                continue
+            local_episode = self.work / "episodes" / split / f"{name}.json"
+            family = json.loads(local_episode.read_text()).get("family", "?") if local_episode.exists() else "?"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps({"episode": name, "skill": self.skill, "family": family, "stage": 0,
+                                        "success": False, "crashed": True,
+                                        "error": "no result: the episode process died or timed out"}))
+            self.log(f"{name}: no result, scored as a crashed failure")
+
     def hosts(self):
         """The evaluation hosts an evaluation spreads its episodes over: all of them ([remote] hosts), or the one
         this thread is pinned to."""
@@ -217,6 +234,8 @@ class SkillLoop:
               f"{self.remote.host}:{root}/", f"{local}/")
         for split in splits:
             (local / split).mkdir(exist_ok=True)
+        self.fill_missing(local, lines)
+        for split in splits:
             (local / split / COMPLETE).write_text("done\n")
         if splits != SPLITS:
             return self.summaries(cid, splits)
@@ -237,8 +256,12 @@ class SkillLoop:
 
     def setup_fingerprint(self):
         """A hash of the benchmark's scene packages and robot profiles on the remote seed: what a round assumes fixed."""
-        return self.remote.ssh(f"cd {self.remote.base}/assets && cat real2sim/*/scene.xml real2sim/*/physics.json "
-                               f"robot/calibration.json robot/*/calibration.json 2>/dev/null | md5sum | cut -c1-12").strip()
+        episodes = f"{self.remote.work}/{self.cfg['episodes']}"
+        return self.remote.ssh(
+            f"cd {self.remote.base}/assets && (find -L robot real2sim -type f -not -path '*.bak*' | sort | xargs md5sum; "
+            f"find {episodes} -type f | sort | xargs md5sum; "
+            f"md5sum {Path(self.remote.root)}/curobo_dex1/*.py {Path(self.remote.root)}/curobo_dex1/*.sh 2>/dev/null) "
+            f"| awk '{{print $1}}' | md5sum | cut -c1-12", timeout=600).strip()
 
     def check_frozen(self):
         """Stop when the scenes or robot changed since the latest baseline: its results no longer compare."""
@@ -330,7 +353,7 @@ class SkillLoop:
             for name in ("result.json", "trace.json", "arm_track.json"):
                 if (source / name).exists():
                     shutil.copy(source / name, target / name)
-            if row["stage"] < 2:
+            if train[episode]["stage"] < 2:
                 self.keyframes(best["id"], "train", episode, target)
             for call_dir in sorted(source.rglob("coder/call-*")):
                 (target / f"coder-{call_dir.name}.md").write_text(coder_call(call_dir))
@@ -362,7 +385,7 @@ class SkillLoop:
         for path in jpgs:
             call = path.parent.name  # call-NNN: the episode's skill calls in order
             path.rename(frames / f"{call}-{path.name}")
-        for path in sorted(frames.glob("*.jpg"))[limit:]:
+        for path in sorted(frames.glob("*.jpg"))[:-limit]:  # the last stages, where an episode fails, are kept
             path.unlink()
         for folder in sorted((p for p in frames.rglob("*") if p.is_dir()), reverse=True):
             folder.rmdir()

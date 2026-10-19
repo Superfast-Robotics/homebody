@@ -12,6 +12,7 @@ whole carry, else 0; stage value is then a diagnostic) and weight episodes by id
 a verdict.
 """
 import json
+import re
 from pathlib import Path
 
 Z_DROP = 2.0  # a split counts as worse only if it falls by more than this many standard errors
@@ -21,6 +22,7 @@ COST_SLACK = 0.10  # a time win may not cost more than this fraction extra
 SLOWER = 0.30  # a version this much slower or costlier per episode needs a stronger accuracy gain
 Z_RISE_SLOWER = 2.5
 CRASH_SHARE = 0.05  # a candidate whose code crashes in more than this share of its episodes is rejected
+NONINFERIOR = 0.02  # a time or cost win needs accuracy shown no worse than this (lower bound at Z_RISE)
 Z_PROMISING = 1.0  # a first round with no candidate this far up (pooled) or accepted ends the run
 
 
@@ -103,17 +105,29 @@ def weight(episode, weights):
     return next((w for prefix, w in (weights or {}).items() if name.startswith(prefix)), 1.0)
 
 
+def cluster(episode):
+    """The independent unit an episode belongs to: its scene step, every stance variant of it together
+    (ids end in _v0, _v1 ...), since the variants of one object are not independent samples."""
+    return re.sub(r"_v\d+$", "", episode.split("/")[-1])
+
+
 def paired(parent, child, key, weights=None):
-    """(weighted mean difference, standard error) of CHILD over PARENT in per-episode KEY, over shared episodes."""
+    """(weighted mean difference, standard error) of CHILD over PARENT in per-episode KEY, over shared episodes;
+    the standard error is cluster-robust (CR1: residuals summed within each cluster, G / (G - 1))."""
     shared = sorted(set(parent.get(key, {})) & set(child.get(key, {})))
     if len(shared) < 2:
         return 0.0, 0.0
-    w = [weight(e, weights) for e in shared]
-    diffs = [child[key][e] - parent[key][e] for e in shared]
-    total = sum(w)
-    mean = sum(wi * d for wi, d in zip(w, diffs)) / total
-    spread = sum(wi * (d - mean) ** 2 for wi, d in zip(w, diffs)) / total * len(diffs) / (len(diffs) - 1)
-    return mean, (spread * sum(wi * wi for wi in w) / total ** 2) ** 0.5
+    w = {e: weight(e, weights) for e in shared}
+    diffs = {e: child[key][e] - parent[key][e] for e in shared}
+    total = sum(w.values())
+    mean = sum(w[e] * diffs[e] for e in shared) / total
+    sums = {}
+    for e in shared:
+        sums[cluster(e)] = sums.get(cluster(e), 0.0) + w[e] * (diffs[e] - mean)
+    groups = len(sums)
+    if groups < 2:
+        return mean, 0.0
+    return mean, (groups / (groups - 1) * sum(s * s for s in sums.values()) / total ** 2) ** 0.5
 
 
 def pooled(side):
@@ -147,6 +161,8 @@ def judge(parent, child, key="values", weights=None):
         return {**out, "ok": True, "basis": "accuracy (enough to outweigh the extra time or cost)" if heavier else "accuracy"}
     if out["pooled"][0] - Z_RISE * out["pooled"][1] > 0:
         return {**out, "ok": False, "basis": f"accuracy gain too small for {out['time']:+.0%} time, {out['cost']:+.0%} cost"}
+    if out["pooled"][0] - Z_RISE * out["pooled"][1] < -NONINFERIOR:  # cheaper or faster only when no worse
+        return {**out, "ok": False, "basis": "no clear gain (accuracy not shown non-inferior)"}
     d_cost, se_cost = paired(pooled(parent), pooled(child), "credit_values")
     if out["cost"] <= -TIME_CUT and d_cost + Z_RISE * se_cost < 0:
         return {**out, "ok": True, "basis": "cost (accuracy unchanged)"}
@@ -174,8 +190,7 @@ def describe(verdict):
 def describe_train(verdict):
     """The verdict without validation numbers, for what the proposer and diagnoser may read."""
     t = verdict["train"]
-    return (f"{verdict['basis']}: {verdict.get('metric', 'value')} on train {t[0]:+.3f} (se {t[1]:.3f}); "
-            f"time {verdict['time']:+.0%} per episode")
+    return f"{verdict.get('metric', 'value')} on train {t[0]:+.3f} (se {t[1]:.3f})"
 
 
 

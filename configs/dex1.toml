@@ -6,3 +6,4 @@ hands = "dex1"
 # The Dex1 cuRobo planning server (tools/curobo_server.py --hand assets/robot/dex1), one per evaluation host
 [curobo]
 endpoint = "tcp://127.0.0.1:5561"
+servers = 3

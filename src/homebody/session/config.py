@@ -153,6 +153,7 @@ class Curobo:
     against the head camera's depth. The first request builds the server's planners, hence the
     long `timeout`."""
     endpoint: str = "tcp://127.0.0.1:5560"
+    servers: int = 1  # planning servers per host, on consecutive ports from `endpoint` (helpers/curobo.py)
     timeout: float = 300.0
     max_candidates: int = 48
     max_rows: int = 40

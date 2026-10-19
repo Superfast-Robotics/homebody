@@ -13,8 +13,7 @@ runs in those episodes.
 Make the new code report when it acts: where it changes a decision, emit
 `ctx.emit({{"type": "mechanism_active", "mechanism": "<short name>", ...}})` with the values that decided
 it. The probe runs the candidate on the train episodes your note names under Expected effect and on one
-episode per outcome of its parent; one that reports no activation and changes no outcome there is
-rejected as inert, so name the episodes where the change should act.
+episode per outcome of its parent; whether it reported acting there and changed outcomes is recorded for the diagnosis (only a crash is rejected), so name, under Expected effect, the episodes where the change should act.
 
 
 Implement one testable causal intervention, with the coordinated changes across stages it needs (not
