@@ -17,8 +17,9 @@ Each round:
    first (strongest) model.
 5. Probe: the candidate runs a few train episodes (one per outcome of its parent); a crash is rejected, and
    so is a candidate that behaves exactly like its parent there (its change never ran).
-6. Survivors are evaluated in full, two at a time on the evaluation hosts, and judged against the current
-   best with the greedy loop's rule (skill_score.judge); the largest accepted gain becomes the best.
+6. Survivors are evaluated in full one after another, each spread over all evaluation hosts, and judged
+   against the current best with the greedy loop's rule (skill_score.judge); the largest accepted gain
+   becomes the best.
 7. Lessons: a cheap model rewrites lessons.md from the whole history, for the next round's prompts.
 """
 import json
@@ -26,7 +27,6 @@ import math
 import random
 import shutil
 import subprocess
-import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -90,26 +90,19 @@ def fingerprint(row):
 
 class EvoLoop(SkillLoop):
     def __init__(self, profile=None):
-        self._remote_local = threading.local()
         super().__init__(profile)
         self.models = tuple(self.cfg.get("evo_models", DEFAULT_MODELS))
         self.candidates = int(self.cfg.get("evo_candidates", 4))
         self.lesson_model = self.cfg.get("evo_lesson_model", "gpt-6.1-sol")
         self.rng = random.Random(self.cfg.get("evo_seed", 0))
 
-    # evaluations of one round run two at a time, one per host: the remote is per thread
-    @property
-    def remote(self):
-        return getattr(self._remote_local, "remote", self.loop.remotes[0])
-
-    @remote.setter
-    def remote(self, value):
-        pass
-
     def on_host(self, index, function, *args):
-        self._remote_local.remote = self.loop.remotes[index % len(self.loop.remotes)]
-        self.loop._local.remote = self._remote_local.remote
-        return function(*args)
+        """FUNCTION(*ARGS) with this thread pinned to evaluation host INDEX (round robin), then unpinned."""
+        self.loop._local.remote = self.loop.remotes[index % len(self.loop.remotes)]
+        try:
+            return function(*args)
+        finally:
+            del self.loop._local.remote
 
     # --- the archive as a population ---
     def population(self):
@@ -267,12 +260,8 @@ class EvoLoop(SkillLoop):
         with ThreadPoolExecutor(len(slots)) as pool:
             ready = [e for e in pool.map(lambda item: self.write(number, item[0], item[1], population, summaries, ws,
                                                                   diagnosis, round_dir), enumerate(slots, 1)) if e]
-        with ThreadPoolExecutor(len(self.loop.remotes)) as pool:
-            probed = [e for e in pool.map(lambda item: self.on_host(item[0], self.probe, item[1]),
-                                          enumerate(ready)) if e]
-        with ThreadPoolExecutor(len(self.loop.remotes)) as pool:
-            judged = list(pool.map(lambda item: self.on_host(item[0], self.judge_candidate, item[1], best),
-                                   enumerate(probed)))
+        probed = [e for e in map(self.probe, ready) if e]  # each spread over every host, so one at a time
+        judged = [self.judge_candidate(entry, best) for entry in probed]
         accepted = [e for e in judged if e["status"] == "accepted"]
         for entry in judged:
             if entry["status"] != "accepted":
@@ -326,8 +315,8 @@ class EvoLoop(SkillLoop):
         outside, specific = self.allowed(files), self.specific(parent["commit"], commit)
         reason = (f"edits outside the skill: {outside}" if outside else
                   f"not general: the source names {specific}" if specific else None)
-        if reason is None:
-            passed, output = self.loop.remote_checks(self.cand(cid), path)
+        if reason is None:  # the candidates' lint and tests alternate between the hosts
+            passed, output = self.on_host(index, self.loop.remote_checks, self.cand(cid), path)
             if not passed:
                 (round_dir / f"{cid}_checks.txt").write_text(output)
                 reason = "lint or unit tests failed: " + output[-600:]

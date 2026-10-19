@@ -150,6 +150,12 @@ class SkillLoop:
         listing = self.remote.ssh(f"cd {self.remote.work} && ls {self.cfg['episodes']}/{split}/*.json")
         return listing.split()
 
+    def hosts(self):
+        """The evaluation hosts an evaluation spreads its episodes over: all of them ([remote] hosts), or the one
+        this thread is pinned to."""
+        pinned = getattr(self.loop._local, "remote", None)
+        return [pinned] if pinned is not None else list(self.loop.remotes)
+
     def cand(self, cid):
         """The remote candidate name and local worktree name of CID, unique per profile."""
         return f"{self.cfg.get('workdir', self.skill)}-{cid}"
@@ -165,14 +171,24 @@ class SkillLoop:
         root = f"{self.remote.work}/skill/{self.cfg.get('workdir', self.skill)}/{cid}"
         lines = [f"{self.remote.work}/cands/{cand} {self.remote.work}/{episode} {root}/{split}/{Path(episode).stem}"
                  for split in splits for episode in (only[split] if only else self.episodes(split))]
-        jobs = f"{root}/jobs.txt"
-        self.remote.ssh(f"rm -rf {root} && mkdir -p {root} && cat > {jobs} << 'EOF'\n" + "\n".join(lines) + "\nEOF")
+        self.remote.ssh(f"rm -rf {root} && mkdir -p {root}")
         rsync("-a", str(HERE / "skill_bench.py"), str(HERE / "skill_bench_tasks.py"), str(HERE / "run_skill_jobs.sh"),
               f"{self.remote.host}:{self.remote.work}/")
         started = time.monotonic()
-        self.remote.ssh(f"bash {self.remote.work}/run_skill_jobs.sh {self.remote.base} {self.cfg['parallel']} {jobs} "
-                        f"{self.remote.work} {int(self.coder)} '{self.cfg.get('coder_model', '')}' "
-                        f"'{self.cfg.get('coder_rates', '')}' '{self.cfg.get('coder_seconds', '')}' {int(videos)}", timeout=24 * 3600)
+        hosts = self.hosts()
+
+        def run_share(index):  # the hosts share the group volume: one candidate copy, one results folder
+            host, share = hosts[index], lines[index::len(hosts)]
+            if not share:
+                return
+            jobs = f"{root}/jobs{index}.txt"
+            host.ssh(f"cat > {jobs} << 'EOF'\n" + "\n".join(share) + "\nEOF")
+            host.ssh(f"bash {host.work}/run_skill_jobs.sh {host.base} {self.cfg['parallel']} {jobs} "
+                     f"{host.work} {int(self.coder)} '{self.cfg.get('coder_model', '')}' "
+                     f"'{self.cfg.get('coder_rates', '')}' '{self.cfg.get('coder_seconds', '')}' {int(videos)}", timeout=24 * 3600)
+
+        with ThreadPoolExecutor(len(hosts)) as pool:
+            list(pool.map(run_share, range(len(hosts))))
         if local.exists():
             shutil.rmtree(local)
         local.mkdir(parents=True)
