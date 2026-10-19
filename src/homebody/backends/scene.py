@@ -24,6 +24,29 @@ def numbers(values):
     return " ".join(str(float(value)) for value in values)
 
 
+def own_appearance(xml, package, appearance):
+    """A scene package that declares <visual> brings its own look (a handoff's lighting): its visual settings
+    replace the robot model's (headlight and the rest, element by element), its skybox replaces the robot's,
+    and the robot model's own lights are left out, so only the scene's lights shine."""
+    own = xml.find("visual")
+    for child in appearance:
+        match = own.find(child.tag)
+        if match is None:
+            own.append(child)
+        else:
+            match.attrib.clear()
+            match.attrib.update(child.attrib)
+    package.remove(appearance)
+    if any(texture.get("type") == "skybox" for texture in package.find("asset").findall("texture")):
+        for asset in xml.findall("asset"):
+            for texture in asset.findall("texture"):
+                if texture.get("type") == "skybox":
+                    asset.remove(texture)
+    for world in xml.findall("worldbody"):
+        for light in world.findall("light"):
+            world.remove(light)
+
+
 def load(root: Path, settings, scene: Path | None = DEFAULT_SCENE):
     """Compile the robot into SCENE, a package directory relative to ROOT or absolute, or
     alone on a flat floor when SCENE is None."""
@@ -50,6 +73,9 @@ def load(root: Path, settings, scene: Path | None = DEFAULT_SCENE):
         for asset in package.find("asset"):
             if "file" in asset.attrib:
                 asset.set("file", str(directory / asset.get("file")))
+        appearance = package.find("visual")
+        if appearance is not None and len(appearance):  # an empty <visual/> (scenegen's) changes nothing
+            own_appearance(xml, package, appearance)
         for child in package:
             xml.append(child)
         spawn = json.loads((directory / "task_scene.json").read_text())["robot_start"]

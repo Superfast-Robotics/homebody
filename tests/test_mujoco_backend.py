@@ -185,3 +185,21 @@ def test_a_stop_holds_the_applied_arm_reference_not_the_sagging_measurement():
     backend.stop(1)
     for side, arm in SIDES.items():
         assert np.allclose(controller.arm_target[arm], controller.gates[side].q)
+
+
+def test_a_scene_with_its_own_visual_settings_owns_its_look_and_an_empty_one_changes_nothing():
+    """A handoff's lighting survives the merge: its headlight replaces the robot model's, its sky replaces
+    the robot's black one and only its lights shine; scenegen's empty <visual/> leaves the robot's look."""
+    from homebody.backends.scene import own_appearance
+
+    robot = ET.fromstring('<mujoco><visual><headlight diffuse=".6 .6 .6" specular=".9 .9 .9"/>'
+                          '<global offwidth="1280"/></visual><asset><texture type="skybox" builtin="flat"/>'
+                          '</asset><worldbody><light directional="true"/><body name="pelvis"/></worldbody></mujoco>')
+    package = ET.fromstring('<mujoco><visual><headlight diffuse=".4 .4 .4"/></visual><asset><texture '
+                            'name="sky" type="skybox" builtin="gradient"/></asset><worldbody><light ambient=".85 .85 .85"/>'
+                            '</worldbody></mujoco>')
+    own_appearance(robot, package, package.find("visual"))
+    assert robot.find("visual/headlight").attrib == {"diffuse": ".4 .4 .4"}
+    assert robot.find("visual/global").get("offwidth") == "1280"
+    assert robot.find("asset").findall("texture") == [] and robot.find("worldbody").findall("light") == []
+    assert package.find("visual") is None and package.find("asset/texture").get("name") == "sky"

@@ -154,8 +154,13 @@ def build(source, work):
     defaults = root.find("default").find("geom").attrib
     for tag in ("option", "size", "default"):
         root.remove(root.find(tag))
-    for light in root.find("worldbody").iter("light"):  # the handoff's .85 ambient washes the scan out to white
-        light.attrib.update({"ambient": ".45 .45 .45", "diffuse": ".45 .45 .45"})
+    # The handoff's look as delivered: its light, its sky and MuJoCo's default headlight, which its own viewer
+    # used; HomeBody's robot model brings a brighter headlight, a black sky and its own light, so the package
+    # declares the headlight and HomeBody lets a scene with <visual> own its look (backends/scene.py).
+    if root.find("visual") is None:
+        visual = ET.Element("visual")
+        ET.SubElement(visual, "headlight", ambient=".1 .1 .1", diffuse=".4 .4 .4", specular=".5 .5 .5")
+        root.insert(0, visual)
     for geom in root.find("worldbody").iter("geom"):
         for key, value in defaults.items():
             geom.attrib.setdefault(key, value)
