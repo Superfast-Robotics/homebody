@@ -41,6 +41,7 @@ class _Phases(Skill):
         super().__init__(config)
         self.spec, self.kinematics = spec, kinematics or ArmKinematics(spec)
         self.phases, self.phase, self.tick, self.start, self.gripper = [], 0, 0, None, None
+        self.commanded = None  # the last joint targets sent: a servo under load sits below them
 
     def _joints(self, observation):
         return self.spec.to_radians([observation[f"{joint}.pos"] for joint in self.spec.joints])
@@ -63,12 +64,13 @@ class _Phases(Skill):
             self._finish(observation)
             return {}
         _, target, gripper, seconds = self.phases[self.phase]
-        if self.tick == 0:
-            self.start = self._joints(observation)
+        if self.tick == 0:  # from where the arm was told to be, not where gravity lets it sit
+            self.start = self._joints(observation) if self.commanded is None else self.commanded
             self.gripper = observation[f"{self.spec.gripper}.pos"] if gripper is None else gripper
         steps = max(1, round(seconds / self.config.step_seconds))
         self.tick += 1
         q = self.start if target is None else self.start + (target - self.start) * min(1.0, self.tick / steps)
+        self.commanded = q
         if self.tick >= steps:
             self.phase, self.tick = self.phase + 1, 0
         action = {f"{joint}.pos": float(value) for joint, value in zip(self.spec.joints, self.spec.from_radians(q))}
@@ -87,7 +89,7 @@ class ArmPick(_Phases):
 
     def reset(self, observation=None, arguments=None):
         """ARGUMENTS: {"target": [x, y, z]}, the object's point to close the jaws on, in the base frame."""
-        self.status, self.phase, self.tick = Status(), 0, 0
+        self.status, self.phase, self.tick, self.commanded = Status(), 0, 0, None
         c, target = self.config, np.asarray(arguments["target"], dtype=float)
         up = np.array([0.0, 0.0, 1.0])
         waypoints = self._waypoints(observation, [target + up * c.approach_height, target + up * c.grasp_height,
@@ -115,7 +117,7 @@ class ArmPlace(_Phases):
 
     def reset(self, observation=None, arguments=None):
         """ARGUMENTS: {"target": [x, y, z]}, the point to release the held object over, in the base frame."""
-        self.status, self.phase, self.tick = Status(), 0, 0
+        self.status, self.phase, self.tick, self.commanded = Status(), 0, 0, None
         c, target = self.config, np.asarray(arguments["target"], dtype=float)
         up = np.array([0.0, 0.0, 1.0])
         waypoints = self._waypoints(observation, [target + up * c.approach_height, target + up * c.release_height,

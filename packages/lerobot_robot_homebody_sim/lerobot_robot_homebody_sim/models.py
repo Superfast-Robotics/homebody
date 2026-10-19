@@ -23,6 +23,10 @@ SOURCES = {
     # Koch v1.1 as ManiSkill models it (from jess-moss/koch-v1-1, limits and axes fixed), a URDF
     "koch": Source("https://github.com/mani-skill/ManiSkill.git",
                    "62ff3a5896b4d5b4cf0ac4c8d79afe600c9404a3", "mani_skill/assets/robots/koch", "Apache-2.0"),
+    "openarm": Source("https://github.com/enactic/openarm_mujoco.git",
+                      "36d4a443533478a6a1b6e1d6e0d29b35583afc50", "v1", "Apache-2.0"),
+    "lekiwi": Source("https://github.com/Ekumen-OS/lekiwi.git",
+                     "32cf6a69eb320cc22620cdaa529e35f20fc12b1f", "packages/lekiwi_sim/lekiwi_sim", "Apache-2.0"),
 }
 
 

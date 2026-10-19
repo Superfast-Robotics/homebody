@@ -25,11 +25,13 @@ class ArmEmbodiment:
     gripper: str                  # the model's gripper joint
     ee_site: str
     approach_axis: tuple[float, float, float]
-    home: tuple[float, ...]       # MOTORS (degrees) then the gripper (0 closed - 100 open)
+    home: tuple[float, ...]       # the arm joints (degrees) then the gripper (gripper_units)
     wrist_camera: str | None
     pick_xy: tuple[float, float]  # a comfortable cube position on the table, in the base frame (m)
     gripper_closes_high: bool = False  # the gripper closes toward its actuator range's upper end
     prepare: Callable[[Path, Path], None] | None = None
+    motors: tuple[str, ...] = MOTORS      # the follower's names for JOINTS
+    gripper_units: tuple[float, float] = (0.0, 100.0)  # the follower's gripper value closed and open
 
     def xml_path(self):
         source = model_dir(self.model) / self.xml
@@ -40,9 +42,12 @@ class ArmEmbodiment:
             self.prepare(source, prepared)
         return prepared
 
-    def spec(self):
-        return ArmSpec(MOTORS, "gripper", str(self.xml_path()), self.ee_site, self.approach_axis, home=self.home[:-1],
-                       model_joints=self.joints)
+    def spec(self, prefix=""):
+        """The arm's ArmSpec, its keys under PREFIX ("left_" for a bimanual rig's left arm)."""
+        closed, opened = self.gripper_units
+        return ArmSpec(tuple(prefix + motor for motor in self.motors), prefix + "gripper", str(self.xml_path()),
+                       self.ee_site, self.approach_axis, gripper_open=opened, gripper_closed=closed,
+                       home=self.home[:-1], model_joints=self.joints)
 
 
 def prepare_omx(source, prepared):
@@ -50,6 +55,23 @@ def prepare_omx(source, prepared):
     spec = mujoco.MjSpec.from_file(str(source))
     spec.body("end_effector_link").add_site(name="ee", pos=[0, 0, 0])
     prepared.write_text(spec.to_xml())
+
+
+def prepare_openarm(source, prepared):
+    """Enactic's OpenARM v1 MJCF with a site at the finger pads: its hand's tool frame, +z out between the fingers,
+    set back to where they close."""
+    spec = mujoco.MjSpec.from_file(str(source))
+    spec.body("openarm_hand_tcp").add_site(name="ee", pos=[0, 0, -0.02])
+    prepared.write_text(spec.to_xml())
+
+
+def prepare_lekiwi(source, prepared):
+    """Ekumen's LeKiwi without its SO-100: the robot's SO-101 is attached at so_arm100_link when the scene is
+    built (the arm LeRobot's LeKiwi kits now carry, and the one the other rigs share)."""
+    text = source.read_text()
+    text = re.sub(r'\s*<model name="so_arm100"[^>]*/>', "", text)
+    text = re.sub(r'\s*<attach model="so_arm100"[^>]*/>', "", text)
+    prepared.write_text(text)
 
 
 def prepare_koch(source, prepared):
@@ -110,4 +132,9 @@ ARMS = {
     "koch": ArmEmbodiment("koch", "follower_arm_v1.1.urdf", ("joint_1", "joint_2", "joint_3", "joint_4", "joint_5"),
                           "joint_6", "ee", (0.0, 0.0, -1.0), (0.0, 90.0, 66.0, 114.0, 0.0, 30.0), None,
                           (0.0, -0.20), prepare=prepare_koch),
+    # LeRobot's openarm_follower: joint_1..joint_7 in degrees and the gripper in degrees, 0 closed to -65 open
+    "openarm": ArmEmbodiment("openarm", "openarm.xml", tuple(f"openarm_joint{i}" for i in range(1, 8)),
+                             "openarm_finger_joint1", "ee", (0.0, 0.0, 1.0),
+                             (0.0, 0.0, 0.0, 90.0, 0.0, 0.0, 0.0, -30.0), None, (0.35, 0.0), prepare=prepare_openarm,
+                             motors=tuple(f"joint_{i}" for i in range(1, 8)), gripper_units=(0.0, -65.0)),
 }
