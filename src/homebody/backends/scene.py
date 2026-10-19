@@ -61,10 +61,13 @@ def load(root: Path, settings, scene: Path | None = DEFAULT_SCENE):
     fovy = math.degrees(2 * math.atan(math.tan(math.radians(c.horizontal_fov) / 2) * c.height / c.width))
     ET.SubElement(torso, "camera", name="ego", pos=numbers(camera[:3, 3]),
                   quat=numbers(quat), fovy=str(fovy))
+    # a hand whose calibration places its own wrist cameras (a gripper body in the way) uses them
+    mounts = json.loads((profile / "calibration.json").read_text()).get("wrist_camera", {})
     for side in ("left", "right"):
         wrist = next(b for b in xml.iter("body") if b.get("name") == f"{side}_wrist_yaw_link")
-        ET.SubElement(wrist, "camera", name=f"{side}_wrist", pos=numbers(WRIST_CAMERA_POS),
-                      xyaxes=numbers(WRIST_CAMERA_XYAXES[side]), fovy=str(WRIST_CAMERA_FOVY))
+        mount = mounts.get(side, {"pos": WRIST_CAMERA_POS, "xyaxes": WRIST_CAMERA_XYAXES[side]})
+        ET.SubElement(wrist, "camera", name=f"{side}_wrist", pos=numbers(mount["pos"]),
+                      xyaxes=numbers(mount["xyaxes"]), fovy=str(WRIST_CAMERA_FOVY))
     model = mujoco.MjModel.from_xml_string(ET.tostring(xml, encoding="unicode"))
     data = mujoco.MjData(model)
     from holosoma_inference.g1_control.config import amo_profile

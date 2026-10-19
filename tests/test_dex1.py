@@ -87,3 +87,21 @@ def test_dex1_finger_boxes_slide_together_as_the_jaws_close():
         return np.linalg.norm(boxes[0][0] - boxes[1][0])
 
     assert gap(-0.03) == pytest.approx(gap(0.0) - 0.06, abs=1e-3)
+
+
+@needs_profile
+def test_dex1_wrist_cameras_see_the_pads_over_the_gripper_body_and_dex3_keeps_its_own():
+    import trimesh
+
+    assert "wrist_camera" not in json.loads((ROOT / "assets/robot/calibration.json").read_text())
+    calibration = json.loads((DEX1 / "calibration.json").read_text())
+    _, high = trimesh.load_mesh(DEX1 / "g1_grasp/meshes/Dex1_base_link.STL").bounds
+    for side in ("left", "right"):
+        camera = np.array(calibration["wrist_camera"][side]["pos"])
+        mount = np.array([0.0415, 0.0, 0.0])  # the palm in the wrist-yaw frame (tools/build_dex1_hand.py)
+        jaw = mount + np.array(calibration["jaw_samples"][side][0]["palm_to_jaw"])[:3, 3]
+        x = mount[0] + high[0]  # the line of sight at the gripper body's far end
+        assert np.interp(x, [camera[0], jaw[0]], [camera[2], jaw[2]]) > high[2]
+        rows, columns = np.reshape(calibration["wrist_camera"][side]["xyaxes"], (2, 3))
+        look = -np.cross(rows, columns)
+        assert look @ (jaw - camera) / np.linalg.norm(jaw - camera) > np.cos(np.radians(35))  # inside the 70° view

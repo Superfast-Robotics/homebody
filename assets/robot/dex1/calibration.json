@@ -2288,6 +2288,38 @@
    }
   ]
  },
+ "wrist_camera": {
+  "left": {
+   "pos": [
+    0.08,
+    0.0,
+    0.065
+   ],
+   "xyaxes": [
+    -0.0,
+    -1.0,
+    0.0,
+    0.3396,
+    -0.0,
+    0.9406
+   ]
+  },
+  "right": {
+   "pos": [
+    0.08,
+    0.0,
+    0.065
+   ],
+   "xyaxes": [
+    -0.0,
+    -1.0,
+    0.0,
+    0.3396,
+    -0.0,
+    0.9406
+   ]
+  }
+ },
  "provenance": "Arm entries of HomeBody's G1 calibration; gripper of Unitree's Dex1-1 (unitree_ros g1_29dof_mode_15_with_dex1_1), servo from the warehouse handoff's MuJoCo conversion.",
  "jaw_provenance": "Jaw samples from the Dex1 fingers' inner collision faces across their slide travel."
 }

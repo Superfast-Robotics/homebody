@@ -24,6 +24,8 @@ REPO = Path(__file__).resolve().parents[1]
 SIDES = ("left", "right")
 OPEN, CLOSED = 0.0245, -0.02     # finger slide (m): fully open, and the range end (a 6 mm gap)
 SAMPLES = 18
+# Wrist camera on top of the gripper body (wrist-yaw frame, m): its top is 3.1 cm up, so the view of the pads clears it
+WRIST_CAMERA_POS = (0.08, 0.0, 0.065)
 HAND_RATE = 0.1  # finger closing speed (m/s): fully open to closed in about half a second
 SERVO = {"kp": 400.0, "kd": 8.0, "force": 20.0}  # the handoff's gripper servo: N/m, N s/m, N
 FINGER = {"contype": "1", "conaffinity": "2", "friction": "1.2 0.005 0.0001"}  # HomeBody's hand collision bits
@@ -162,6 +164,22 @@ def jaw_samples(model_path):
     return samples
 
 
+def wrist_camera(model_path, samples):
+    """The wrist cameras: at WRIST_CAMERA_POS, looking halfway between straight out of the wrist and the open
+    jaw's centre, horizontal image rows; as MuJoCo camera xyaxes in each wrist-yaw frame."""
+    model = mujoco.MjModel.from_xml_path(str(model_path))
+    cameras = {}
+    for side in SIDES:
+        mount = model.body_pos[model.body(f"{side}_hand_palm_link").id]  # palm in the wrist-yaw frame, unrotated
+        jaw = mount + np.array(samples[side][0]["palm_to_jaw"])[:3, 3] - np.array(WRIST_CAMERA_POS)
+        look = np.array([1.0, 0.0, 0.0]) + jaw / np.linalg.norm(jaw)
+        look /= np.linalg.norm(look)
+        x = np.cross(look, [0.0, 0.0, 1.0])
+        x /= np.linalg.norm(x)
+        cameras[side] = {"pos": list(WRIST_CAMERA_POS), "xyaxes": np.r_[x, np.cross(-look, x)].round(4).tolist()}
+    return cameras
+
+
 def build_calibration(model_path, out):
     base = json.loads((REPO / "assets/robot/calibration.json").read_text())
     calibration = {key: base[key] for key in ("arm_limits", "arm_effort", "gains", "limit_margin")}
@@ -174,7 +192,8 @@ def build_calibration(model_path, out):
         "hand_rate": HAND_RATE,
         "finger_groups": {"thumb": [0], "index": [1], "middle": [1]},  # the two jaws oppose each other
         "hand_servo": SERVO,
-        "jaw_samples": jaw_samples(model_path),
+        "jaw_samples": (samples := jaw_samples(model_path)),
+        "wrist_camera": wrist_camera(model_path, samples),
         "provenance": "Arm entries of HomeBody's G1 calibration; gripper of Unitree's Dex1-1 (unitree_ros "
                       "g1_29dof_mode_15_with_dex1_1), servo from the warehouse handoff's MuJoCo conversion.",
         "jaw_provenance": "Jaw samples from the Dex1 fingers' inner collision faces across their slide travel.",
