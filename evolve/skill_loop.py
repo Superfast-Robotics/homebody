@@ -152,7 +152,7 @@ class SkillLoop:
         """The remote candidate name and local worktree name of CID, unique per profile."""
         return f"{self.cfg.get('workdir', self.skill)}-{cid}"
 
-    def evaluate(self, cid, checkout, splits=SPLITS, only=None, cand=None):
+    def evaluate(self, cid, checkout, splits=SPLITS, only=None, cand=None, videos=False):
         """Push CID's code and run every episode of SPLITS on the remote (or ONLY: split -> episode paths, under the
         candidate copy CAND); collect and summarise."""
         local = self.work / "results" / cid
@@ -170,7 +170,7 @@ class SkillLoop:
         started = time.monotonic()
         self.remote.ssh(f"bash {self.remote.work}/run_skill_jobs.sh {self.remote.base} {self.cfg['parallel']} {jobs} "
                         f"{self.remote.work} {int(self.coder)} '{self.cfg.get('coder_model', '')}' "
-                        f"'{self.cfg.get('coder_rates', '')}' '{self.cfg.get('coder_seconds', '')}'", timeout=24 * 3600)
+                        f"'{self.cfg.get('coder_rates', '')}' '{self.cfg.get('coder_seconds', '')}' {int(videos)}", timeout=24 * 3600)
         if local.exists():
             shutil.rmtree(local)
         local.mkdir(parents=True)
@@ -191,10 +191,10 @@ class SkillLoop:
         return summaries
 
     # --- commands ---
-    def baseline(self, commit, cid="p000"):
+    def baseline(self, commit, cid="p000", videos=False):
         """Measure COMMIT as CID; a later baseline (a pipeline change under the skill) becomes the version rounds build on."""
         path = self.loop.worktree(self.cand(f"{cid}"), git("rev-parse", commit))
-        summaries = self.evaluate(cid, path)
+        summaries = self.evaluate(cid, path, videos=videos)
         self.record({"id": cid, "round": 0, "commit": git("rev-parse", "HEAD", cwd=path), "status": "baseline",
                      "reason": f"{self.skill} skill baseline", **summaries})
 
@@ -448,6 +448,7 @@ def main(argv=None):
     base = sub.add_parser("baseline")
     base.add_argument("commit")
     base.add_argument("--id", default="p000", help="archive id (p001, ... for a re-baseline after a pipeline change)")
+    base.add_argument("--videos", action="store_true", help="also record each episode's room and shoulder videos (remote)")
     run = sub.add_parser("run")
     run.add_argument("--rounds", type=int, required=True)
     run.add_argument("--diagnose-model", help="Codex model for the diagnoses of this run (default: [skill] model)")
@@ -458,7 +459,7 @@ def main(argv=None):
     if args.command == "init":
         print(loop.init(args.commit))
     elif args.command == "baseline":
-        loop.baseline(args.commit, args.id)
+        loop.baseline(args.commit, args.id, args.videos)
     elif args.command == "test":
         loop.test(args.cid)
     elif args.command == "run":
