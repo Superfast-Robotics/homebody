@@ -28,6 +28,7 @@ import subprocess
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from itertools import zip_longest
 from pathlib import Path
 
 from . import astra, skill_score
@@ -203,18 +204,32 @@ class SkillLoop:
     def evaluate(self, cid, checkout, splits=SPLITS, only=None, cand=None, videos=False):
         """Push CID's code and run every episode of SPLITS on the remote (or ONLY: split -> episode paths, under the
         candidate copy CAND); collect and summarise."""
-        local = self.work / "results" / cid
-        identity = {"commit": git("rev-parse", "HEAD", cwd=checkout), "setup": self.setup_fingerprint()}
-        recorded = local / "identity.json"
-        if all((local / s / COMPLETE).exists() for s in splits) and recorded.exists() \
-                and json.loads(recorded.read_text()) == identity:  # results are reused only for the same code and setup
-            return self.summaries(cid, splits) if splits != SPLITS else self.summaries(cid)
-        cand = cand or self.cand(cid)
-        self.loop.remote.push_candidate(cand, checkout)
-        root = f"{self.remote.work}/skill/{self.cfg.get('workdir', self.skill)}/{cid}"
-        lines = [f"{self.remote.work}/cands/{cand} {self.remote.work}/{episode} {root}/{split}/{Path(episode).stem}"
-                 for split in splits for episode in (only[split] if only else self.episodes(split))]
-        self.remote.ssh(f"rm -rf {root} && mkdir -p {root}")
+        return self.evaluate_many([(cid, checkout, only, cand)], splits, videos)[cid]
+
+    def evaluate_many(self, items, splits=SPLITS, videos=False):
+        """Evaluate several versions at once: ITEMS are (cid, checkout, only, cand). Every episode of every version
+        goes into one queue per host, so a version's slowest episodes overlap others' work instead of idling the
+        hosts; each version is then collected and summarised as on its own. {cid: summaries}."""
+        setup, results, pending, lines = self.setup_fingerprint(), {}, [], []
+        for cid, checkout, only, cand in items:
+            local = self.work / "results" / cid
+            identity = {"commit": git("rev-parse", "HEAD", cwd=checkout), "setup": setup}
+            recorded = local / "identity.json"
+            if all((local / s / COMPLETE).exists() for s in splits) and recorded.exists() \
+                    and json.loads(recorded.read_text()) == identity:  # reused only for the same code and setup
+                results[cid] = self.summaries(cid, splits) if splits != SPLITS else self.summaries(cid)
+                continue
+            cand = cand or self.cand(cid)
+            self.loop.remote.push_candidate(cand, checkout)
+            root = f"{self.remote.work}/skill/{self.cfg.get('workdir', self.skill)}/{cid}"
+            mine = [f"{self.remote.work}/cands/{cand} {self.remote.work}/{episode} {root}/{split}/{Path(episode).stem}"
+                    for split in splits for episode in (only[split] if only else self.episodes(split))]
+            self.remote.ssh(f"rm -rf {root} && mkdir -p {root}")
+            pending.append((cid, local, root, mine, identity))
+            lines.append(mine)
+        if not pending:
+            return results
+        queue = [line for batch in zip_longest(*lines) for line in batch if line]  # versions interleaved
         rsync("-a", str(HERE / "skill_bench.py"), str(HERE / "skill_bench_tasks.py"), str(HERE / "run_skill_jobs.sh"),
               f"{self.remote.host}:{self.remote.work}/")
         started = time.monotonic()
@@ -222,12 +237,14 @@ class SkillLoop:
         for host in hosts:  # the profile's services (e.g. a planning server) up on every host the episodes run on
             for command in self.cfg.get("services", []):
                 host.ssh(command, timeout=600)
+        batch = f"{self.remote.work}/skill/{self.cfg.get('workdir', self.skill)}/batch-{pending[0][0]}-{len(pending)}"
+        self.remote.ssh(f"rm -rf {batch} && mkdir -p {batch}")
 
-        def run_share(index):  # the hosts share the group volume: one candidate copy, one results folder
-            host, share = hosts[index], lines[index::len(hosts)]
+        def run_share(index):  # the hosts share the group volume: one copy per version, one results folder each
+            host, share = hosts[index], queue[index::len(hosts)]
             if not share:
                 return
-            jobs = f"{root}/jobs{index}.txt"
+            jobs = f"{batch}/jobs{index}.txt"
             host.ssh(f"cat > {jobs} << 'EOF'\n" + "\n".join(share) + "\nEOF")
             host.ssh(f"bash {host.work}/run_skill_jobs.sh {host.base} {self.cfg['parallel']} {jobs} "
                      f"{host.work} {int(self.coder)} '{self.cfg.get('coder_model', '')}' "
@@ -235,27 +252,31 @@ class SkillLoop:
 
         with ThreadPoolExecutor(len(hosts)) as pool:
             list(pool.map(run_share, range(len(hosts))))
-        if local.exists():
-            shutil.rmtree(local)
-        local.mkdir(parents=True)
-        rsync("-a", "--include=*/", "--include=result.json", "--include=trace.json", "--include=run.log", "--include=arm_track.json",
-              "--include=REQUEST.md", "--include=tools.jsonl", "--include=start_*.py", "--include=last_message.json",
-              "--include=**/coder/call-*/events.jsonl", "--include=**/workspace/skills/*.py",
-              "--include=**/workspace/lib/*.py", "--exclude=*", "--prune-empty-dirs",
-              f"{self.remote.host}:{root}/", f"{local}/")
-        for split in splits:
-            (local / split).mkdir(exist_ok=True)
-        self.fill_missing(local, lines)
-        recorded.write_text(json.dumps(identity))
-        for split in splits:
-            (local / split / COMPLETE).write_text("done\n")
-        if splits != SPLITS:
-            return self.summaries(cid, splits)
-        summaries = self.summaries(cid)
-        self.log(f"{cid}: train success {summaries['train']['success_rate']:.2f} value {summaries['train']['value']:.3f} "
-                 f"held {summaries['train']['held_by_group']}, val success {summaries['val']['success_rate']:.2f} value "
-                 f"{summaries['val']['value']:.3f} held {summaries['val']['held_by_group']} ({time.monotonic() - started:.0f} s)")
-        return summaries
+        seconds = time.monotonic() - started
+        for cid, local, root, mine, identity in pending:
+            if local.exists():
+                shutil.rmtree(local)
+            local.mkdir(parents=True)
+            rsync("-a", "--include=*/", "--include=result.json", "--include=trace.json", "--include=run.log",
+                  "--include=arm_track.json", "--include=REQUEST.md", "--include=tools.jsonl", "--include=start_*.py",
+                  "--include=last_message.json", "--include=**/coder/call-*/events.jsonl",
+                  "--include=**/workspace/skills/*.py", "--include=**/workspace/lib/*.py", "--exclude=*",
+                  "--prune-empty-dirs", f"{self.remote.host}:{root}/", f"{local}/")
+            for split in splits:
+                (local / split).mkdir(exist_ok=True)
+            self.fill_missing(local, mine)
+            (local / "identity.json").write_text(json.dumps(identity))
+            for split in splits:
+                (local / split / COMPLETE).write_text("done\n")
+            if splits != SPLITS:
+                results[cid] = self.summaries(cid, splits)
+                continue
+            summaries = results[cid] = self.summaries(cid)
+            self.log(f"{cid}: train success {summaries['train']['success_rate']:.2f} value {summaries['train']['value']:.3f} "
+                     f"held {summaries['train']['held_by_group']}, val success {summaries['val']['success_rate']:.2f} value "
+                     f"{summaries['val']['value']:.3f} held {summaries['val']['held_by_group']} "
+                     f"({seconds:.0f} s for {len(pending)} version{'s' if len(pending) > 1 else ''})")
+        return results
 
     # --- commands ---
     def baseline(self, commit, cid="p000", videos=False):
