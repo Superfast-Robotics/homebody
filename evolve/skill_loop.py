@@ -191,8 +191,8 @@ class SkillLoop:
         return summaries
 
     # --- commands ---
-    def baseline(self, commit):
-        cid = "p000"
+    def baseline(self, commit, cid="p000"):
+        """Measure COMMIT as CID; a later baseline (a pipeline change under the skill) becomes the version rounds build on."""
         path = self.loop.worktree(self.cand(f"{cid}"), git("rev-parse", commit))
         summaries = self.evaluate(cid, path)
         self.record({"id": cid, "round": 0, "commit": git("rev-parse", "HEAD", cwd=path), "status": "baseline",
@@ -445,7 +445,9 @@ def main(argv=None):
     parser.add_argument("--profile", help="a [skills.<profile>] of config.toml (default: [skills] default)")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("init").add_argument("commit")
-    sub.add_parser("baseline").add_argument("commit")
+    base = sub.add_parser("baseline")
+    base.add_argument("commit")
+    base.add_argument("--id", default="p000", help="archive id (p001, ... for a re-baseline after a pipeline change)")
     run = sub.add_parser("run")
     run.add_argument("--rounds", type=int, required=True)
     run.add_argument("--diagnose-model", help="Codex model for the diagnoses of this run (default: [skill] model)")
@@ -456,7 +458,7 @@ def main(argv=None):
     if args.command == "init":
         print(loop.init(args.commit))
     elif args.command == "baseline":
-        loop.baseline(args.commit)
+        loop.baseline(args.commit, args.id)
     elif args.command == "test":
         loop.test(args.cid)
     elif args.command == "run":
