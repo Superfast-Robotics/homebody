@@ -32,7 +32,7 @@ from pathlib import Path
 
 from . import astra, skill_score
 from .loop import git
-from .skill_loop import HERE, SPLITS, SkillLoop
+from .skill_loop import HERE, SPLITS, SkillLoop, public_reason
 
 DEFAULT_MODELS = ("gpt-6-astra", "gpt-6.1-sol")
 TOP_PARENTS = 3          # the top versions by train value are always in the parent pool
@@ -42,11 +42,18 @@ STALLED_ROUNDS = 2        # consecutive rounds without an accepted candidate bef
 PROBE_EPISODES = 8
 PARTNER_MARGIN = 0.05   # a crossover partner's train value is at most this far below its parent's
 UCB_EXPLORATION = math.sqrt(2.0)
+CREDIT_UNIT = 10.0       # the bandit's reward is per this many credits a candidate cost to write
+ACTIVATION_EVENT = "mechanism_active"  # what a candidate's new code emits when it runs (evo_diff.md)
 
 
-def fitness(summaries):
-    """A version's value for parent selection: its train value (val never steers the search)."""
-    return summaries["train"]["value"]
+def fitness(summaries, key="values", weights=None):
+    """A version's score for parent selection: its train mean of KEY ("values" or "held_values"), episodes
+    weighted by prefix (val never steers the search)."""
+    values = summaries["train"].get(key) or {}
+    if not values:
+        return 0.0
+    w = {e: skill_score.weight(e, weights) for e in values}
+    return sum(w[e] * v for e, v in values.items()) / sum(w.values())
 
 
 def dominates(a, b):
@@ -96,6 +103,9 @@ class EvoLoop(SkillLoop):
         self.lesson_model = self.cfg.get("evo_lesson_model", "gpt-6.1-sol")
         self.rng = random.Random(self.cfg.get("evo_seed", 0))
 
+    def fit(self, summaries):
+        return fitness(summaries, self.objective, self.weights)
+
     def on_host(self, index, function, *args):
         """FUNCTION(*ARGS) with this thread pinned to evaluation host INDEX (round robin), then unpinned."""
         self.loop._local.remote = self.loop.remotes[index % len(self.loop.remotes)]
@@ -137,12 +147,12 @@ class EvoLoop(SkillLoop):
 
     def parent_pool(self, population, summaries):
         """The top versions by train value and the train Pareto front."""
-        ranked = sorted(population, key=lambda i: -fitness(summaries[i]))
-        front = pareto_front({i: summaries[i]["train"]["values"] for i in population})
+        ranked = sorted(population, key=lambda i: -self.fit(summaries[i]))
+        front = pareto_front({i: summaries[i]["train"][self.objective] for i in population})
         return list(dict.fromkeys(ranked[:TOP_PARENTS] + front))
 
     def sample_parent(self, pool, summaries, offspring):
-        weights = parent_weights({i: fitness(summaries[i]) for i in pool}, offspring)
+        weights = parent_weights({i: self.fit(summaries[i]) for i in pool}, offspring)
         return self.rng.choices(list(weights), weights=list(weights.values()))[0]
 
     def complementary(self, pool, others, summaries):
@@ -151,15 +161,16 @@ class EvoLoop(SkillLoop):
         best, pair = 0, None
         for a in pool:
             for b in others:
-                if a != b and fitness(summaries[b]) >= fitness(summaries[a]) - PARTNER_MARGIN:
-                    va, vb = summaries[a]["train"]["values"], summaries[b]["train"]["values"]
+                if a != b and self.fit(summaries[b]) >= self.fit(summaries[a]) - PARTNER_MARGIN:
+                    va, vb = summaries[a]["train"][self.objective], summaries[b]["train"][self.objective]
                     wins = [sum(va[e] > vb.get(e, 0) for e in va), sum(vb[e] > va.get(e, 0) for e in vb)]
                     if min(wins) > best:
                         best, pair = min(wins), (a, b)
         return pair
 
     def bandit(self):
-        """{model: [pulls, reward sum]} from the candidates on record (train gain over their parent)."""
+        """{model: [pulls, reward sum]} from the candidates on record: the objective's train gain over the parent,
+        per CREDIT_UNIT credits the candidate cost to write (a cheaper model that does as well earns more)."""
         population = self.population()
         stats = {m: [0, 0.0] for m in self.models}
         for entry in self.archive():
@@ -168,7 +179,10 @@ class EvoLoop(SkillLoop):
                 continue
             stats[model][0] += 1
             if entry["id"] in population and parent in population:
-                stats[model][1] += reward(fitness(self.summaries(entry["id"])) - fitness(self.summaries(parent)))
+                usage = self.work / "rounds" / f"e{int(entry['round']):03d}" / f"{entry['id']}_note.usage.json"
+                credits = json.loads(usage.read_text()).get("credits", CREDIT_UNIT) if usage.exists() else CREDIT_UNIT
+                gain = self.fit(self.summaries(entry["id"])) - self.fit(self.summaries(parent))
+                stats[model][1] += reward(gain) * CREDIT_UNIT / max(credits, 1.0)
         return stats
 
     def stalled(self):
@@ -182,7 +196,7 @@ class EvoLoop(SkillLoop):
         ws = self.workspace(round_dir, best)
         lessons = self.work / "lessons.md"
         (ws / "lessons.md").write_text(lessons.read_text() if lessons.exists() else "# Lessons so far\n\nNone yet.\n")
-        others = sorted((i for i in population if i != best["id"]), key=lambda i: -fitness(summaries[i]))
+        others = sorted((i for i in population if i != best["id"]), key=lambda i: -self.fit(summaries[i]))
         chosen = others[:INSPIRATIONS] + self.rng.sample(others[INSPIRATIONS:], min(1, len(others[INSPIRATIONS:])))
         folder = ws / "inspirations"
         folder.mkdir()
@@ -191,7 +205,7 @@ class EvoLoop(SkillLoop):
             diff = self.skill_diff(best["commit"], entry["commit"])[:12000]
             (folder / f"{i}.md").write_text(
                 f"# {i} ({entry['status']}): train value {s['train']['value']:.3f}, success {s['train']['success_rate']:.2f}\n\n"
-                f"Outcomes on train: {json.dumps(s['train']['outcomes'])}\n\nVerdict: {entry.get('reason', '')}\n\n"
+                f"Outcomes on train: {json.dumps(s['train']['outcomes'])}\n\nVerdict: {public_reason(entry)}\n\n"
                 f"## Its note\n\n{(entry.get('notes') or '')[:2500]}\n\n## Its code against {best['id']}\n\n```diff\n{diff}\n```\n")
         return ws
 
@@ -233,8 +247,36 @@ class EvoLoop(SkillLoop):
             stats[slot["model"]] = [pulls + 1, total + (total / pulls if pulls else 0.0)]
         return slots
 
+    def remeasure(self, ids):
+        """Re-apply each older version's own skill change (against its parent) on top of the current best and
+        score it there, so it can be a parent or crossover donor measured in today's scenes and sensors."""
+        best, archive = self.best(), {e["id"]: e for e in self.archive()}
+        folder = str(Path(self.source).parent)
+        for cid in ids:
+            old = archive[cid]
+            parent = archive.get(old.get("parent")) or {}
+            new = f"r{best['id']}-{cid}"
+            path = self.loop.worktree(self.cand(new), best["commit"])
+            if git("rev-parse", "HEAD", cwd=path) == best["commit"]:
+                patch = git("diff", parent.get("commit", old["commit"] + "^"), old["commit"], "--", folder, "tests")
+                applied = subprocess.run(["git", "apply", "--3way", "-"], input=patch + "\n", text=True, cwd=path,
+                                         capture_output=True, check=False)
+                if applied.returncode != 0:
+                    self.log(f"remeasure {cid}: its change does not apply on {best['id']}: {applied.stderr[-300:]}")
+                    continue
+                git("add", "-A", cwd=path)
+                git("-c", "user.name=astra", "-c", "user.email=astra@localhost", "commit", "-q", "-m",
+                    f"skill {self.skill} {new}: {cid}'s change on {best['id']}", cwd=path)
+            summaries = self.evaluate(new, path)
+            verdict = skill_score.judge(self.summaries(best["id"]), summaries, self.objective, self.weights)
+            self.record({"id": new, "round": old.get("round"), "parent": best["id"], "parents": [best["id"], cid],
+                         "operator": "remeasure", "commit": git("rev-parse", "HEAD", cwd=path), "status": "remeasured",
+                         "notes": old.get("notes", ""), **summaries, "verdict": verdict,
+                         "reason": "remeasured on " + best["id"] + ": " + skill_score.describe(verdict)})
+
     def round(self, number):
         best = self.best()
+        self.check_frozen()
         population = self.population()
         population.setdefault(best["id"], best)
         summaries = self.scored(population)
@@ -325,21 +367,24 @@ class EvoLoop(SkillLoop):
             return None
         return entry
 
-    def probe_episodes(self, parent):
-        """One train episode per outcome of PARENT (its stage and result code), up to PROBE_EPISODES; the
-        benchmark's priority episodes (profile `evo_probe_prefix`, e.g. the warehouse's) first."""
+    def probe_episodes(self, parent, note=""):
+        """The train episodes NOTE names (where the candidate expects its change to act), then one train episode
+        per outcome of PARENT (its stage and result code), up to PROBE_EPISODES more; the benchmark's priority
+        episodes (profile `evo_probe_prefix`, e.g. the warehouse's) first."""
         rows = skill_score.read(self.work / "results" / parent / "train")
+        named = [e for e in sorted(rows) if e in note][:PROBE_EPISODES]
         prefix = self.cfg.get("evo_probe_prefix", "")
         chosen = {}
         for episode, row in sorted(rows.items(), key=lambda item: (not item[0].startswith(prefix), item[0])):
             chosen.setdefault((row["stage"], skill_score.call(row).get("code")), episode)
         episodes = {Path(e).stem: e for e in self.episodes("train")}
-        return [episodes[e] for e in list(chosen.values())[:PROBE_EPISODES] if e in episodes]
+        picked = list(dict.fromkeys(named + list(chosen.values())[:PROBE_EPISODES]))
+        return [episodes[e] for e in picked if e in episodes]
 
     def probe(self, entry):
         """Run ENTRY on its probe episodes: a crash or behaviour identical to its parent there rejects it."""
         cid, parent = entry["id"], entry["parent"]
-        episodes = self.probe_episodes(parent)
+        episodes = self.probe_episodes(parent, entry.get("notes", ""))
         self.evaluate(f"{cid}-probe", Path(entry["path"]), splits=("train",), only={"train": episodes}, cand=self.cand(cid))
         child = skill_score.read(self.work / "results" / f"{cid}-probe" / "train")
         before = skill_score.read(self.work / "results" / parent / "train")
@@ -348,15 +393,21 @@ class EvoLoop(SkillLoop):
             self.record({**entry, "status": "rejected", "reason": "crashed on probe episodes: "
                          + (str(child[crashed[0]].get("error"))[:300] if crashed else "no results")})
             return None
-        if all(fingerprint(r) == fingerprint(before.get(e, {})) for e, r in child.items()):
-            self.record({**entry, "status": "rejected", "reason": f"inert: behaved exactly like {parent} on "
-                         f"{len(child)} probe episodes (one per outcome), so its change never ran"})
+        traces = [self.work / "results" / f"{cid}-probe" / "train" / e / "trace.json" for e in child]
+        activations = sum(1 for path in traces if path.exists()
+                          for event in json.loads(path.read_text()) if event.get("type") == ACTIVATION_EVENT)
+        unchanged = all(fingerprint(r) == fingerprint(before.get(e, {})) for e, r in child.items())
+        entry = {**entry, "probe": {"episodes": len(child), "activations": activations, "unchanged": unchanged}}
+        if unchanged and activations == 0:  # proven: the new code reported never running, and nothing changed
+            self.record({**entry, "status": "rejected", "reason": f"inert: no {ACTIVATION_EVENT} event and the same "
+                         f"outcomes as {parent} on {len(child)} probe episodes (one per outcome)"})
             return None
+        self.log(f"{cid}: probe {activations} activations, outcomes {'unchanged' if unchanged else 'changed'}")
         return entry
 
     def judge_candidate(self, entry, best):
         summaries = self.evaluate(entry["id"], Path(entry["path"]))
-        verdict = skill_score.judge(self.summaries(best["id"]), summaries)
+        verdict = skill_score.judge(self.summaries(best["id"]), summaries, self.objective, self.weights)
         return {**entry, **summaries, "status": "accepted" if verdict["ok"] else "rejected",
                 "reason": skill_score.describe(verdict), "verdict": verdict}
 
@@ -364,7 +415,7 @@ class EvoLoop(SkillLoop):
         """A cheap model rewrites lessons.md from the whole history (the meta-scratchpad)."""
         history = "\n\n".join(
             f"## {e['id']} (round {e.get('round')}, {e.get('operator', 'greedy')}, parent {e.get('parent')}, "
-            f"model {e.get('model', self.cfg['model'])}): {e['status']}\n{e.get('reason', '')}\n{(e.get('notes') or '')[:1200]}"
+            f"model {e.get('model', self.cfg['model'])}): {e['status']}\n{public_reason(e)}\n{(e.get('notes') or '')[:1200]}"
             for e in self.archive())
         current = self.work / "lessons.md"
         prompt = (HERE / "prompts" / "evo_lessons.md").read_text().format(

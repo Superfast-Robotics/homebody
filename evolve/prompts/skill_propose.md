@@ -5,8 +5,10 @@ diagnosis is below; address **Mechanism {mechanism}** only. The episodes it cite
 {workspace}/episodes/. Edit files in the current directory (a git checkout of the current version);
 do not read or write anything outside it and {workspace}. You may change only: {editable}.
 
-Make the smallest general change that removes the mechanism: nothing tied to particular scenes,
-objects, colours or coordinates; no simulator ground truth. Keep the other skills that use the shared
+Implement one testable causal intervention, with the coordinated changes across stages it needs (not
+a minimal tweak that cannot change an outcome): nothing tied to particular scenes, objects, colours or
+coordinates; no simulator ground truth. State the episodes it should change, how their traces should
+change, and which successful episodes must stay unchanged. Extra refusals are not an improvement. Keep the other skills that use the shared
 code working.
 A built-in skill must stay loadable as the coding assistant's editable copy: its module may import only
 what `ALLOWED` in src/homebody/session/skill_module.py lists (numpy, scipy, standard math and data

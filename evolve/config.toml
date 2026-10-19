@@ -327,7 +327,9 @@ episodes = "skillbench/dex1_warehouse_pick_episodes"
 coder = false
 workdir = "dex1-pick-wh"
 prompts = "skill"
-strategy = "evolve"          # run --strategy greedy for the earlier one-patch-per-mechanism loop
+strategy = "evolve"
+objective = "held"           # accept on completed holds (stage value is reported, not decisive)
+weights = { wh = 2.0 }       # warehouse episodes count twice in acceptance and parent selection          # run --strategy greedy for the earlier one-patch-per-mechanism loop
 evo_candidates = 5           # per round: focused diffs, plus a crossover and (after barren rounds) a rewrite
 evo_models = ["gpt-6-astra", "gpt-6.1-sol"]
 evo_lesson_model = "gpt-6.1-sol"
@@ -339,14 +341,16 @@ parallel = 28
 brief_note = """
 This benchmark's robot is the G1 with Unitree Dex1-1 two-jaw parallel grippers in place of the Dex3
 hands (settings `[robot] hands = "dex1"`, model and calibration in assets/robot/dex1, built by
-tools/build_dex1_hand.py). Its pick and place are `src/homebody/skills/dex1/`; they began as copies of
-the Dex3 skills, which other robots still use, so the shared code (`motion/`, `helpers/`, `toolkit/`)
+tools/build_dex1_hand.py). Its pick and place are `src/homebody/skills/dex1/`; the evaluated pick is a Dex1-specific
+forward/oblique grasp search (inspect the evaluated commit); the Dex3 skills, which other robots still
+use, and the shared code (`motion/`, `helpers/`, `toolkit/`)
 is read-only here: put anything Dex1-specific in `src/homebody/skills/dex1/` (new modules there are
 fine) and tests.
 
 The gripper: two jaws on prismatic joints (`<side>_hand_finger_1_joint` / `_2_joint`, 0.0245 m open,
 sliding toward each other along the palm frame's y axis); jaw opening about 0.095 m fully open down to
-about 0.006 m; about 16 N per jaw; the pads sit 0.09-0.14 m out along the palm frame's +x axis, which
+about 0.006 m; read the jaw actuator limits from the model and calibration (realized contact force depends
+on closure error and contact geometry); the pads sit 0.09-0.14 m out along the palm frame's +x axis, which
 points straight out of the wrist along the forearm. So the jaws approach along the forearm, unlike
 Dex3, whose fingers close beside the palm and approach perpendicular to the forearm: the copied
 pick's top-down grasps need the forearm vertical, which this arm cannot reach at table height (the
@@ -360,5 +364,6 @@ Most of this benchmark's episodes (names starting `wh`) are in two warehouse sce
 products stand in rows on shelf boards and tables, the robot stands in front of the row (sometimes up to
 8 cm off) and picks an object in the front rows, often with neighbours a few centimetres away on either
 side or behind, then carries it along an aisle and walks back. The rest are generated scenes (bins,
-shelves, counters) that keep the skill general. Warehouse picking is the priority.
+shelves, counters) that keep the skill general. Warehouse picking is the priority: warehouse episodes count twice when versions are judged, and results
+are reported separately for warehouse and generated episodes.
 """

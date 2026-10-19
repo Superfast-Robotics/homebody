@@ -1,19 +1,26 @@
 You are improving the built-in `{skill}` skill ({source}) to remove one failure mechanism.
 
 Read {workspace}/BRIEF.md first: it says how versions are judged and what you may change. Then
-{workspace}/lessons.md (what earlier versions taught: do not repeat a change that already failed unless
-you say what differs) and the inspiration programs under {workspace}/inspirations/ (other scored versions,
+{workspace}/lessons.md (historical hypotheses and train measurements: do not repeat a change that was
+measured to fail unless you say what differs; challenge lessons that were only guessed) and the inspiration programs under {workspace}/inspirations/ (other scored versions,
 with their code against the current best: borrow what worked). Edit files in the current directory, a git
-checkout of version {parent}; its own results on the train episodes are in {parent_results}. Do not read
-or write anything outside the current directory and {workspace}. You may change only: {editable}.
+checkout of version {parent}; its own results on the train episodes are in {parent_results}. Do not write anything outside the current directory; read anything in it and in {workspace}. You may change only: {editable}.
 
 The diagnosis (of the current best version) is below; address **Mechanism {mechanism}** only, in version
 {parent}. Check in its results that the mechanism occurs there, and make sure the code you add actually
-runs in those episodes: a candidate that behaves exactly like its parent on a sample of episodes, one per
-outcome, is rejected before the full evaluation.
+runs in those episodes.
 
-Make the smallest general change that removes the mechanism: nothing tied to particular scenes,
-objects, colours or coordinates; no simulator ground truth. Keep the other skills that use the shared
+Make the new code report when it acts: where it changes a decision, emit
+`ctx.emit({{"type": "mechanism_active", "mechanism": "<short name>", ...}})` with the values that decided
+it. The probe runs the candidate on the train episodes your note names under Expected effect and on one
+episode per outcome of its parent; one that reports no activation and changes no outcome there is
+rejected as inert, so name the episodes where the change should act.
+
+
+Implement one testable causal intervention, with the coordinated changes across stages it needs (not
+a minimal tweak that cannot change an outcome): nothing tied to particular scenes, objects, colours or
+coordinates; no simulator ground truth. State the episodes it should change, how their traces should
+change, and which successful episodes must stay unchanged. Extra refusals are not an improvement. Keep the other skills that use the shared
 code working.
 A built-in skill must stay loadable as the coding assistant's editable copy: its module may import only
 what `ALLOWED` in src/homebody/session/skill_module.py lists (numpy, scipy, standard math and data

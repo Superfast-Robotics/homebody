@@ -56,6 +56,12 @@ def touched(row):
                      for c in (row.get("hand_contacts") or [])[:3]) or "-"
 
 
+def public_reason(entry):
+    """An archive entry's verdict without validation numbers: what the proposer and diagnoser may read."""
+    verdict = entry.get("verdict")
+    return skill_score.describe_train(verdict) if verdict else entry.get("reason", "")
+
+
 def coder_digest(split_dir):
     """What the coder changed across a split's episodes: per edited function of the skill, how often and
     how often that call ended OK, the diffs of the calls that did, and the recurring fixes: functions changed
@@ -119,6 +125,9 @@ class SkillLoop:
         self.archive_path = self.work / "archive.jsonl"
         self.remote = self.loop.remote
         self.diagnose_model = None
+        # what accepts a candidate: "value" (stage / 2) or "held" (completed holds), episodes weighted by id prefix
+        self.objective = "held_values" if self.cfg.get("objective", "value") == "held" else "values"
+        self.weights = dict(self.cfg.get("weights", {}))
 
     # --- bookkeeping ---
     def archive(self):
@@ -198,7 +207,7 @@ class SkillLoop:
         if local.exists():
             shutil.rmtree(local)
         local.mkdir(parents=True)
-        rsync("-a", "--include=*/", "--include=result.json", "--include=trace.json", "--include=run.log",
+        rsync("-a", "--include=*/", "--include=result.json", "--include=trace.json", "--include=run.log", "--include=arm_track.json",
               "--include=REQUEST.md", "--include=tools.jsonl", "--include=start_*.py", "--include=last_message.json",
               "--include=**/coder/call-*/events.jsonl", "--include=**/workspace/skills/*.py",
               "--include=**/workspace/lib/*.py", "--exclude=*", "--prune-empty-dirs",
@@ -209,18 +218,30 @@ class SkillLoop:
         if splits != SPLITS:
             return self.summaries(cid, splits)
         summaries = self.summaries(cid)
-        self.log(f"{cid}: train success {summaries['train']['success_rate']:.2f} value {summaries['train']['value']:.3f}, "
-                 f"val success {summaries['val']['success_rate']:.2f} value {summaries['val']['value']:.3f} "
-                 f"({time.monotonic() - started:.0f} s)")
+        self.log(f"{cid}: train success {summaries['train']['success_rate']:.2f} value {summaries['train']['value']:.3f} "
+                 f"held {summaries['train']['held_by_group']}, val success {summaries['val']['success_rate']:.2f} value "
+                 f"{summaries['val']['value']:.3f} held {summaries['val']['held_by_group']} ({time.monotonic() - started:.0f} s)")
         return summaries
 
     # --- commands ---
     def baseline(self, commit, cid="p000", videos=False):
-        """Measure COMMIT as CID; a later baseline (a pipeline change under the skill) becomes the version rounds build on."""
+        """Measure COMMIT as CID; a later baseline (a pipeline change under the skill) becomes the version rounds build
+        on. It records the scenes' and robot's fingerprint, which later rounds check (the frozen setup)."""
         path = self.loop.worktree(self.cand(f"{cid}"), git("rev-parse", commit))
         summaries = self.evaluate(cid, path, videos=videos)
         self.record({"id": cid, "round": 0, "commit": git("rev-parse", "HEAD", cwd=path), "status": "baseline",
-                     "reason": f"{self.skill} skill baseline", **summaries})
+                     "reason": f"{self.skill} skill baseline", "setup": self.setup_fingerprint(), **summaries})
+
+    def setup_fingerprint(self):
+        """A hash of the benchmark's scene packages and robot profiles on the remote seed: what a round assumes fixed."""
+        return self.remote.ssh(f"cd {self.remote.base}/assets && cat real2sim/*/scene.xml real2sim/*/physics.json "
+                               f"robot/calibration.json robot/*/calibration.json 2>/dev/null | md5sum | cut -c1-12").strip()
+
+    def check_frozen(self):
+        """Stop when the scenes or robot changed since the latest baseline: its results no longer compare."""
+        base = [e for e in self.archive() if e.get("status") == "baseline"][-1]
+        if base.get("setup") and base["setup"] != self.setup_fingerprint():
+            raise SystemExit(f"the scenes or robot changed since baseline {base['id']}: re-baseline before a round")
 
     def init(self, commit, sample=8):
         """Astra writes the skill's first version on top of COMMIT, for a robot the copied skill was not written
@@ -279,11 +300,13 @@ class SkillLoop:
         benchmark = bench.read_text().format(skill=self.skill, coder_minutes=minutes) if bench.exists() else ""
         brief = (HERE / "prompts" / f"{self.prompts}_brief.md").read_text().format(
             skill=self.skill, source=self.source, coder_model=self.cfg.get("coder_model", "Sol"),
-            coder_minutes=minutes, benchmark=benchmark)
+            coder_minutes=minutes, benchmark=benchmark, objective=self.objective_text(),
+            editable=", ".join(p.format(skill=self.skill) for p in self.editable))
         (ws / "BRIEF.md").write_text(brief + (f"\n## This robot\n\n{self.brief_note.strip()}\n" if self.brief_note else ""))
         train = skill_score.read(self.work / "results" / best["id"] / "train")
         summary = skill_score.summary(train)
         lines = [f"# {self.skill} on the train episodes with version {best['id']}", "",
+                 f"Held after the carry, by group: {json.dumps(summary.get('held_by_group', {}))}", "",
                  (f"Success {summary['success_rate']:.2f} (the skill alone {summary['builtin_success_rate']:.2f}), "
                   f"value {summary['value']:.3f} (stage / 2), {summary['skill_seconds']} s and {summary['credits']} "
                   f"coder credits per episode; coder calls {summary['coder_calls']}, OK {summary['coder_ok']}."), "",
@@ -301,16 +324,45 @@ class SkillLoop:
             source = self.work / "results" / best["id"] / "train" / episode
             target = ws / "episodes" / episode
             target.mkdir(parents=True)
-            for name in ("result.json", "trace.json"):
+            for name in ("result.json", "trace.json", "arm_track.json"):
                 if (source / name).exists():
                     shutil.copy(source / name, target / name)
+            if row["stage"] < 2:
+                self.keyframes(best["id"], "train", episode, target)
             for call_dir in sorted(source.rglob("coder/call-*")):
                 (target / f"coder-{call_dir.name}.md").write_text(coder_call(call_dir))
         (ws / "coder_edits.md").write_text(coder_digest(self.work / "results" / best["id"] / "train"))
-        history = [f"## {e['id']} (round {e.get('round')}): {e['status']}\n{e.get('reason', '')}\n{(e.get('notes') or '')[:1500]}"
+        history = [f"## {e['id']} (round {e.get('round')}): {e['status']}\n{public_reason(e)}\n{(e.get('notes') or '')[:1500]}"
                    for e in self.archive()]
         (ws / "history.md").write_text("# Earlier versions of the skill\n\n" + "\n\n".join(history) + "\n")
         return ws
+
+    def objective_text(self):
+        weighted = ", ".join(f"episodes starting {p!r} count {w:g}x" for p, w in self.weights.items())
+        if self.objective == "held_values":
+            return ("completed holds: an episode scores 1 when the object is still held after the whole carry "
+                    "(every leg arrived), else 0; stage value (lifted = 0.5) is reported but does not decide"
+                    + (f"; {weighted}" if weighted else ""))
+        return "stage value: 0 not lifted, 0.5 lifted but not held at the end, 1 held" + (f"; {weighted}" if weighted else "")
+
+    def keyframes(self, cid, split, episode, target, limit=40):
+        """The episode's per-stage head and wrist keyframes (trace/*.jpg) from the remote results, at most LIMIT."""
+        source = f"{self.remote.work}/skill/{self.cfg.get('workdir', self.skill)}/{cid}/{split}/{episode}/session/"
+        frames = target / "keyframes"
+        frames.mkdir(exist_ok=True)
+        try:
+            rsync("-a", "--prune-empty-dirs", "--include=*/", "--include=*.jpg", "--exclude=*",
+                  f"{self.remote.host}:{source}", f"{frames}/")
+        except Exception:  # noqa: BLE001 -- keyframes are extra evidence; a version without them is still diagnosed
+            return
+        jpgs = sorted(frames.rglob("*.jpg"))
+        for path in jpgs:
+            call = path.parent.name  # call-NNN: the episode's skill calls in order
+            path.rename(frames / f"{call}-{path.name}")
+        for path in sorted(frames.glob("*.jpg"))[limit:]:
+            path.unlink()
+        for folder in sorted((p for p in frames.rglob("*") if p.is_dir()), reverse=True):
+            folder.rmdir()
 
     def proposer(self):
         """The model that patches the skill ([skill] model and effort)."""
@@ -351,6 +403,7 @@ class SkillLoop:
         """Diagnose the best version, write and screen one candidate per ranked mechanism at once (they share
         one parent and one diagnosis), then evaluate them one by one; the largest accepted gain wins."""
         best = self.best()
+        self.check_frozen()
         round_dir = self.work / "rounds" / f"s{number:03d}"
         round_dir.mkdir(parents=True, exist_ok=True)
         self.log(f"round {number}: improving {best['id']} (train {best['train']['value']:.3f}, val {best['val']['value']:.3f})")
@@ -371,7 +424,7 @@ class SkillLoop:
         accepted = []
         for entry in ready:  # one at a time: the coder shares one GPU, and three evaluations at once starve it
             summaries = self.evaluate(entry["id"], paths[entry["mechanism"]])
-            verdict = skill_score.judge(self.summaries(best["id"]), summaries)
+            verdict = skill_score.judge(self.summaries(best["id"]), summaries, self.objective, self.weights)
             entry = {**entry, **summaries, "status": "accepted" if verdict["ok"] else "rejected",
                      "reason": skill_score.describe(verdict), "verdict": verdict}
             (accepted.append(entry) if verdict["ok"] else self.record(entry))
@@ -478,6 +531,7 @@ def main(argv=None):
     run.add_argument("--diagnose-model", help="Codex model for the diagnoses of this run (default: [skill] model)")
     run.add_argument("--strategy", choices=("greedy", "evolve"), help="the round's search (default: profile strategy)")
     sub.add_parser("test").add_argument("cid")
+    sub.add_parser("remeasure").add_argument("ids", nargs="+", help="older versions to re-score on the current best")
     sub.add_parser("status")
     args = parser.parse_args(argv)
     loop = SkillLoop(args.profile)
@@ -490,6 +544,9 @@ def main(argv=None):
         loop.baseline(args.commit, args.id, args.videos)
     elif args.command == "test":
         loop.test(args.cid)
+    elif args.command == "remeasure":
+        from .evo_loop import EvoLoop
+        EvoLoop(args.profile).remeasure(args.ids)
     elif args.command == "run":
         loop.diagnose_model = args.diagnose_model
         loop.run(args.rounds)

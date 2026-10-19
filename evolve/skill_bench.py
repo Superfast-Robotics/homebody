@@ -104,10 +104,12 @@ def run_pick(cm, session, episode, step):
             carried = execute("navigate", cm.navigate_arguments(episode["stance"], step.facing, side),
                               port.snapshot(), evidence_name="return")
         carry = session.outcome["steps"][-1] if session.outcome["steps"] else {"code": "OK" if carried else "?"}
+        carry = {**carry, "completed": bool(carried)}
     if held:
         for _ in range(int(SETTLE_SECONDS / 0.02)):
             port.advance(port.epoch, 0.02)
-    return {**{k: v for k, v in record.items() if k != "ok"}, "carry": carry and {k: carry.get(k) for k in ("code", "message")},
+    return {**{k: v for k, v in record.items() if k != "ok"},
+            "carry": carry and {k: carry.get(k) for k in ("code", "message", "completed")},
             "side": side, "timing": timing}
 
 
@@ -249,7 +251,8 @@ def score_pick(rows, episode, record):
     the walk the episode asks for: an object still in the hand because the pick refused (so nothing walked) is
     lifted, not held, or a refusal would score better than an honest OK."""
     lifted, held, rise = physics_verdict(rows, episode["step"]["fixture_id"])
-    walked = record.get("carry") is not None or episode["step"].get("carry_goal") is None
+    carry = record.get("carry")
+    walked = episode["step"].get("carry_goal") is None or bool(carry and carry.get("completed", True))
     stage = 2 if held and walked else 1 if lifted else 0
     return {"lifted": lifted, "held": held, "walked": walked, "max_rise": round(rise, 3), "stage": stage}
 
@@ -473,6 +476,9 @@ def attach_trace(session, backend, task_dir, recorder):
     session.context.emit = both
 
 
+ARM_TRACK_STRIDE = 5  # physics rows (0.1 s apart) per arm_track sample
+
+
 def hand_contacts(rows, limit=8):
     """What the robot's hands touched, from the recorded physics: per (other geom, hand part), the first and last
     time, how many samples and the largest normal force. Diagnosis evidence only: the skill cannot sense it."""
@@ -534,6 +540,9 @@ def main(root, episode_path, out):
             if line.strip()]
     write_trace(out)
     record["hand_contacts"] = hand_contacts(rows)
+    track = [{"time": round(r["time"], 2), **r["arm_control"]} for r in rows[::ARM_TRACK_STRIDE] if r.get("arm_control")]
+    if track:  # diagnosis evidence: commanded, applied and measured arm joints and the base, every half second
+        (out / "arm_track.json").write_text(json.dumps(track))
     if rows and "setup_failed" not in record and "error" not in record:
         record.update(DRIVERS[episode["skill"]][1](rows, episode, record))
         record.update(success=record["stage"] == 2,

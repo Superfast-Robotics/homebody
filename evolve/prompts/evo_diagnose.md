@@ -1,12 +1,16 @@
 You are diagnosing why the built-in `{skill}` skill fails on the benchmark episodes.
 
 Read {workspace}/BRIEF.md first, then {workspace}/results.md, {workspace}/history.md and {workspace}/lessons.md
-(what earlier versions taught), then the inspiration programs under {workspace}/inspirations/ (other scored
+(historical hypotheses and train measurements: separate what was measured from what was guessed), then the inspiration programs under {workspace}/inspirations/ (other scored
 versions: their notes, results and code against this one), then the
 episodes under {workspace}/episodes/<id>/ (trace.json, result.json; result.json's `hand_contacts` lists what the robot's hand touched and when, from the recorded physics: evidence for you only, which the skill itself cannot sense this way). The skill's code is
 {source} in the current directory, with the shared code it uses under
 src/homebody/motion/, src/homebody/helpers/ and src/homebody/toolkit/ (toolkit/API.md is the robot
-interface reference). Do not read anything outside these places.
+interface reference). You may also read, without changing anything, the rest of the repository: the
+robot interface, backend, controller (src/homebody/backends/), calibration (assets/robot/) and the
+benchmark code (evolve/skill_bench.py), to tell what the robot physically cannot do from what the skill
+assumes. Also use arm_track.json (commanded, applied and measured arm joints over time) and the keyframes/
+images of failed episodes. Simulator evidence is for diagnosis only: a fix may not read it.
 
 Find the MECHANISMS behind the failures, each across many episodes: group episodes by refusal code
 and by what the traces show (which stage it reached, what it replanned, why it gave up, whether the
@@ -22,4 +26,5 @@ Answer in Markdown, with at most four sections titled exactly "## Mechanism N: <
 order of expected impact (Mechanism 1 the highest): proposals are made for the first mechanisms
 only, so the order decides what gets fixed. Each section has:
 **Evidence** (episode ids, counts, quoted trace events and messages), **Cause** (file and function),
-**Fix direction** (the smallest change) and **Expected gain** (how many episodes, which families).
+**Competing explanations** (and the evidence that would separate them), **Fix direction** (one testable
+intervention, the episodes it should change and how its trace should change) and **Expected gain** (how many episodes, which families).

@@ -5,13 +5,12 @@ Read {workspace}/BRIEF.md first: it says how versions are judged and what you ma
 {workspace}/lessons.md (what earlier versions taught: do not repeat a change that already failed unless
 you say what differs) and the inspiration programs under {workspace}/inspirations/ (other scored versions,
 with their code against the current best: borrow what worked). Edit files in the current directory, a git
-checkout of version {parent}; its own results on the train episodes are in {parent_results}. Do not read
-or write anything outside the current directory and {workspace}. You may change only: {editable}.
+checkout of version {parent}; its own results on the train episodes are in {parent_results}. Do not write anything outside the current directory; read anything in it and in {workspace}. You may change only: {editable}.
 
-The diagnosis (of the current best version, the current directory {parent}) is below. Address its top
-mechanisms together with a coherent redesign of the stages they share (for example how grasps are chosen,
-approached and confirmed), keeping the skill protocol (PROMPT, arguments, FAILURES, prepare / execute /
-abort) and its refusal codes. Keep what lessons.md says works.
+The diagnosis (of the current best version, the current directory {parent}) is below. Choose one architectural
+bottleneck the evidence supports (for example how grasps are chosen, approached and confirmed) and
+redesign the stages it spans coherently, rather than bundling fixes for several mechanisms, keeping the skill protocol (PROMPT, arguments, FAILURES, prepare / execute /
+abort) and its refusal codes. Preserve behaviour that was measured to work; challenge lessons that were only guessed.
 
 Make a general change: nothing tied to particular scenes,
 objects, colours or coordinates; no simulator ground truth. Keep the other skills that use the shared
@@ -27,6 +26,12 @@ tests you added or changed and the tests of the modules you touched, with
 `MUJOCO_GL=egl PYTHONPATH=src:vendor {python} -m pytest -q -x -p no:cacheprovider <test files>`
 (tests/test_skills.py covers the skills, tests/test_coder.py that they load as editable copies), and `{ruff} check src tests`; fix every failure and
 finding. Compare floats with a tolerance. Do not run the whole suite or anything long.
+
+Make the new code report when it acts: where it changes a decision, emit
+`ctx.emit({{"type": "mechanism_active", "mechanism": "<short name>", ...}})` with the values that decided
+it. The probe runs the candidate on the train episodes your note names under Expected effect and on one
+episode per outcome of its parent; one that reports no activation and changes no outcome there is
+rejected as inert, so name the episodes where the change should act.
 
 When done, reply with a short note in this form:
 Mechanisms: <titles>

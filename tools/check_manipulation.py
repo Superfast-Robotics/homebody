@@ -312,6 +312,23 @@ def support_options(frame, target_label, palm, destination_label=None):
     return sorted(options)
 
 
+def arm_control(backend):
+    """The arms' commanded targets, the rate-limited references the gates apply, the measured joints and the base
+    pose (x, y, yaw), for diagnosing a servo that stops short: recorded physics, never shown to a skill."""
+    from homebody.primitives.observations import ARMS
+
+    controller = getattr(backend, "controller", None)
+    if controller is None:
+        return None
+    gates = {side: gate.q for side, gate in controller.gates.items()}
+    q = backend.data.qpos
+    w, z = q[3], q[6]
+    return {"target": np.round(controller.arm_target, 3).tolist(),
+            "reference": np.round(np.concatenate([gates["left"], gates["right"]]), 3).tolist(),
+            "measured": np.round(q[controller.port.q[ARMS]], 3).tolist(),
+            "base": [round(float(q[0]), 3), round(float(q[1]), 3), round(float(2 * np.arctan2(z, w)), 3)]}
+
+
 def support_click(frame, target_label, palm, side, planning, max_candidates, record,
                   destination_label=None):
     """The first support option the place planner accepts. Raises when none does."""
@@ -440,7 +457,7 @@ class ScriptedSession:
     def sample_physics(self, state=None):
         """Record and return a physics row with every hand contact."""
         row = {**(self.backend.evaluation_state() if state is None else state),
-               "hand_contacts_detailed": hand_contacts(self.backend)}
+               "hand_contacts_detailed": hand_contacts(self.backend), "arm_control": arm_control(self.backend)}
         self.recorder.physics(row)
         return row
 

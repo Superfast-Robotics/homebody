@@ -10,8 +10,10 @@ only: {editable}.
 Make `{skill}` work for this robot's hand: rewrite whatever in the copy assumes the other hand (grasp
 poses and approach directions, closure, contact and hold checks, collision geometry, lift and
 recovery), keeping the skill protocol (PROMPT, arguments, FAILURES, prepare / execute / abort) and
-its refusal codes so the agent can call it the same way. Prefer reusing the copy's working structure
-over starting from scratch. Nothing tied to particular scenes, objects, colours or coordinates; no
+its refusal codes so the agent can call it the same way. Reuse the interfaces and validated primitives, but
+derive the grasp, insertion, extraction and recovery stages from this hand's calibrated geometry rather
+than the copy's assumptions; say which capabilities the robot interface lacks rather than approximating
+them silently. Nothing tied to particular scenes, objects, colours or coordinates; no
 simulator ground truth.
 A built-in skill must stay loadable as the coding assistant's editable copy: its modules may import only
 what `ALLOWED` in src/homebody/session/skill_module.py lists (numpy, scipy, standard math and data
