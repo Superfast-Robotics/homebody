@@ -473,6 +473,25 @@ def attach_trace(session, backend, task_dir, recorder):
     session.context.emit = both
 
 
+def hand_contacts(rows, limit=8):
+    """What the robot's hands touched, from the recorded physics: per (other geom, hand part), the first and last
+    time, how many samples and the largest normal force. Diagnosis evidence only: the skill cannot sense it."""
+    seen = {}
+    for row in rows:
+        for contact in row.get("hand_contacts_detailed") or []:
+            hand = [g for g in contact["geoms"] if g.startswith(("left_", "right_"))]
+            other = [g for g in contact["geoms"] if not g.startswith(("left_", "right_"))]
+            if not hand or not other:
+                continue
+            item = seen.setdefault((other[0], hand[0]), {"with": other[0], "hand_part": hand[0], "first": row["time"],
+                                                         "samples": 0, "max_force_n": 0.0})
+            item["last"], item["samples"] = row["time"], item["samples"] + 1
+            item["max_force_n"] = max(item["max_force_n"], abs(float((contact.get("contact_force") or [0])[0])))
+    items = sorted(seen.values(), key=lambda item: item["first"])
+    return [{**item, "first": round(item["first"], 2), "last": round(item["last"], 2),
+             "max_force_n": round(item["max_force_n"], 1)} for item in items[:limit]]
+
+
 def main(root, episode_path, out):
     root, out = Path(root).resolve(), Path(out)
     os.environ["HOMEBODY_BENCH_ROOT"] = str(root)
@@ -514,6 +533,7 @@ def main(root, episode_path, out):
     rows = [json.loads(line) for line in max((out / "session").rglob("physics.jsonl")).read_text().splitlines()
             if line.strip()]
     write_trace(out)
+    record["hand_contacts"] = hand_contacts(rows)
     if rows and "setup_failed" not in record and "error" not in record:
         record.update(DRIVERS[episode["skill"]][1](rows, episode, record))
         record.update(success=record["stage"] == 2,

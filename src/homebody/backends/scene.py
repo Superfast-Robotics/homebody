@@ -12,6 +12,9 @@ from homebody.helpers.kinematics import camera_mount
 from homebody.session.config import DEFAULT_SCENE
 
 SPAWN_HEIGHT = 0.76
+# Colliding geoms the robot's depth and segmentation passes see but no colour image draws: a scan's clutter
+# approximated by boxes, whose surface the scanned mesh already draws (and the depth camera would meet)
+DEPTH_ONLY_GROUP = 4
 # Wrist cameras above the wrist yaw link, aimed halfway between along the hand (+x of the link) and the
 # open hand's jaw (calibration palm_to_jaw): both what the grasp closes on and the scene beyond it in view.
 WRIST_CAMERA_POS = (0.02, 0.0, 0.06)

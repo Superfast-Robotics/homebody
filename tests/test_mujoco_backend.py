@@ -203,3 +203,12 @@ def test_a_scene_with_its_own_visual_settings_owns_its_look_and_an_empty_one_cha
     assert robot.find("visual/global").get("offwidth") == "1280"
     assert robot.find("asset").findall("texture") == [] and robot.find("worldbody").findall("light") == []
     assert package.find("visual") is None and package.find("asset/texture").get("name") == "sky"
+
+
+def test_depth_and_segmentation_also_see_the_depth_only_group_the_image_does_not():
+    from homebody.backends.mujoco import depth_option
+    from homebody.backends.scene import DEPTH_ONLY_GROUP
+
+    default, depth = mujoco.MjvOption(), depth_option()
+    assert not default.geomgroup[DEPTH_ONLY_GROUP] and depth.geomgroup[DEPTH_ONLY_GROUP]
+    assert list(depth.geomgroup[:3]) == list(default.geomgroup[:3])

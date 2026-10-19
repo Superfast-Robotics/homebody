@@ -3,7 +3,7 @@ You are diagnosing why the built-in `{skill}` skill fails on the benchmark episo
 Read {workspace}/BRIEF.md first, then {workspace}/results.md, {workspace}/history.md and {workspace}/lessons.md
 (what earlier versions taught), then the inspiration programs under {workspace}/inspirations/ (other scored
 versions: their notes, results and code against this one), then the
-episodes under {workspace}/episodes/<id>/ (trace.json, result.json). The skill's code is
+episodes under {workspace}/episodes/<id>/ (trace.json, result.json; result.json's `hand_contacts` lists what the robot's hand touched and when, from the recorded physics: evidence for you only, which the skill itself cannot sense this way). The skill's code is
 {source} in the current directory, with the shared code it uses under
 src/homebody/motion/, src/homebody/helpers/ and src/homebody/toolkit/ (toolkit/API.md is the robot
 interface reference). Do not read anything outside these places.

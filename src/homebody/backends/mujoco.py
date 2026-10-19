@@ -13,7 +13,7 @@ from homebody.primitives.actions import ActionLimits, PhysicsInvalid
 from homebody.primitives.observations import Frame, HandState, Measurement, NavigationMap, WristView
 
 from .controller import SIDES, Controller
-from .scene import DEFAULT_SCENE, WRIST_CAMERA_FOVY, load
+from .scene import DEFAULT_SCENE, DEPTH_ONLY_GROUP, WRIST_CAMERA_FOVY, load
 
 ARM_LINKS = ("_hand_", "_wrist_", "_elbow_")
 SPAWN_CEILING = 1.3  # m above the ground plane
@@ -53,6 +53,13 @@ def hand_state(joints, target, ray, forces, ceilings, names, finger_groups=None)
     closure = float(np.clip(joints @ ray / (ray @ ray), 0., 1.))
     return HandState(joints, closure, np.array([efforts[finger] for finger in groups]),
                      np.array([gaps[finger] for finger in groups]))
+
+
+def depth_option():
+    """The robot's depth and segmentation passes: the default groups and DEPTH_ONLY_GROUP."""
+    option = mujoco.MjvOption()
+    option.geomgroup[DEPTH_ONLY_GROUP] = 1
+    return option
 
 
 class MujocoBackend:
@@ -270,6 +277,7 @@ class MujocoBackend:
         renderer = self._render_context()
         renderer.update_scene(self.data, camera=camera)
         rgb = renderer.render().copy()
+        renderer.update_scene(self.data, camera=camera, scene_option=depth_option())
         renderer.enable_depth_rendering()
         depth = renderer.render().copy()
         renderer.disable_depth_rendering()

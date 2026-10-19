@@ -28,3 +28,18 @@ def test_a_candidate_that_changed_nothing_has_its_parents_fingerprint():
     row = {"stage": 0, "call": {"code": "ARM_NOT_REACHED", "message": "late"}, "simulation_seconds": 48.04}
     assert fingerprint(row) == fingerprint({**row, "simulation_seconds": 48.01})
     assert fingerprint(row) != fingerprint({**row, "stage": 1})
+
+
+def test_hand_contacts_summarise_what_the_hand_touched_for_the_diagnosis():
+    import importlib.util
+    from pathlib import Path
+    spec = importlib.util.spec_from_file_location("skill_bench", Path(__file__).resolve().parents[1] / "skill_bench.py")
+    bench = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bench)
+    rows = [{"time": 1.0, "hand_contacts_detailed": [{"geoms": ["jar_7__collision", "right_hand_finger_1_col"],
+                                                     "contact_force": [3.0, 0, 0]}]},
+            {"time": 1.5, "hand_contacts_detailed": [{"geoms": ["right_hand_finger_1_col", "jar_7__collision"],
+                                                     "contact_force": [-8.0, 0, 0]}]},
+            {"time": 2.0, "hand_contacts_detailed": [{"geoms": ["right_hand_palm_col", "left_hand_palm_col"]}]}]
+    assert bench.hand_contacts(rows) == [{"with": "jar_7__collision", "hand_part": "right_hand_finger_1_col",
+                                          "first": 1.0, "last": 1.5, "samples": 2, "max_force_n": 8.0}]

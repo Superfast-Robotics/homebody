@@ -50,6 +50,12 @@ EDITABLE = ("src/homebody/skills/{skill}.py", "src/homebody/motion/*", "src/home
 SPLITS = ("train", "val")
 
 
+def touched(row):
+    """The first things an episode's hand touched (result.json hand_contacts), for the results table."""
+    return "; ".join(f"{c['with']} by {c['hand_part'].removeprefix('right_').removeprefix('left_')} from {c['first']} s"
+                     for c in (row.get("hand_contacts") or [])[:3]) or "-"
+
+
 def coder_digest(split_dir):
     """What the coder changed across a split's episodes: per edited function of the skill, how often and
     how often that call ended OK, the diffs of the calls that did, and the recurring fixes: functions changed
@@ -283,13 +289,13 @@ class SkillLoop:
                   f"coder credits per episode; coder calls {summary['coder_calls']}, OK {summary['coder_ok']}."), "",
                  f"Outcomes of the skill call: {json.dumps(summary['outcomes'])}",
                  f"Success by family: {json.dumps(summary['success_by_family'])}", "",
-                 "| episode | family | stage | skill result | message | coder | coder message | s |",
-                 "|---|---|---|---|---|---|---|---|"]
+                 "| episode | family | stage | skill result | message | coder | coder message | s | hand touched |",
+                 "|---|---|---|---|---|---|---|---|---|"]
         for episode, row in sorted(train.items()):
             result, coder = skill_score.call(row), row.get("coder") or {}
             lines.append(f"| {episode} | {row['family']} | {row['stage']} | {result.get('code', row.get('error', '?'))} | "
                          f"{(result.get('message') or '')[:120]} | {coder.get('code', '-')} | "
-                         f"{(coder.get('message') or '')[:160]} | {skill_score.seconds(row)} |")
+                         f"{(coder.get('message') or '')[:160]} | {skill_score.seconds(row)} | {touched(row)} |")
         (ws / "results.md").write_text("\n".join(lines) + "\n")
         for episode in train:
             source = self.work / "results" / best["id"] / "train" / episode

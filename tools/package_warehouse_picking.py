@@ -20,6 +20,7 @@ from pathlib import Path
 
 import numpy as np
 
+from homebody.backends.scene import DEPTH_ONLY_GROUP
 from homebody.scene_package import package
 
 RESOLUTION = 0.02          # m per map cell
@@ -120,8 +121,8 @@ def homebody_names(root, world, assets):
         if name in ("floor__ground", "floor__visual"):
             continue
         visual = geom.get("contype") == "0" and geom.get("conaffinity") == "0"  # the scanned surface, drawn only
-        hidden = geom.get("group") == "3"  # clutter: collides, but the scan already draws it
-        geom.attrib.update({"group": "3" if hidden else "2", **(SILENT if visual else COLLIDE),
+        hidden = geom.get("group") == "3"  # clutter: collides, the scan draws it, the depth camera must meet it
+        geom.attrib.update({"group": str(DEPTH_ONLY_GROUP) if hidden else "2", **(SILENT if visual else COLLIDE),
                             "name": f"{name}__shelf" if name in (SOURCE_SHELF, DESTINATION_SHELF) else f"structure__{name}"})
     asset = root.find("asset")
     hulls = set()
