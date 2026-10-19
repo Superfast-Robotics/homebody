@@ -3,6 +3,9 @@
 # JOBS_FILE as one skill-benchmark episode with the candidate's code; CODER=1 lets a failed skill call
 # the coding assistant once (through the LiteLLM tunnel and the remote Codex).
 set -uo pipefail
+# Episodes start together and share the candidate's folder on the group volume: concurrent bytecode-cache
+# writes and renames there deadlocked a host's mount (virtiofs), so no episode writes __pycache__.
+export PYTHONDONTWRITEBYTECODE=1
 BASE=$1; PARALLEL=$2; JOBS=$3; EVOLVE=$4; CODER=${5:-0}; CODER_MODEL=${6:-}; CODER_RATES=${7:-}; CODER_SECONDS=${8:-}; VIDEOS=${9:-0}
 W=$(dirname "$BASE")
 run_one() {

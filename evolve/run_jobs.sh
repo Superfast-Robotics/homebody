@@ -4,6 +4,9 @@
 # then score it from physics. The agent model is reached through the LiteLLM proxy tunnel (port 14000) and
 # the coding sub-agent through the Codex relay.
 set -uo pipefail
+# Episodes start together and share the candidate's folder on the group volume: concurrent bytecode-cache
+# writes and renames there deadlocked a host's mount (virtiofs), so no episode writes __pycache__.
+export PYTHONDONTWRITEBYTECODE=1
 BASE=$1; PARALLEL=$2; JOBS=$3; EVOLVE=$4; MODEL=$5
 W=$(dirname "$BASE")
 run_one() {
