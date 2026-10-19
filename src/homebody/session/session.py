@@ -9,7 +9,7 @@ from pathlib import Path
 
 from homebody.primitives.actions import PhysicsInvalid
 from homebody.skills.contract import COMMON_FAILURES, Context, Runner
-from homebody.skills.registry import PROMPTS, REGISTRY
+from homebody.skills.registry import Prompts, registry
 from homebody.vlm.observations import annotations, model_observation, rounded
 from homebody.vlm.provider import Cancelled, ProviderBusy, ProviderError
 
@@ -116,6 +116,7 @@ class Session:
                                settings=settings, jaw_samples=jaw_samples,
                                cancelled=controls.cancel.is_set, emit=self.skill_event)
         self.runner = Runner(self.context)
+        self.registry = registry(settings.robot.hands)
         self.history = []
         self.status = "Ready"
         self._physics_fault = None
@@ -189,7 +190,7 @@ class Session:
         settings = vars(self.settings)
         instructions = (Path(__file__).parents[1] / "vlm" / "agent_prompt.md").read_text()
         skills = "\n".join(f"{skill.PROMPT.format_map(settings)} Refusals: {', '.join(dict.fromkeys(skill.FAILURES))}."
-                           for skill in REGISTRY.values())
+                           for skill in self.registry.values())
         hands = "; ".join(hand_status(side, self.context.carried.get(side)) for side in ("left", "right"))
         steps = "\n".join(json.dumps(rounded({key: entry[key] for key in ("operator_task", "base_pose", "decision", "result")
                                               if key in entry})) for entry in self.history[-24:])
@@ -230,7 +231,7 @@ class Session:
             if self.requires_reset:
                 raise PhysicsInvalid(self._physics_fault[1])
             self.backend.set_evaluation_sink(self.recorder.physics)
-            names = tuple(PROMPTS) + ("done",)
+            names = tuple(Prompts(self.registry)) + ("done",)
             for step in range(self.settings.agent.max_steps):
                 if self.controls.cancel.is_set():
                     raise Cancelled("Task stopped by operator")

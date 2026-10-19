@@ -1,0 +1,4 @@
+# The G1 with Dex1-1 parallel grippers (assets/robot/dex1) and their own pick and place (skills/dex1).
+# Pass with --settings configs/dex1.toml, or as a skill-benchmark episode's "settings".
+[robot]
+hands = "dex1"

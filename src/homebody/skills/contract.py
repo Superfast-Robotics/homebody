@@ -124,15 +124,19 @@ def refusal_code(error):
 
 
 class Runner:
-    def __init__(self, context):
-        self.context = context
+    def __init__(self, context, registry=None):
+        """REGISTRY: the skills to run, the SIM skills for the context's hands when None."""
+        if registry is None:
+            from .registry import registry as hand_registry
+            registry = hand_registry(context.settings.robot.hands)
+        self.context, self.registry = context, registry
 
     def run(self, name, arguments, selected_frame):
         """A declared result. A programming error propagates after the terminal event."""
         ctx = self.context
         ctx._skill_name, ctx._stage_name = name, None
         ctx.emit({"type": "skill_started", "skill": name, "frame_id": selected_frame.frame_id})
-        attempt = Attempt(ctx, name, selected_frame)
+        attempt = Attempt(ctx, name, selected_frame, self.registry)
         try:
             result = attempt.run(arguments)
         except BaseException as error:
@@ -144,10 +148,10 @@ class Runner:
 class Attempt:
     """One skill invocation and how far it got."""
 
-    def __init__(self, ctx, name, selected_frame):
+    def __init__(self, ctx, name, selected_frame, registry=None):
         from .registry import REGISTRY
         self.ctx, self.name, self.selected, self.epoch = ctx, name, selected_frame, selected_frame.epoch
-        self.skill = REGISTRY.get(name)
+        self.skill = (REGISTRY if registry is None else registry).get(name)
         self.declared = COMMON_FAILURES + (() if self.skill is None else self.skill.FAILURES)
         self.plan, self.executing, self.aborting = None, False, False
 

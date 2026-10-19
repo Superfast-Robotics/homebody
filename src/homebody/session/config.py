@@ -141,6 +141,23 @@ class Agent:
 
 
 @dataclass(frozen=True)
+class Robot:
+    """The G1's hands: "dex3", Unitree's three-finger Dex3-1 (the robot in assets/robot), or "dex1", the Dex1-1
+    parallel gripper (the robot profile assets/robot/dex1, built by tools/build_dex1_hand.py, with its own pick and
+    place in skills/dex1)."""
+    hands: str = "dex3"
+
+    def __post_init__(self):
+        if self.hands not in ("dex3", "dex1"):
+            raise ValueError("robot.hands must be dex3 or dex1")
+
+    def directory(self, root):
+        """The robot's model, URDF and calibration folder under the release ROOT."""
+        base = Path(root) / "assets/robot"
+        return base if self.hands == "dex3" else base / self.hands
+
+
+@dataclass(frozen=True)
 class SharedMotion:
     arm_timeout: float = 15.0
     palm_tolerance: float = 0.015

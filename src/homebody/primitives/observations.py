@@ -55,7 +55,9 @@ class HandState:
     finger_closure_gap: np.ndarray
 
     def __post_init__(self):
-        object.__setattr__(self, "joints", frozen_array(self.joints, (7,)))
+        object.__setattr__(self, "joints", frozen_array(self.joints))  # Dex3's seven, a parallel gripper's two
+        if self.joints.ndim != 1:
+            raise ValueError("Hand joints must be one value per joint")
         for name in ("finger_effort_fraction", "finger_closure_gap"):
             array = frozen_array(getattr(self, name), (3,))
             if not np.isfinite(array).all() or np.any(array < 0):

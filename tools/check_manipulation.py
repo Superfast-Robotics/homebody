@@ -317,8 +317,10 @@ def support_click(frame, target_label, palm, side, planning, max_candidates, rec
     """The first support option the place planner accepts. Raises when none does."""
     from homebody.motion.carry import RecoveryPlan
     from homebody.primitives.observations import ObservationError
-    from homebody.skills import place
     from homebody.skills.contract import SkillFailure
+    from homebody.skills.registry import registry
+
+    place = registry(planning.settings.robot.hands)["place"]
 
     options = support_options(frame, target_label, palm, destination_label)
     report = {"frame": frame.frame_id, "sample_stride_pixels": SUPPORT_STRIDE,
@@ -392,9 +394,10 @@ class ScriptedSession:
         self.recording = settings.recording
         self.port = RecordingPort(ObservedBackend(backend, self.publish, self.recording.publish_period),
                                   recorder, self.view_closure)
-        self.arms = {side: Arm(root / "assets/robot/g1_29dof_with_hand.urdf", side)
+        profile = settings.robot.directory(root)
+        self.arms = {side: Arm(profile / "g1_29dof_with_hand.urdf", side)
                      for side in ("left", "right")}
-        calibration = json.loads((root / "assets/robot/calibration.json").read_text())
+        calibration = json.loads((profile / "calibration.json").read_text())
         self.context = Context(self.port, self.port, self.arms, settings,
                                jaw_samples=calibration["jaw_samples"], emit=self.emit,
                                cancelled=lambda: time.monotonic() - start > args.wall_timeout)

@@ -25,17 +25,23 @@ def holding_side(body_name):
     return body_name.split("_", 1)[0] if any(link in body_name for link in ARM_LINKS) else None
 
 
-def hand_state(joints, target, ray, forces, ceilings, names):
-    """The HandState of one hand from its joints, closure target, ray and actuator forces."""
+def hand_state(joints, target, ray, forces, ceilings, names, finger_groups=None):
+    """The HandState of one hand from its joints and closure target (both from the open pose), ray and actuator
+    forces. FINGER_GROUPS ({"thumb": [i], "index": [...], "middle": [...]}, indices into NAMES) gives a hand's
+    opposing fingers when it is not Dex3, whose groups come from its joint names (three thumb, two per finger)."""
     joints, target, ray, forces, ceilings = (
         np.asarray(value, dtype=float) for value in (joints, target, ray, forces, ceilings))
-    if (any(value.shape != (7,) or not np.isfinite(value).all()
+    count = len(names)
+    if (any(value.shape != (count,) or not np.isfinite(value).all()
             for value in (joints, target, ray, forces, ceilings)) or np.any(ceilings <= 0)):
-        raise ValueError("Hand sensors require seven finite joints and positive effort ceilings")
-    groups = {finger: np.array([i for i, name in enumerate(names) if f"_hand_{finger}_" in name])
-              for finger in ("thumb", "index", "middle")}
-    if len(names) != 7 or len(set(names)) != 7 or tuple(map(len, groups.values())) != (3, 2, 2):
-        raise ValueError("Hand joint names must identify three thumb and two joints per opposing finger")
+        raise ValueError("Hand sensors require finite joints and positive effort ceilings")
+    if finger_groups is None:
+        groups = {finger: np.array([i for i, name in enumerate(names) if f"_hand_{finger}_" in name])
+                  for finger in ("thumb", "index", "middle")}
+        if count != 7 or len(set(names)) != 7 or tuple(map(len, groups.values())) != (3, 2, 2):
+            raise ValueError("Hand joint names must identify three thumb and two joints per opposing finger")
+    else:
+        groups = {finger: np.array(finger_groups[finger]) for finger in ("thumb", "index", "middle")}
     gaps, efforts = {}, {}
     for finger, indices in groups.items():
         direction = ray[indices]
@@ -79,7 +85,7 @@ class MujocoBackend:
             x, y, yaw = spawn
             self._stand(identity, x, y, self._surface_under(x, y), yaw)
         self.controller = Controller(self.model, self.data, self.root, self.settings.physics,
-                                     self.root / ".cache/amo")
+                                     self.root / ".cache/amo", self.settings.robot.directory(self.root))
         self.limits = ActionLimits(self.settings, self.controller.calibration)
         if 1 + self.settings.grasp.squeeze > 1 / self.controller.calibration["hand_close_fraction"]:
             raise ValueError("grasp.squeeze would close past the hand's full closed pose")
@@ -208,7 +214,7 @@ class MujocoBackend:
     def grip(self, epoch, side, closure):
         self._check_epoch(epoch)
         closure = self.limits.closure(side, closure)
-        self.controller.hand_target[side] = self.controller.closed[side] * closure
+        self.controller.hand_target[side] = self.controller.open[side] + self.controller.closed[side] * closure
 
     def stop(self, epoch):
         self.limits.epoch(epoch, self.epoch)
@@ -258,9 +264,11 @@ class MujocoBackend:
         """SIDE's HandState."""
         controller, names = self.controller, self.controller.calibration["hand_joints"][side]
         joints = [self.model.joint(name).id for name in names]
-        return hand_state(self.data.qpos[controller.hand_q[side]], controller.hand_target[side],
+        opened = controller.open[side]
+        return hand_state(self.data.qpos[controller.hand_q[side]] - opened, controller.hand_target[side] - opened,
                           controller.closed[side], self.data.qfrc_actuator[self.model.jnt_dofadr[joints]],
-                          np.max(np.abs(self.model.jnt_actfrcrange[joints]), axis=1), names)
+                          np.max(np.abs(self.model.jnt_actfrcrange[joints]), axis=1), names,
+                          controller.calibration.get("finger_groups"))
 
     def _render_ego(self):
         """The ego camera's RGB, depth and segmentation images."""

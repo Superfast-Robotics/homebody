@@ -15,6 +15,7 @@ from .config import (
     Physics,
     Placement,
     Recording,
+    Robot,
     Servo,
     SharedMotion,
     Topdown,
@@ -70,6 +71,7 @@ class Settings:
     topdown: Topdown = field(default_factory=Topdown)
     recording: Recording = field(default_factory=Recording)
     blind_finish: BlindFinish = field(default_factory=BlindFinish)
+    robot: Robot = field(default_factory=Robot)
 
     def __post_init__(self):
         for group in fields(self):
