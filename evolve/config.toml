@@ -377,9 +377,9 @@ depth (the excluded labels removed), with arm joint paths for the approach and t
 (src/homebody/harness/env.py, API.md). A request takes about 1.5-3 s on an idle server and longer while
 other episodes queue on it. Its limits: it sees only the current depth (unseen space counts as free,
 voxels near the arm's start are cleared), it plans with the gripper's own collision spheres (slightly
-inflated), jaws open, the waist and the other arm at the posture the server was first configured with
-(a reply's `posture_mismatch` lists joints that differ), and it has no model of a held object, so it does
-not plan loaded extraction or carry paths. `env.follow` streams a thinned path without the live collision
+inflated), the planning hand open and the waist, the other arm and the other hand as measured when the
+request is made (a server whose posture differs rebuilds first, 30-40 s, and the reply's `reconfigured_for`
+names the joints), and it has no model of a held object, so it does not plan loaded extraction or carry paths. `env.follow` streams a thinned path without the live collision
 check (`env.move_through` keeps it): revalidate what a plan's execution actually did. Whether and how pick
 uses it is the skill's decision.
 """

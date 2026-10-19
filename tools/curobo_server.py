@@ -47,7 +47,8 @@ LEG_LINKS = [f"{side}_{part}_link" for side in SIDES for part in
 SPHERE_BUFFER_M = 0.0
 ACTIVATION_M = 0.005
 MAX_GOALSET = 48
-POSTURE_TOLERANCE = 0.05  # rad (m for slides): a requester's locked joint further than this from the configured one
+POSTURE_TOLERANCE = 0.05  # rad: a requester's locked joint further than this from the configured one
+SLIDE_TOLERANCE = 0.005  # m: the same for a gripper's slide joints (their whole travel is 0.0445 m)
 MAX_CANDIDATE_TRIES = 6  # candidates tried (approach then descent) before giving up
 IK_SEEDS = 128  # random restarts per IK solve; obstacle-dense scenes (a basket) need many  # grasp candidates planned per request (the client sends its best-ranked)
 
@@ -251,11 +252,15 @@ class Planners:
 
     def posture_mismatch(self, locks, side=None):
         """The joints whose value in LOCKS (the requester's posture) differs from the configured lock by more than
-        POSTURE_TOLERANCE, apart from SIDE's own arm and hand (free, or opened, in SIDE's planner)."""
-        own = (f"{side}_shoulder", f"{side}_elbow", f"{side}_wrist", f"{side}_hand") if side else ()
-        return {name: [round(float(self.locks[name]), 3), round(float(value), 3)] for name, value in (locks or {}).items()
+        POSTURE_TOLERANCE (SLIDE_TOLERANCE for slides), apart from SIDE's own arm, which moves freely in SIDE's
+        planner; both hands are compared, the planning one too (it plans with the jaws as the request has them)."""
+        own = (f"{side}_shoulder", f"{side}_elbow", f"{side}_wrist") if side else ()
+
+        def tolerance(name):
+            return SLIDE_TOLERANCE if "_finger_" in name else POSTURE_TOLERANCE
+        return {name: [round(float(self.locks[name]), 4), round(float(value), 4)] for name, value in (locks or {}).items()
                 if name in self.locks and not name.startswith(own)
-                and abs(float(self.locks[name]) - float(value)) > POSTURE_TOLERANCE}
+                and abs(float(self.locks[name]) - float(value)) > tolerance(name)}
 
     def plan_grasp(self, request):
         started = time.monotonic()

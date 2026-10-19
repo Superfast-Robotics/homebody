@@ -105,6 +105,7 @@ def test_stance_variants_of_one_object_count_as_one_sample():
 
 def test_each_process_picks_one_of_the_hosts_planning_servers():
     from types import SimpleNamespace
+
     from homebody.helpers.curobo import endpoint
     chosen = endpoint(SimpleNamespace(endpoint="tcp://127.0.0.1:5561", servers=3))
     assert chosen.rsplit(":", 1)[0] == "tcp://127.0.0.1" and 5561 <= int(chosen.rsplit(":", 1)[1]) <= 5563
@@ -114,6 +115,7 @@ def test_each_process_picks_one_of_the_hosts_planning_servers():
 def test_an_episode_without_a_result_scores_as_a_crashed_failure(tmp_path):
     import json
     from types import SimpleNamespace
+
     from evolve import skill_score
     from evolve.skill_loop import SkillLoop
     loop = SimpleNamespace(work=tmp_path, skill="pick", log=lambda message: None)
@@ -124,6 +126,21 @@ def test_an_episode_without_a_result_scores_as_a_crashed_failure(tmp_path):
     SkillLoop.fill_missing(loop, tmp_path / "results", lines)
     rows = skill_score.read(tmp_path / "results" / "train")
     assert rows["lost_v0"]["stage"] == 0 and rows["lost_v0"]["crashed"] and rows["ok_v0"]["stage"] == 2
+
+
+def test_untimed_or_lost_episodes_cannot_win_on_time_and_lost_ones_count_as_failures():
+    from evolve import skill_score
+
+    def side(rows):
+        return skill_score.summary({e: {"family": "f", "success": s == 2, "stage": s, **x} for e, (s, x) in rows.items()})
+    slow, fast = {"timing": {"skill_wall": 1000.0}}, {"timing": {"skill_wall": 10.0}}
+    parent = {"train": side({f"e{i}": (0, slow) for i in range(40)}), "val": side({f"v{i}": (0, slow) for i in range(20)})}
+    untimed = {"train": side({f"e{i}": (0, {}) for i in range(40)}), "val": side({f"v{i}": (0, {}) for i in range(20)})}
+    assert not skill_score.judge(parent, untimed, "held_values")["ok"]
+    held = {"train": side({f"e{i}": (2, fast) for i in range(40)}), "val": side({f"v{i}": (2, fast) for i in range(20)})}
+    lossy = {"train": side({f"e{i}": (2, fast) for i in range(30)}), "val": held["val"]}
+    verdict = skill_score.judge(held, lossy, "held_values")
+    assert verdict["train"][0] < 0 and not verdict["ok"]  # the ten episodes it lost count as failures
 
 
 def test_crashed_episodes_cannot_make_a_candidate_look_faster():

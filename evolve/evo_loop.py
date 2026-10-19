@@ -282,10 +282,12 @@ class EvoLoop(SkillLoop):
             if not passed:
                 self.log(f"remeasure {cid}: lint or unit tests fail on {best['id']}: {output[-300:]}")
                 continue
+            commit = git("rev-parse", "HEAD", cwd=path)
+            self.verify_checkout(path, commit)
             summaries = self.evaluate(new, path)
             verdict = skill_score.judge(self.summaries(best["id"]), summaries, self.objective, self.weights)
             self.record({"id": new, "round": old.get("round"), "parent": best["id"], "parents": [best["id"], cid],
-                         "operator": "remeasure", "commit": git("rev-parse", "HEAD", cwd=path), "status": "remeasured",
+                         "operator": "remeasure", "commit": commit, "status": "remeasured",
                          "notes": old.get("notes", ""), **summaries, "verdict": verdict,
                          "reason": "remeasured on " + best["id"] + ": " + skill_score.describe(verdict)})
 
@@ -423,6 +425,7 @@ class EvoLoop(SkillLoop):
         return entry
 
     def judge_candidate(self, entry, best):
+        self.verify_checkout(Path(entry["path"]), entry["commit"])
         summaries = self.evaluate(entry["id"], Path(entry["path"]))
         verdict = skill_score.judge(self.summaries(best["id"]), summaries, self.objective, self.weights)
         return {**entry, **summaries, "status": "accepted" if verdict["ok"] else "rejected",

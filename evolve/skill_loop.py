@@ -256,10 +256,38 @@ class SkillLoop:
     def baseline(self, commit, cid="p000", videos=False):
         """Measure COMMIT as CID; a later baseline (a pipeline change under the skill) becomes the version rounds build
         on. It records the scenes' and robot's fingerprint, which later rounds check (the frozen setup)."""
-        path = self.loop.worktree(self.cand(f"{cid}"), git("rev-parse", commit))
+        commit = git("rev-parse", commit)
+        path = self.loop.worktree(self.cand(f"{cid}"), commit)
+        before = self.manifest(path, commit)
         summaries = self.evaluate(cid, path, videos=videos)
-        self.record({"id": cid, "round": 0, "commit": git("rev-parse", "HEAD", cwd=path), "status": "baseline",
-                     "reason": f"{self.skill} skill baseline", "setup": self.setup_fingerprint(), **summaries})
+        after = self.manifest(path, commit)
+        if after != before:
+            raise SystemExit(f"{cid}: the experiment changed while it ran: {before} -> {after}; not recorded")
+        self.audit(cid, summaries)
+        self.record({"id": cid, "round": 0, "commit": commit, "status": "baseline",
+                     "reason": f"{self.skill} skill baseline", "setup": before["setup"], "manifest": before, **summaries})
+
+    def verify_checkout(self, path, commit):
+        """PATH must be exactly COMMIT with no local changes: what is recorded is what runs."""
+        head, dirty = git("rev-parse", "HEAD", cwd=path), git("status", "--porcelain", cwd=path)
+        if head != commit or dirty:
+            raise SystemExit(f"{path} is {head[:10]}{' with local changes' if dirty else ''}, not {commit[:10]}")
+
+    def manifest(self, path, commit):
+        """What an evaluation depends on: the candidate's tree, the profile (episodes, objective, weights, services,
+        prompts), and the setup fingerprint (scenes, robot, episodes, driver and scorer, planner, the seed's Python
+        environment). Checked before and after a baseline runs."""
+        self.verify_checkout(path, commit)
+        profile = hashlib.md5(json.dumps(self.cfg, sort_keys=True).encode()).hexdigest()[:12]
+        return {"tree": git("rev-parse", f"{commit}^{{tree}}"), "profile": profile, "setup": self.setup_fingerprint()}
+
+    def audit(self, cid, summaries):
+        """Log a baseline's reconciliation: episodes scored, crashed and set up wrongly per split."""
+        for split in SPLITS:
+            s = summaries.get(split, {})
+            expected = len(self.episodes(split))
+            self.log(f"{cid} {split}: {s.get('episodes', 0)} scored of {expected} episodes, {s.get('errors', 0)} crashed, "
+                     f"{len(s.get('untimed', []))} untimed")
 
     def setup_fingerprint(self):
         """A hash of the benchmark's scene packages and robot profiles on the remote seed: what a round assumes fixed."""
@@ -269,7 +297,8 @@ class SkillLoop:
         return local + "-" + self.remote.ssh(
             f"cd {self.remote.base}/assets && (find -L robot real2sim skillbench -type f -not -path '*.bak*' | sort | xargs md5sum; "
             f"find {episodes} -type f | sort | xargs md5sum; "
-            f"md5sum {Path(self.remote.root)}/curobo_dex1/*.py {Path(self.remote.root)}/curobo_dex1/*.sh 2>/dev/null) "
+            f"md5sum {Path(self.remote.root)}/curobo_dex1/*.py {Path(self.remote.root)}/curobo_dex1/*.sh 2>/dev/null; "
+            f"{self.remote.base}/.venv/bin/pip freeze 2>/dev/null | md5sum) "
             f"| awk '{{print $1}}' | md5sum | cut -c1-12", timeout=600).strip()
 
     def check_frozen(self):

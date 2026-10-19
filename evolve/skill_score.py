@@ -12,6 +12,7 @@ whole carry, else 0; stage value is then a diagnostic) and weight episodes by id
 a verdict.
 """
 import json
+import math
 import re
 from pathlib import Path
 
@@ -72,7 +73,15 @@ def summary(results):
             "held_by_group": {g: f"{sum(r['stage'] == 2 for k, r in results.items() if group(k) == g)}/"
                                  f"{sum(group(k) == g for k in results)}" for g in sorted({group(k) for k in results})},
             "seconds": {k: seconds(r) for k, r in results.items()},
+            "untimed": sorted(k for k, r in results.items() if not timed(r)),
             "credit_values": {k: credits(r) for k, r in results.items()}}
+
+
+def timed(row):
+    """Whether ROW measured the skill's time (a finite, positive wall time), so it may count in a time verdict."""
+    timing = row.get("timing") or {}
+    value = timing.get("skill_wall", timing.get("pick_wall"))
+    return isinstance(value, (int, float)) and math.isfinite(value) and value > 0
 
 
 def seconds(row):
@@ -143,6 +152,7 @@ def judge(parent, child, key="values", weights=None):
     no split may fall by more than Z_DROP standard errors; accepted when train and val pooled (every episode
     paired) rise by more than Z_RISE; with accuracy unchanged, also when the skill's time per call falls by
     TIME_CUT or more, significantly."""
+    child = {split: lost_as_failures(parent[split], child[split]) for split in ("train", "val")}
     out = {"metric": "held" if key == "held_values" else "value"}
     for split in ("train", "val"):
         d, se = paired(parent[split], child[split], key, weights)
@@ -151,7 +161,8 @@ def judge(parent, child, key="values", weights=None):
     out["pooled"] = (round(d, 4), round(se, 4))
     out["time"] = round(relative(parent, child, "seconds"), 3)
     out["cost"] = round(relative(parent, child, "credit_values"), 3)
-    crashed = sum(child[s].get("errors", 0) for s in ("train", "val"))
+    crashed = sum(child[s].get("errors", 0) + len(child[s].get("lost", [])) for s in ("train", "val"))
+    untimed = sum(len(side[s].get("untimed", [])) for side in (parent, child) for s in ("train", "val"))
     if crashed > CRASH_SHARE * max(1, sum(child[s].get("episodes", 0) for s in ("train", "val"))):
         return {**out, "ok": False, "basis": f"crashed in {crashed} episodes"}
     if any(d + Z_DROP * se < 0 for d, se in (out["train"], out["val"])):
@@ -162,8 +173,9 @@ def judge(parent, child, key="values", weights=None):
         return {**out, "ok": True, "basis": "accuracy (enough to outweigh the extra time or cost)" if heavier else "accuracy"}
     if out["pooled"][0] - Z_RISE * out["pooled"][1] > 0:
         return {**out, "ok": False, "basis": f"accuracy gain too small for {out['time']:+.0%} time, {out['cost']:+.0%} cost"}
-    if crashed:  # a crashed episode's time is not a measurement: no time or cost win with any
-        return {**out, "ok": False, "basis": f"no clear gain ({crashed} crashed episodes: no time or cost acceptance)"}
+    if crashed or untimed:  # a crashed, lost or untimed episode's time is not a measurement: no time or cost win
+        return {**out, "ok": False, "basis": f"no clear gain ({crashed} crashed or lost, {untimed} untimed episodes: "
+                                             f"no time or cost acceptance)"}
     if out["pooled"][0] - Z_RISE * out["pooled"][1] < -NONINFERIOR:  # cheaper or faster only when no worse
         return {**out, "ok": False, "basis": "no clear gain (accuracy not shown non-inferior)"}
     d_cost, se_cost = paired(pooled(parent), pooled(child), "credit_values")
@@ -173,6 +185,18 @@ def judge(parent, child, key="values", weights=None):
     if out["time"] <= -TIME_CUT and d_time + Z_RISE * se_time < 0 and out["cost"] <= COST_SLACK:
         return {**out, "ok": True, "basis": "time (accuracy and cost unchanged)"}
     return {**out, "ok": False, "basis": "no clear gain"}
+
+
+def lost_as_failures(parent, child):
+    """CHILD with every episode PARENT scored but CHILD did not (a setup failure or a missing result on its side)
+    added as a failure, so a version cannot gain by losing episodes; listed under "lost"."""
+    lost = sorted(set(parent.get("values", {})) - set(child.get("values", {})))
+    if not lost:
+        return child
+    out = {**child, "lost": lost}
+    for key in ("values", "held_values"):
+        out[key] = {**child.get(key, {}), **dict.fromkeys(lost, 0.0)}
+    return out
 
 
 def relative(parent, child, key):
