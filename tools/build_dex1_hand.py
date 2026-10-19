@@ -201,6 +201,42 @@ def build_calibration(model_path, out):
     (out / "calibration.json").write_text(json.dumps(calibration, indent=1) + "\n")
 
 
+def curobo_spheres(model_path, out):
+    """cuRobo's view of the gripper (tools/curobo_server.py --hand): spheres filling each hand link's collision
+    geometry (its box in the link frame, sphere radius its smallest half extent, spaced at the radius), the
+    finger joints with their open value, and the link pairs that may touch."""
+    model = mujoco.MjModel.from_xml_path(str(model_path))
+    links, joints = {}, {}
+    for side in SIDES:
+        names = [f"{side}_hand_palm_link"] + [f"{side}_hand_finger_{i}_link" for i in (1, 2)]
+        for name in names:
+            body = model.body(name).id
+            points = []
+            for g in range(model.ngeom):
+                if model.geom_bodyid[g] != body or not model.geom_contype[g] or model.geom_type[g] != mujoco.mjtGeom.mjGEOM_MESH:
+                    continue
+                mesh = model.geom_dataid[g]
+                vertices = model.mesh_vert[model.mesh_vertadr[mesh]:model.mesh_vertadr[mesh] + model.mesh_vertnum[mesh]]
+                rotation = np.zeros(9)
+                mujoco.mju_quat2Mat(rotation, model.geom_quat[g])
+                points.append(vertices @ rotation.reshape(3, 3).T + model.geom_pos[g])
+            low, high = np.vstack(points).min(axis=0), np.vstack(points).max(axis=0)
+            radius = float(np.clip((high - low).min() / 2, 0.006, 0.03))
+            axes = [np.linspace(lo + radius, hi - radius, max(1, int(np.ceil((hi - lo - 2 * radius) / radius)) + 1))
+                    if hi - lo > 2 * radius else np.array([(lo + hi) / 2]) for lo, hi in zip(low, high)]
+            grid = np.stack(np.meshgrid(*axes, indexing="ij"), axis=-1).reshape(-1, 3)
+            links[name] = [{"center": np.round(c, 4).tolist(), "radius": round(radius, 4)} for c in grid]
+        joints[side] = [f"{side}_hand_finger_{i}_joint" for i in (1, 2)]
+    ignore = {}
+    for side in SIDES:
+        hand = [f"{side}_hand_palm_link", f"{side}_hand_finger_1_link", f"{side}_hand_finger_2_link"]
+        wrist = [f"{side}_wrist_yaw_link", f"{side}_wrist_pitch_link", f"{side}_wrist_roll_link"]
+        for link in hand:
+            ignore[link] = [other for other in hand + wrist if other != link]
+    (out / "curobo.json").write_text(json.dumps({"links": links, "joints": joints, "open": OPEN, "ignore": ignore},
+                                                indent=1) + "\n")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("handoff_robot", type=Path)
@@ -210,6 +246,7 @@ def main():
     model = build_model(args.handoff_robot, args.out)
     build_urdf(args.handoff_robot, args.out)
     build_calibration(model, args.out)
+    curobo_spheres(model, args.out)
     compiled = mujoco.MjModel.from_xml_path(str(model))
     print(f"built {args.out}: {compiled.nu} actuators, {compiled.njnt} joints; jaw apertures "
           f"{json.loads((args.out / 'calibration.json').read_text())['jaw_samples']['right'][0]['aperture']:.4f} to "

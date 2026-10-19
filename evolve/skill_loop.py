@@ -191,6 +191,9 @@ class SkillLoop:
               f"{self.remote.host}:{self.remote.work}/")
         started = time.monotonic()
         hosts = self.hosts()
+        for host in hosts:  # the profile's services (e.g. a planning server) up on every host the episodes run on
+            for command in self.cfg.get("services", []):
+                host.ssh(command, timeout=600)
 
         def run_share(index):  # the hosts share the group volume: one candidate copy, one results folder
             host, share = hosts[index], lines[index::len(hosts)]

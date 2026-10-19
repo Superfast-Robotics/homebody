@@ -13,6 +13,8 @@ All poses are in the pelvis frame. The world is an ESDF built from that one dept
 import argparse
 import copy
 import io
+import json
+import tempfile
 import time
 from pathlib import Path
 
@@ -64,10 +66,60 @@ def unpack(raw):
     return msgpack.unpackb(raw, object_hook=decode, raw=False)
 
 
-def robot_config(curobo_root: Path, side: str, locks: dict) -> dict:
-    """cuRobo's bundled G1 (with Dex3) planning only SIDE's arm to its palm, the rest locked."""
+def with_hand(config: dict, hand: Path) -> dict:
+    """CONFIG (cuRobo's G1 with Dex3) with another hand: HAND is a robot profile's folder (assets/robot/<hands>)
+    holding its URDF and curobo.json (tools/build_dex1_hand.py: per-link spheres, finger joints and their open
+    value, link pairs that may touch). Dex3's hand links and joints are dropped, and so is anything the
+    profile's URDF lacks."""
+    import xml.etree.ElementTree as ET
+
+    profile = json.loads((hand / "curobo.json").read_text())
+    tree = ET.parse(hand / "g1_29dof_with_hand.urdf").getroot()
+    if tree.find("link[@name='base_link']") is None:  # cuRobo's virtual base attaches to pelvis through base_link
+        tree.insert(0, ET.Element("link", name="base_link"))
+        joint = ET.SubElement(tree, "joint", name="base_fixed", type="fixed")
+        ET.SubElement(joint, "origin", xyz="0 0 0", rpy="0 0 0")
+        ET.SubElement(joint, "parent", link="base_link")
+        ET.SubElement(joint, "child", link="pelvis")
+    urdf = Path(tempfile.gettempdir()) / f"homebody_curobo_{hand.name}.urdf"
+    urdf.write_text(ET.tostring(tree, encoding="unicode"))
+    links = {link.get("name") for link in tree.findall("link")}
+    joint_names = {joint.get("name") for joint in tree.findall("joint")}
+    dex3 = ("_hand_thumb_", "_hand_index_", "_hand_middle_")
+
+    def keep(name):
+        return name in links and not any(part in name for part in dex3)
+
+    k = config["kinematics"]
+    k["urdf_path"], k["asset_root_path"], k["load_meshes"] = str(urdf), str(hand), False
+    k["collision_spheres"] = {**{n: v for n, v in k["collision_spheres"].items() if keep(n)}, **profile["links"]}
+    k["collision_link_names"] = [n for n in k["collision_link_names"] if keep(n)] + [
+        n for n in profile["links"] if n not in k["collision_link_names"]]
+    k["mesh_link_names"] = [n for n in k.get("mesh_link_names", []) if keep(n)]
+    ignore = {n: [m for m in v if keep(m)] for n, v in k.get("self_collision_ignore", {}).items() if keep(n)}
+    for name, others in profile["ignore"].items():
+        ignore[name] = sorted(set(ignore.get(name, [])) | set(others))
+    k["self_collision_ignore"] = ignore
+    cspace = k["cspace"]
+    fingers = [j for side in SIDES for j in profile["joints"][side]]
+    kept = [i for i, n in enumerate(cspace["joint_names"]) if n in joint_names and not any(part in n for part in dex3)
+            or n.startswith("base_j_")]
+    count = len(cspace["joint_names"])
+    for key, value in list(cspace.items()):
+        if isinstance(value, list) and len(value) == count:
+            extra = fingers if key == "joint_names" else [profile["open"] if key == "default_joint_position" else
+                                                          value[kept[-1]]] * len(fingers)
+            cspace[key] = [value[i] for i in kept] + extra
+    k["tool_frames"] = [f"{side}_hand_palm_link" for side in SIDES]
+    return config
+
+
+def robot_config(curobo_root: Path, side: str, locks: dict, hand: Path | None = None) -> dict:
+    """cuRobo's bundled G1 (with Dex3, or the HAND profile's) planning only SIDE's arm to its palm, the rest locked."""
     path = curobo_root / "curobo/content/configs/robot/unitree_g1.yml"
     config = copy.deepcopy(yaml.safe_load(path.read_text()))
+    if hand is not None:
+        config = with_hand(config, hand)
     kinematics = config["kinematics"]
     moving = {f"{side}_{name}_joint" for name in ARM_JOINTS}
     kinematics["tool_frames"] = [f"{side}_hand_palm_link"]
@@ -90,14 +142,14 @@ def pose_tensor(matrices):
 
 
 class Planners:
-    def __init__(self, curobo_root: Path):
-        self.root, self.planners, self.locks, self.dump = curobo_root, {}, None, None
+    def __init__(self, curobo_root: Path, hand: Path | None = None):
+        self.root, self.planners, self.locks, self.dump, self.hand = curobo_root, {}, None, None, hand
 
     def configure(self, locks):
         self.locks = dict(locks)
         self.planners = {}
         for side in SIDES:
-            config = MotionPlannerCfg.create(robot=robot_config(self.root, side, self.locks),
+            config = MotionPlannerCfg.create(robot=robot_config(self.root, side, self.locks, self.hand),
                                              scene_model=self.world(None),
                                              collision_cache={"voxel": 1}, max_goalset=MAX_GOALSET, num_ik_seeds=IK_SEEDS,
                                              optimizer_collision_activation_distance=ACTIVATION_M)
@@ -235,8 +287,10 @@ def main():
     parser.add_argument("--endpoint", default="tcp://127.0.0.1:5560")
     parser.add_argument("--curobo-root", type=Path, required=True)
     parser.add_argument("--dump", type=Path, help="Save each plan_grasp request here (debugging)")
+    parser.add_argument("--hand", type=Path, help="A robot profile folder with curobo.json (e.g. assets/robot/dex1) "
+                                                  "to plan with in place of the bundled Dex3 hands")
     args = parser.parse_args()
-    planners = Planners(args.curobo_root)
+    planners = Planners(args.curobo_root, args.hand)
     planners.dump = args.dump
     socket = zmq.Context().socket(zmq.REP)
     socket.bind(args.endpoint)

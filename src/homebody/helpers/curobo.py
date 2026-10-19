@@ -5,15 +5,17 @@ of the current depth image only (no simulator state).
 Poses go to the server in the pelvis frame; the robot's own pixels and the EXCLUDE labels (the
 target, or the carried object) are removed from the depth so the planner may reach them.
 """
+import json
 from pathlib import Path
 
 import numpy as np
 from scipy.ndimage import binary_dilation
 
-from homebody.remote.g1 import ARM_JOINT_SUFFIXES, G1Kinematics, homebody_hand_names
+from homebody.remote.g1 import ARM_JOINT_SUFFIXES, G1Kinematics
 from homebody.remote.wire import PolicyClient, PolicyWireError
 
-URDF = Path(__file__).resolve().parents[3] / "assets/robot/g1_29dof_with_hand.urdf"
+ROOT = Path(__file__).resolve().parents[3]
+URDF = ROOT / "assets/robot/g1_29dof_with_hand.urdf"
 WAIST_JOINTS = ("waist_yaw_joint", "waist_roll_joint", "waist_pitch_joint")
 TARGET_MASK_GROWTH_PX = 4
 
@@ -27,17 +29,23 @@ class CuroboPlanner:
 
     def __init__(self, settings):
         self.all_settings, self.settings = settings, settings.curobo
-        self.kinematics = G1Kinematics(URDF)
+        profile = settings.robot.directory(ROOT)  # the robot's hands (settings.robot.hands): its URDF and calibration
+        self.kinematics = G1Kinematics(profile / "g1_29dof_with_hand.urdf")
+        calibration = json.loads((profile / "calibration.json").read_text())
+        self.hand_open = {side: dict(zip(calibration["hand_joints"][side],
+                                         calibration.get("hand_open", {}).get(side, [0.0] * len(calibration["hand_joints"][side]))))
+                          for side in ("left", "right")}
         self.client = PolicyClient(self.settings.endpoint, self.settings.timeout)
 
     def locks(self, joints):
         """The posture the non-planning joints are fixed at: the waist where it stands, both arms at
-        rest (where an idle arm is kept) and the hands open flat, as pick opens before it moves."""
+        rest (where an idle arm is kept) and the hands open (flat for Dex3, jaws wide for Dex1), as pick opens before
+        it moves."""
         locks = {name: float(value) for name, value in zip(self.kinematics.names, joints) if name in WAIST_JOINTS}
         for side in ("left", "right"):
             rest = self.all_settings.placement.rest_arm(side)
             locks.update(zip([f"{side}_{suffix}_joint" for suffix in ARM_JOINT_SUFFIXES], map(float, rest)))
-            locks.update(dict.fromkeys(homebody_hand_names(side), 0.0))
+            locks.update(self.hand_open[side])
         return locks
 
     def ensure_configured(self, joints):
