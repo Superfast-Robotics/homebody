@@ -124,3 +124,18 @@ def test_an_episode_without_a_result_scores_as_a_crashed_failure(tmp_path):
     SkillLoop.fill_missing(loop, tmp_path / "results", lines)
     rows = skill_score.read(tmp_path / "results" / "train")
     assert rows["lost_v0"]["stage"] == 0 and rows["lost_v0"]["crashed"] and rows["ok_v0"]["stage"] == 2
+
+
+def test_crashed_episodes_cannot_make_a_candidate_look_faster():
+    from evolve import skill_score
+
+    def side(rows):
+        return skill_score.summary({e: {"family": "f", "success": s == 2, "stage": s, **extra} for e, (s, extra) in rows.items()})
+    slow = {"timing": {"skill_wall": 1000.0}}
+    parent = {"train": side({f"e{i}": (0, slow) for i in range(40)}), "val": side({f"v{i}": (0, slow) for i in range(20)})}
+    crashed = {"crashed": True, "error": "no result", "timing": {"skill_wall": 5400.0}}
+    child_train = {f"e{i}": (0, {"timing": {"skill_wall": 10.0}}) for i in range(37)}
+    child_train.update({f"e{i}": (0, crashed) for i in range(37, 40)})
+    child = {"train": side(child_train), "val": side({f"v{i}": (0, {"timing": {"skill_wall": 10.0}}) for i in range(20)})}
+    verdict = skill_score.judge(parent, child, "held_values")
+    assert not verdict["ok"] and "crashed" in verdict["basis"]

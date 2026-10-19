@@ -21,6 +21,7 @@ rescue in every episode, and the coder's work is shown to the diagnosis. Val epi
 """
 import argparse
 import fnmatch
+import hashlib
 import json
 import shutil
 import subprocess
@@ -45,6 +46,7 @@ def in_source(commit, word):
 
 HERE = Path(__file__).resolve().parent
 COMPLETE = ".complete"
+EPISODE_TIMEOUT = 5400  # seconds run_skill_jobs.sh allows an episode: a missing result is charged all of it
 EDITABLE = ("src/homebody/skills/{skill}.py", "src/homebody/motion/*", "src/homebody/helpers/*",
             "src/homebody/toolkit/*", "tests/*")
 SPLITS = ("train", "val")
@@ -59,7 +61,12 @@ def touched(row):
 def public_reason(entry):
     """An archive entry's verdict without validation numbers: what the proposer and diagnoser may read."""
     verdict = entry.get("verdict")
-    return skill_score.describe_train(verdict) if verdict else entry.get("reason", "")
+    if verdict:
+        return skill_score.describe_train(verdict)
+    reason = entry.get("reason", "")
+    if reason.startswith("inert"):  # before round 5 this only meant unchanged outcomes on a few probe episodes
+        return "outcomes unchanged on a few probe episodes (old probe: whether its code ran is unknown)"
+    return reason
 
 
 def coder_digest(split_dir):
@@ -169,7 +176,7 @@ class SkillLoop:
         """An episode that left no result (its process died or timed out) scores as a crashed failure, not as an
         episode the version did not run: every job line has a result.json."""
         for line in lines:
-            _, episode, out = line.split()
+            *_, out = line.split()
             split, name = Path(out).parent.name, Path(out).name
             path = local / split / name / "result.json"
             if path.exists():
@@ -178,7 +185,7 @@ class SkillLoop:
             family = json.loads(local_episode.read_text()).get("family", "?") if local_episode.exists() else "?"
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(json.dumps({"episode": name, "skill": self.skill, "family": family, "stage": 0,
-                                        "success": False, "crashed": True,
+                                        "success": False, "crashed": True, "timing": {"skill_wall": EPISODE_TIMEOUT},
                                         "error": "no result: the episode process died or timed out"}))
             self.log(f"{name}: no result, scored as a crashed failure")
 
@@ -257,8 +264,10 @@ class SkillLoop:
     def setup_fingerprint(self):
         """A hash of the benchmark's scene packages and robot profiles on the remote seed: what a round assumes fixed."""
         episodes = f"{self.remote.work}/{self.cfg['episodes']}"
-        return self.remote.ssh(
-            f"cd {self.remote.base}/assets && (find -L robot real2sim -type f -not -path '*.bak*' | sort | xargs md5sum; "
+        local = hashlib.md5(b"".join((HERE / name).read_bytes() for name in  # the episode driver and the scoring
+                                     ("skill_bench.py", "skill_score.py", "run_skill_jobs.sh"))).hexdigest()[:6]
+        return local + "-" + self.remote.ssh(
+            f"cd {self.remote.base}/assets && (find -L robot real2sim skillbench -type f -not -path '*.bak*' | sort | xargs md5sum; "
             f"find {episodes} -type f | sort | xargs md5sum; "
             f"md5sum {Path(self.remote.root)}/curobo_dex1/*.py {Path(self.remote.root)}/curobo_dex1/*.sh 2>/dev/null) "
             f"| awk '{{print $1}}' | md5sum | cut -c1-12", timeout=600).strip()

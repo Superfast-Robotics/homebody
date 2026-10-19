@@ -38,23 +38,31 @@ class CuroboPlanner:
                           for side in ("left", "right")}
         self.client = PolicyClient(endpoint(self.settings), self.settings.timeout)
 
-    def locks(self, joints):
-        """The posture the non-planning joints are fixed at: the waist where it stands, both arms at
-        rest (where an idle arm is kept) and the hands open (flat for Dex3, jaws wide for Dex1), as pick opens before
-        it moves."""
-        locks = {name: float(value) for name, value in zip(self.kinematics.names, joints) if name in WAIST_JOINTS}
-        for side in ("left", "right"):
-            rest = self.all_settings.placement.rest_arm(side)
-            locks.update(zip([f"{side}_{suffix}_joint" for suffix in ARM_JOINT_SUFFIXES], map(float, rest)))
-            locks.update(self.hand_open[side])
+    def locks(self, frame, side):
+        """The measured posture the non-planning joints are fixed at: the waist and the other arm where they are,
+        the other hand as measured, and SIDE's hand open (it plans the approach with the jaws open, as pick opens
+        before it moves). SIDE's arm starts where it is (the request's start)."""
+        locks = {name: float(value) for name, value in zip(self.kinematics.names, frame.joints) if name in WAIST_JOINTS}
+        for arm in ("left", "right"):
+            names = [f"{arm}_{suffix}_joint" for suffix in ARM_JOINT_SUFFIXES]
+            if arm != side:
+                locks.update(zip(names, map(float, frame.arm_joints(arm))))
+            else:
+                locks.update(zip(names, map(float, self.all_settings.placement.rest_arm(arm))))
+            hand = self.hand_open[arm]
+            if arm == side:
+                locks.update(hand)
+            else:  # HandState joints count from the open pose
+                measured = np.asarray(frame.hands[arm].joints, dtype=float)
+                locks.update({name: opened + float(q) for (name, opened), q in zip(hand.items(), measured)})
         return locks
 
-    def ensure_configured(self, joints):
-        """Build the server's per-arm planners once, other joints locked at `locks`."""
+    def ensure_configured(self, frame, side):
+        """Build the server's per-arm planners once (a plan whose posture differs rebuilds them, tools/curobo_server.py)."""
         try:
             status = self.client.call("ping")
             if not status.get("configured"):
-                self.client.call("configure", {"locks": self.locks(joints)})
+                self.client.call("configure", {"locks": self.locks(frame, side)})
         except PolicyWireError as error:
             raise PlannerUnavailable(str(error)) from error
 
@@ -63,7 +71,7 @@ class CuroboPlanner:
 
     def plan(self, frame, side, pre_world, pose_world, exclude_labels=()):
         """The server's reply for the arm's goal set of (pre, pose) world poses, best first."""
-        self.ensure_configured(frame.joints)
+        self.ensure_configured(frame, side)
         pelvis_world = np.linalg.inv(self.world_pelvis(frame))
         depth = np.array(frame.depth, dtype=np.float32)
         excluded = frame.labels == -1
@@ -77,7 +85,7 @@ class CuroboPlanner:
                    "pre": pelvis_world @ np.asarray(pre_world)[:count],
                    "palm": pelvis_world @ np.asarray(pose_world)[:count],
                    "depth": depth, "intrinsics": np.asarray(frame.intrinsics, dtype=np.float64),
-                   "camera": pelvis_world @ frame.world_camera, "locks": self.locks(frame.joints)}
+                   "camera": pelvis_world @ frame.world_camera, "locks": self.locks(frame, side)}
         try:
             return self.client.call("plan_grasp", request)
         except PolicyWireError as error:

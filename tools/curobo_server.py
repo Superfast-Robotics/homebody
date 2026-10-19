@@ -147,9 +147,9 @@ class Planners:
         self.root, self.planners, self.locks, self.dump, self.hand = curobo_root, {}, None, None, hand
 
     def configure(self, locks):
-        """Build the planners with LOCKS; a server already built is kept (the first configuration wins, so
-        concurrent clients cannot rebuild it under each other) and each plan reports the joints that differ."""
-        if self.planners:
+        """Build the planners with the non-planning joints locked at LOCKS (a server already built with the same
+        posture is kept, so clients configuring at once do not rebuild it under each other)."""
+        if self.planners and self.locks is not None and not self.posture_mismatch(locks):
             return {"joint_names": {side: list(p.joint_names) for side, p in self.planners.items()}, "locks": self.locks}
         self.locks = dict(locks)
         self.planners = {}
@@ -249,11 +249,13 @@ class Planners:
             return None
         return self.arm_rows(planner, result.get_interpolated_plan(), side)
 
-    def posture_mismatch(self, locks):
+    def posture_mismatch(self, locks, side=None):
         """The joints whose value in LOCKS (the requester's posture) differs from the configured lock by more than
-        POSTURE_TOLERANCE: the plan assumed the configured posture there."""
+        POSTURE_TOLERANCE, apart from SIDE's own arm and hand (free, or opened, in SIDE's planner)."""
+        own = (f"{side}_shoulder", f"{side}_elbow", f"{side}_wrist", f"{side}_hand") if side else ()
         return {name: [round(float(self.locks[name]), 3), round(float(value), 3)] for name, value in (locks or {}).items()
-                if name in self.locks and abs(float(self.locks[name]) - float(value)) > POSTURE_TOLERANCE}
+                if name in self.locks and not name.startswith(own)
+                and abs(float(self.locks[name]) - float(value)) > POSTURE_TOLERANCE}
 
     def plan_grasp(self, request):
         started = time.monotonic()
@@ -263,8 +265,14 @@ class Planners:
         planner = self.planners[side]
         planner.update_world(self.world(request, planner))
         pre, palm = np.asarray(request["pre"])[:MAX_GOALSET], np.asarray(request["palm"])[:MAX_GOALSET]
+        mismatch = self.posture_mismatch(request.get("locks"), side)
+        if mismatch:  # plan in the requester's measured posture: rebuild (about 30 s) rather than plan in a stale one
+            print(f"posture differs at {sorted(mismatch)}: reconfiguring", flush=True)
+            self.configure(request["locks"])
+            planner = self.planners[side]
+            planner.update_world(self.world(request, planner))
         reply = {"success": False, "index": -1, "approach": np.zeros((0, 7)), "descent": np.zeros((0, 7)),
-                 "posture_mismatch": self.posture_mismatch(request.get("locks"))}
+                 "reconfigured_for": sorted(mismatch)}
         remaining, failures = list(range(len(pre))), []
         for _ in range(MAX_CANDIDATE_TRIES):
             if not remaining:

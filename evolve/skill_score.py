@@ -28,16 +28,17 @@ Z_PROMISING = 1.0  # a first round with no candidate this far up (pooled) or acc
 
 def read(split_dir):
     """episode id -> result dict for every scored episode under SPLIT_DIR. Setup failures are left out; an
-    episode the candidate's code crashed counts as a failure (stage 0), so crashing never looks cheaper."""
+    episode the candidate's code crashed counts as a failure (stage 0), so crashing never looks cheaper (setup
+    failures, where the stance or view failed before the skill ran, are left out for every version alike)."""
     results = {}
     for path in sorted(Path(split_dir).glob("*/result.json")):
         result = json.loads(path.read_text())
         if result.get("setup_failed"):
             continue
-        if "stage" not in result:
-            if not result.get("error"):
-                continue
-            result = {**result, "stage": 0, "success": False, "crashed": True}
+        if "stage" not in result:  # a result without a score (malformed or crashed) is a failure, never left out
+            result = {**result, "stage": 0, "success": False, "crashed": True,
+                      "error": result.get("error") or "result without a stage"}
+        result.setdefault("episode", path.parent.name)
         results[result["episode"]] = result
     return results
 
@@ -161,6 +162,8 @@ def judge(parent, child, key="values", weights=None):
         return {**out, "ok": True, "basis": "accuracy (enough to outweigh the extra time or cost)" if heavier else "accuracy"}
     if out["pooled"][0] - Z_RISE * out["pooled"][1] > 0:
         return {**out, "ok": False, "basis": f"accuracy gain too small for {out['time']:+.0%} time, {out['cost']:+.0%} cost"}
+    if crashed:  # a crashed episode's time is not a measurement: no time or cost win with any
+        return {**out, "ok": False, "basis": f"no clear gain ({crashed} crashed episodes: no time or cost acceptance)"}
     if out["pooled"][0] - Z_RISE * out["pooled"][1] < -NONINFERIOR:  # cheaper or faster only when no worse
         return {**out, "ok": False, "basis": "no clear gain (accuracy not shown non-inferior)"}
     d_cost, se_cost = paired(pooled(parent), pooled(child), "credit_values")

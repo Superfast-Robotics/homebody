@@ -222,7 +222,7 @@ def curobo_spheres(model_path, out):
                 mujoco.mju_quat2Mat(rotation, model.geom_quat[g])
                 points.append(vertices @ rotation.reshape(3, 3).T + model.geom_pos[g])
             low, high = np.vstack(points).min(axis=0), np.vstack(points).max(axis=0)
-            step = float(np.clip((high - low).min() / 2, 0.006, 0.03))  # cells half as wide as the thinnest side
+            step = float(np.clip((high - low).min() / 2, 0.006, 0.012))  # cells half as wide as the thinnest side, at most 12 mm
             counts = np.maximum(1, np.ceil((high - low) / step)).astype(int)
             cell = (high - low) / counts
             axes = [lo + cell_i * (np.arange(n) + 0.5) for lo, cell_i, n in zip(low, cell, counts)]

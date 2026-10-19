@@ -243,7 +243,7 @@ class Env:
         return {"ok": bool(reply.get("success")), "index": int(reply.get("index", -1)),
                 "approach": [r.tolist() for r in thinned(np.asarray(reply.get("approach", [])), limit)],
                 "descent": [r.tolist() for r in thinned(np.asarray(reply.get("descent", [])), limit)],
-                "status": str(reply.get("status"))}
+                "status": str(reply.get("status")), "reconfigured_for": list(reply.get("reconfigured_for", []))}
 
     # --- arm motion and hand ---
     def follow(self, joint_waypoints, side="right"):

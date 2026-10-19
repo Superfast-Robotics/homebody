@@ -264,12 +264,20 @@ class EvoLoop(SkillLoop):
                 patch = git("diff", parent.get("commit", old["commit"] + "^"), old["commit"], "--", folder, "tests")
                 applied = subprocess.run(["git", "apply", "--3way", "-"], input=patch + "\n", text=True, cwd=path,
                                          capture_output=True, check=False)
-                if applied.returncode != 0:
+                if applied.returncode != 0:  # leave no half-applied state for a later attempt
+                    git("reset", "-q", "--hard", best["commit"], cwd=path)
+                    git("clean", "-q", "-fd", cwd=path)
                     self.log(f"remeasure {cid}: its change does not apply on {best['id']}: {applied.stderr[-300:]}")
                     continue
                 git("add", "-A", cwd=path)
                 git("-c", "user.name=astra", "-c", "user.email=astra@localhost", "commit", "-q", "-m",
                     f"skill {self.skill} {new}: {cid}'s change on {best['id']}", cwd=path)
+            files = git("diff", "--name-only", best["commit"], "HEAD", cwd=path).splitlines()
+            outside, specific = self.allowed(files), self.specific(best["commit"], git("rev-parse", "HEAD", cwd=path))
+            if outside or specific:
+                self.log(f"remeasure {cid}: screened out on {best['id']}: "
+                         + (f"edits outside the skill {outside}" if outside else f"names {specific}"))
+                continue
             passed, output = self.loop.remote_checks(self.cand(new), path)
             if not passed:
                 self.log(f"remeasure {cid}: lint or unit tests fail on {best['id']}: {output[-300:]}")
@@ -424,7 +432,8 @@ class EvoLoop(SkillLoop):
         """A cheap model rewrites lessons.md from the whole history (the meta-scratchpad)."""
         history = "\n\n".join(
             f"## {e['id']} (round {e.get('round')}, {e.get('operator', 'greedy')}, parent {e.get('parent')}, "
-            f"model {e.get('model', self.cfg['model'])}): {e['status']}\n{public_reason(e)}\n{(e.get('notes') or '')[:1200]}"
+            f"model {e.get('model', self.cfg['model'])}): {e['status']}\n{public_reason(e)}\n"
+            f"{'probe: ' + json.dumps(e['probe']) + chr(10) if e.get('probe') else ''}{(e.get('notes') or '')[:1200]}"
             for e in self.archive())
         current = self.work / "lessons.md"
         prompt = (HERE / "prompts" / "evo_lessons.md").read_text().format(
