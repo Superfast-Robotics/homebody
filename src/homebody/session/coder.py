@@ -148,8 +148,10 @@ def brief(value, depth=0):
 class Coder:
     """This task's coder calls and the skill versions they produced."""
 
-    def __init__(self, settings):
+    def __init__(self, settings, registry=None):
+        """REGISTRY: the built-in skills the coder starts from (the robot's hands'), the SIM skills when None."""
         self.settings = settings
+        self.registry = REGISTRY if registry is None else registry
         self.skills: dict[str, dict] = {}  # name -> {module, version, path}
         self.calls = 0
         self.task_dir: Path | None = None
@@ -171,8 +173,8 @@ class Coder:
     def current_source(self, name):
         if name in self.skills:
             return self.skills[name]["path"].read_text(), f"your task's version {self.skills[name]['version']}"
-        if name in REGISTRY:
-            return inspect.getsource(REGISTRY[name]), "the built-in skill"
+        if name in self.registry:
+            return inspect.getsource(self.registry[name]), "the built-in skill"
         return TEMPLATE.format(name=name), "a new skill (template)"
 
     def call(self, arguments, session):
@@ -186,7 +188,7 @@ class Coder:
             return refusal("INVALID_ARGUMENT", "give goal and success")
         if self.calls >= self.settings.calls:
             return refusal("CODER_LIMIT", f"this task already used its {self.settings.calls} coder calls")
-        if target in REGISTRY and not failed_skill(session.history):  # a new skill has nothing to try first
+        if target in self.registry and not failed_skill(session.history):  # a new skill has nothing to try first
             return refusal("CODER_NOT_YET", "use the built-in skills first; call the coder only after a skill call "
                                             "this task failed and its result shows the skill itself must change")
         self.calls += 1

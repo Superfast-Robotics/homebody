@@ -213,7 +213,7 @@ def consult(session, ask, history):
         coder_settings = replace(coder_settings, model=os.environ["HOMEBODY_CODER_MODEL"])
     if os.environ.get("HOMEBODY_CODER_SECONDS"):  # a slower model or a harder request may get a longer limit
         coder_settings = replace(coder_settings, seconds=float(os.environ["HOMEBODY_CODER_SECONDS"]))
-    coder = Coder(coder_settings)
+    coder = Coder(coder_settings, session.runner.registry)
     coder.reset(session.task)
     agent = SimpleNamespace(history=history, observed=session.port, recorder=session.recorder,
                             context=session.context, runner=session.runner, trace=getattr(session, "trace", None))
@@ -485,7 +485,9 @@ def main(root, episode_path, out):
     from homebody.session.settings import Settings
 
     scene = Path(episode["scene"])
-    settings = Settings.load(root / "configs/simulation.toml", scene=scene)
+    # an episode's settings (relative to ROOT) override the base and the scene's, e.g. configs/dex1.toml
+    settings = Settings.load(root / "configs/simulation.toml", scene=scene,
+                             override=root / episode["settings"] if episode.get("settings") else None)
     recorder = Recorder(root, settings, out / "session")
     task = recorder.start_task(f"Skill benchmark: {episode['skill']} {episode['id']}", None)
     outcome = {"status": "error", "steps": [], "vlm_used": False}

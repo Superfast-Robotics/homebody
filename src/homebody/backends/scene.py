@@ -27,10 +27,12 @@ def numbers(values):
 def load(root: Path, settings, scene: Path | None = DEFAULT_SCENE):
     """Compile the robot into SCENE, a package directory relative to ROOT or absolute, or
     alone on a flat floor when SCENE is None."""
-    robot = root / "assets/robot/g1_grasp"
+    profile = settings.robot.directory(root)
+    robot = profile / "g1_grasp"
     xml = ET.parse(robot / "g1_closd_grasp_deploy.xml").getroot()
     xml.find("compiler").set("meshdir", str(robot / "meshes"))
-    xml.remove(xml.find("keyframe"))
+    for keyframe in xml.findall("keyframe"):
+        xml.remove(keyframe)
     option = xml.find("option")
     option.attrib.update(timestep=str(settings.physics.timestep), integrator=settings.physics.integrator,
                          cone=settings.physics.cone, impratio=str(settings.physics.impratio),
@@ -52,7 +54,7 @@ def load(root: Path, settings, scene: Path | None = DEFAULT_SCENE):
             xml.append(child)
         spawn = json.loads((directory / "task_scene.json").read_text())["robot_start"]
     torso = next(b for b in xml.iter("body") if b.get("name") == "torso_link")
-    camera = camera_mount(root / "assets/robot/g1_29dof_with_hand.urdf")
+    camera = camera_mount(profile / "g1_29dof_with_hand.urdf")
     rotation = camera[:3, :3] @ np.diag([1, -1, -1])
     quat = Rotation.from_matrix(rotation).as_quat(scalar_first=True)
     c = settings.camera

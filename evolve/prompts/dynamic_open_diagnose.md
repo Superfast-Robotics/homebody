@@ -3,7 +3,7 @@ gets one call when the skill refuses) fails on the benchmark episodes.
 
 Read {workspace}/BRIEF.md first, then {workspace}/results.md, {workspace}/coder_edits.md and
 {workspace}/history.md, then the episodes under {workspace}/episodes/<id>/ (result.json, trace.json,
-coder-call-1.md). The code is in the current directory: src/homebody/skills/{skill}.py, the
+coder-call-1.md). The code is in the current directory: {source}, the
 assistant's instructions src/homebody/harness/coder_agents.md and its request and reports
 src/homebody/harness/coder.py, and the helpers under src/homebody/toolkit/ (toolkit/API.md),
 motion/ and helpers/. Do not read anything outside these places.

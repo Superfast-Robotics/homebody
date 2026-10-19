@@ -2,7 +2,7 @@ You are diagnosing why the built-in `{skill}` skill fails on the benchmark episo
 
 Read {workspace}/BRIEF.md first, then {workspace}/results.md and {workspace}/history.md, then the
 episodes under {workspace}/episodes/<id>/ (trace.json, result.json). The skill's code is
-src/homebody/skills/{skill}.py in the current directory, with the shared code it uses under
+{source} in the current directory, with the shared code it uses under
 src/homebody/motion/, src/homebody/helpers/ and src/homebody/toolkit/ (toolkit/API.md is the robot
 interface reference). Do not read anything outside these places.
 

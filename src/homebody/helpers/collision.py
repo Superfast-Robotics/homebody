@@ -29,13 +29,17 @@ class CollisionGeometry:
         self.shapes = {}
         calibration = json.loads((mesh_directory.parents[1] / "calibration.json").read_text())
         self.hand_names = calibration["hand_joints"][side]
+        # HandState joints count from the open pose, which is zero for Dex3's fingers
+        self.hand_open = dict(zip(self.hand_names, calibration.get("hand_open", {}).get(side, [0.0] * len(self.hand_names))))
         self.finger_joints = [joint for joint in robot_root.findall("joint")
                               if joint.get("name") in self.hand_names]
         self.finger_origins = {joint.get("name"): joint_origin(joint) for joint in self.finger_joints}
-        self.finger_cross = {}
+        self.finger_cross, self.finger_slide = {}, {}
         for joint in self.finger_joints:
             axis = np.fromstring(joint.find("axis").get("xyz"), sep=" ")
             self.finger_cross[joint.get("name")] = skew(axis / np.linalg.norm(axis))
+            if joint.get("type") == "prismatic":  # a parallel gripper's jaw slides along its axis
+                self.finger_slide[joint.get("name")] = axis / np.linalg.norm(axis)
         finger_links = [joint.find("child").get("link") for joint in self.finger_joints]
         for name in (*self.links, *finger_links):
             mesh = trimesh.load_mesh(mesh_directory / (name + ".STL"), process=False)
@@ -67,12 +71,15 @@ class CollisionGeometry:
     def hand_boxes(self, arm, joints, fingers):
         palm, _ = arm.forward(joints)
         poses = {self.side + "_hand_palm_link": palm}
-        measured = dict(zip(self.hand_names, fingers))
+        measured = {name: q + self.hand_open[name] for name, q in zip(self.hand_names, fingers)}
         boxes = []
         for joint in self.finger_joints:
             name = joint.get("name")
             pose = poses[joint.find("parent").get("link")] @ self.finger_origins[name]
-            pose = pose @ transform([0, 0, 0], axis_rotation(self.finger_cross[name], measured[name]))
+            if name in self.finger_slide:
+                pose = pose @ transform(self.finger_slide[name] * measured[name], np.eye(3))
+            else:
+                pose = pose @ transform([0, 0, 0], axis_rotation(self.finger_cross[name], measured[name]))
             child = joint.find("child").get("link")
             poses[child] = pose
             boxes.append(self.posed(child, pose))

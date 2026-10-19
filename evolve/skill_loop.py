@@ -100,6 +100,9 @@ class SkillLoop:
         self.skill = self.cfg["name"]
         self.work = self.loop.work / "skill" / self.cfg.get("workdir", self.skill)
         self.editable = tuple(self.cfg.get("editable", EDITABLE))
+        # the skill's module (a hand's own version lives under skills/<hands>/) and what the brief adds about the robot
+        self.source = self.cfg.get("source", "src/homebody/skills/{skill}.py").format(skill=self.skill)
+        self.brief_note = self.cfg.get("brief_note", "")
         self.coder = bool(self.cfg.get("coder", False))
         self.prompts = self.cfg.get("prompts", "skill")
         self.proposals = int(self.cfg.get("proposals", self.loop.cfg["astra"]["proposals"]))  # per round, by mechanism rank
@@ -202,9 +205,10 @@ class SkillLoop:
         minutes = f"{int(self.cfg.get('coder_seconds', 300)) / 60:g}"
         bench = HERE / "prompts" / f"bench_{self.skill}.md"
         benchmark = bench.read_text().format(skill=self.skill, coder_minutes=minutes) if bench.exists() else ""
-        (ws / "BRIEF.md").write_text((HERE / "prompts" / f"{self.prompts}_brief.md").read_text().format(
-            skill=self.skill, coder_model=self.cfg.get("coder_model", "Sol"), coder_minutes=minutes,
-            benchmark=benchmark))
+        brief = (HERE / "prompts" / f"{self.prompts}_brief.md").read_text().format(
+            skill=self.skill, source=self.source, coder_model=self.cfg.get("coder_model", "Sol"),
+            coder_minutes=minutes, benchmark=benchmark)
+        (ws / "BRIEF.md").write_text(brief + (f"\n## This robot\n\n{self.brief_note.strip()}\n" if self.brief_note else ""))
         train = skill_score.read(self.work / "results" / best["id"] / "train")
         summary = skill_score.summary(train)
         lines = [f"# {self.skill} on the train episodes with version {best['id']}", "",
@@ -280,7 +284,8 @@ class SkillLoop:
         self.log(f"round {number}: improving {best['id']} (train {best['train']['value']:.3f}, val {best['val']['value']:.3f})")
         ws = self.workspace(round_dir, best)
         reader = self.loop.worktree(self.cand(f"s{number:03d}d"), best["commit"])
-        prompt = (HERE / "prompts" / f"{self.prompts}_diagnose.md").read_text().format(workspace=ws, skill=self.skill)
+        prompt = (HERE / "prompts" / f"{self.prompts}_diagnose.md").read_text().format(workspace=ws, skill=self.skill,
+                                                                                      source=self.source)
         diagnosis_path = round_dir / "diagnosis.md"
         if diagnosis_path.exists():  # resuming
             diagnosis = diagnosis_path.read_text()
@@ -314,7 +319,7 @@ class SkillLoop:
         entry = {"id": cid, "round": number, "parent": best["id"], "mechanism": index}
         if git("rev-parse", "HEAD", cwd=path) == best["commit"]:
             prompt = (HERE / "prompts" / f"{self.prompts}_propose.md").read_text().format(
-                workspace=ws, skill=self.skill, diagnosis=diagnosis, mechanism=index,
+                workspace=ws, skill=self.skill, source=self.source, diagnosis=diagnosis, mechanism=index,
                 ruff=astra.settings()["ruff"], python=astra.settings()["python"],
                 editable=", ".join(p.format(skill=self.skill) for p in self.editable))
             try:

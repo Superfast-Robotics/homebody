@@ -14,7 +14,7 @@ from homebody.session.planned import PlanRunner
 from homebody.session.recovery import Recovery, request
 from homebody.session.trace import Trace
 from homebody.skills.contract import COMMON_FAILURES, Context, Runner
-from homebody.skills.registry import PROMPTS, REGISTRY
+from homebody.skills.registry import Prompts, registry
 from homebody.vlm.observations import annotations, model_observation, rounded
 from homebody.vlm.provider import Cancelled, ProviderBusy, ProviderError
 
@@ -138,7 +138,7 @@ class Session:
                                settings=settings, jaw_samples=jaw_samples,
                                cancelled=controls.cancel.is_set, emit=self.skill_event)
         self.runner = Runner(self.context)
-        self.coder = Coder(settings.coder)
+        self.coder = Coder(settings.coder, registry(settings.robot.hands))
         self.recovery = Recovery(settings.coder.tries, settings.coder.rescues)
         self.planner = None
         self.trace = Trace(backend, lambda: self.context.carried)
@@ -217,7 +217,7 @@ class Session:
     def prompt(self, task, frame):
         """The turn's prompt: instructions, skills, scene annotations, hands, task, observation and recent steps."""
         settings = vars(self.settings)
-        modules = {**REGISTRY, **{name: self.coder.module(name) for name in self.coder.names()}}
+        modules = {**self.coder.registry, **{name: self.coder.module(name) for name in self.coder.names()}}
         skills = "\n".join(f"{skill.PROMPT.format_map(settings)} Refusals: {', '.join(dict.fromkeys(skill.FAILURES))}."
                            for skill in modules.values())
         left = self.settings.coder.calls - self.coder.calls
@@ -277,7 +277,7 @@ class Session:
                 raise PhysicsInvalid(self._physics_fault[1])
             self.backend.set_evaluation_sink(self.recorder.physics)
             for step in range(self.settings.agent.max_steps):
-                names = tuple(dict.fromkeys((*PROMPTS, *self.coder.names(), CALL, "done")))
+                names = tuple(dict.fromkeys((*Prompts(self.coder.registry), *self.coder.names(), CALL, "done")))
                 if self.planner is not None:
                     names = self.planner.names(names)
                 if self.controls.cancel.is_set():

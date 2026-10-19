@@ -152,12 +152,13 @@ def refusal_code(error):
 
 
 class Runner:
-    """Runs the skills of REGISTRY, the SIM skills unless another registry is given, on one context."""
+    """Runs the skills of REGISTRY, the SIM skills for the context's hands unless another registry is given,
+    on one context."""
 
     def __init__(self, context, registry=None):
         if registry is None:
-            from .registry import REGISTRY
-            registry = REGISTRY
+            from .registry import registry as hand_registry
+            registry = hand_registry(context.settings.robot.hands)
         self.context, self.registry = context, registry
 
     def run(self, name, arguments, selected_frame, skill=None):

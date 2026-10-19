@@ -71,11 +71,14 @@ class ArmLimit:
         return np.clip(self.q, measured - lead, measured + lead), kp, self.kd
 
 
-def configure_finger_servo(model, actuator, joint, settings):
-    """Set one finger's position servo and its force cap, which is also the effort ceiling."""
-    model.actuator_gainprm[actuator, 0] = settings.hand_kp
-    model.actuator_biasprm[actuator, 1:3] = -settings.hand_kp, -settings.hand_kd
-    limit = settings.hand_torque_fraction * np.max(np.abs(model.jnt_actfrcrange[joint]))
+def configure_finger_servo(model, actuator, joint, settings, servo=None):
+    """Set one finger's position servo and its force cap, which is also the effort ceiling: the physics settings'
+    (Dex3's), or SERVO's kp, kd and force when the hand's calibration gives its own."""
+    kp, kd = (settings.hand_kp, settings.hand_kd) if servo is None else (servo["kp"], servo["kd"])
+    model.actuator_gainprm[actuator, 0] = kp
+    model.actuator_biasprm[actuator, 1:3] = -kp, -kd
+    limit = settings.hand_torque_fraction * (np.max(np.abs(model.jnt_actfrcrange[joint])) if servo is None
+                                             else servo["force"])
     model.actuator_forcerange[actuator] = -limit, limit
     model.jnt_actfrcrange[joint] = -limit, limit
 
@@ -91,9 +94,10 @@ def configure_hand_contacts(model, settings):
 
 
 class Controller:
-    def __init__(self, model, data, root: Path, settings, cache: Path):
+    def __init__(self, model, data, root: Path, settings, cache: Path, profile: Path | None = None):
+        """PROFILE is the robot's folder (its calibration.json); ROOT/assets/robot when None."""
         self.model, self.data, self.settings = model, data, settings
-        calibration = json.loads((root / "assets/robot/calibration.json").read_text())
+        calibration = json.loads(((profile or root / "assets/robot") / "calibration.json").read_text())
         self.calibration = calibration
         base = amo_profile()
         self.profile = replace(base, policy=replace(base.policy,
@@ -116,18 +120,24 @@ class Controller:
         self.gates = {side: ArmLimit(calibration, side, settings.arm_rate, settings.arm_authority_seconds,
                                      self.arm_target[arm]) for side, arm in SIDES.items()}
         self.hand_q, self.hand_act, self.hand_target, self.closed, self.hand_pace = {}, {}, {}, {}, {}
+        self.open = {}
+        # a parallel gripper's calibration gives its open pose, its own servo and its speed; Dex3's hand opens at zero
+        self.hand_rate = calibration.get("hand_rate", settings.hand_rate)
         for side in ("left", "right"):
             names = calibration["hand_joints"][side]
             self.hand_q[side] = np.array([model.jnt_qposadr[model.joint(n).id] for n in names])
             self.hand_act[side] = np.array([self.actuator(n) for n in names])
-            self.hand_target[side] = np.zeros(7)
+            self.open[side] = np.array(calibration.get("hand_open", {}).get(side, np.zeros(len(names))), dtype=float)
+            self.hand_target[side] = self.open[side].copy()
+            data.ctrl[self.hand_act[side]] = self.open[side]
+            data.qpos[self.hand_q[side]] = self.open[side]
             ray = np.array(calibration["hand_closed"][side]) * calibration["hand_close_fraction"]
             ray[:3] *= calibration["thumb_close_fraction"]
             self.closed[side] = ray
             closed = np.abs(np.array(calibration["hand_closed"][side]))
             self.hand_pace[side] = np.maximum(closed / closed.max(), 0.001)
             for name, actuator in zip(names, self.hand_act[side]):
-                configure_finger_servo(model, actuator, model.joint(name).id, settings)
+                configure_finger_servo(model, actuator, model.joint(name).id, settings, calibration.get("hand_servo"))
         configure_hand_contacts(model, settings)
         self.tick_count = 0
         self.kernel.handle_command(ControllerCommand.start)
@@ -159,7 +169,7 @@ class Controller:
         for side, arm in SIDES.items():
             targets[arm], kp[arm], kd[arm] = self.gates[side].step(
                 targets[arm], self.data.qpos[q[arm]], dt)
-            delta = self.settings.hand_rate * dt * self.hand_pace[side]
+            delta = self.hand_rate * dt * self.hand_pace[side]
             acts = self.hand_act[side]
             current = self.data.ctrl[acts]
             self.data.ctrl[acts] = current + np.clip(self.hand_target[side] - current, -delta, delta)

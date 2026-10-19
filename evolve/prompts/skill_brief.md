@@ -34,7 +34,7 @@ never add anything about particular scenes, objects, colours or coordinates.
 
 ## What you may change
 
-Only `src/homebody/skills/{skill}.py` and the shared code under it (`src/homebody/motion/`,
+Only `{source}` and the shared code under it (`src/homebody/motion/`,
 `src/homebody/helpers/`, `src/homebody/toolkit/`) and tests. Anything else is rejected unseen. Other
 skills use the shared code too, so keep their behaviour working. The skill reaches the robot only
 through the skill `Context` (the Robot interface): camera frames, measured robot state, commands.

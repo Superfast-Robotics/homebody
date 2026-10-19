@@ -55,9 +55,9 @@ def check(root: Path, scene: Path, settings) -> int:
     for directory, names in (
             (scene, ("scene.xml", "task_scene.json", "map.npz", "physics.json",
                      "semantics.json")),
-            (root, ("assets/robot/g1_29dof_with_hand.urdf", "assets/robot/calibration.json",
-                    "assets/robot/g1_grasp/g1_closd_grasp_deploy.xml",
-                    "assets/models/amo_jit.pt", "assets/models/adapter_jit.pt",
+            (settings.robot.directory(root), ("g1_29dof_with_hand.urdf", "calibration.json",
+                                              "g1_grasp/g1_closd_grasp_deploy.xml")),
+            (root, ("assets/models/amo_jit.pt", "assets/models/adapter_jit.pt",
                     "assets/models/adapter_norm_stats.pt"))):
         for name in names:
             available = (directory / name).is_file()
@@ -130,11 +130,11 @@ def run(args, settings, output):
             from homebody.ui.scene import SceneView
             ui.scene_view = SceneView(ui.server, backend)
             scene_update = ui.scene_view.update
-        urdf = args.root / "assets/robot/g1_29dof_with_hand.urdf"
-        arms = {side: Arm(urdf, side) for side in ("left", "right")}
+        profile = settings.robot.directory(args.root)
+        arms = {side: Arm(profile / "g1_29dof_with_hand.urdf", side) for side in ("left", "right")}
         if ui is not None:
             ui.arms = arms
-        calibration = json.loads((args.root / "assets/robot/calibration.json").read_text())
+        calibration = json.loads((profile / "calibration.json").read_text())
         provider = make(settings.agent)
         session = Session(backend, provider, settings, recorder, controls,
                           arms=arms, jaw_samples=calibration["jaw_samples"], ui=ui,

@@ -18,6 +18,7 @@ from .config import (
     Placement,
     PlanMode,
     Recording,
+    Robot,
     Servo,
     SharedMotion,
     Topdown,
@@ -80,6 +81,7 @@ class Settings:
     curobo: Curobo = field(default_factory=Curobo)
     coder: Coder = field(default_factory=Coder)
     plan: PlanMode = field(default_factory=PlanMode)
+    robot: Robot = field(default_factory=Robot)
 
     def __post_init__(self):
         for group in fields(self):
