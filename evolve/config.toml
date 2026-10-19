@@ -283,3 +283,37 @@ model = "gpt-6-astra"        # Astra diagnoses and proposes (the meta-optimizer)
 effort = "medium"
 proposals = 3
 parallel = 24
+
+[skills.dex1-pick]
+# the G1 with Dex1-1 parallel grippers (configs/dex1.toml): its own pick (skills/dex1/pick.py), on the round-trip
+# pickcarry episodes run with the Dex1 settings; the Dex3 skills and the shared code stay untouched
+name = "pick"
+source = "src/homebody/skills/dex1/{skill}.py"
+episodes = "skillbench/dex1_pickcarry_episodes"
+coder = false
+workdir = "dex1-pick"
+prompts = "skill"
+editable = ["src/homebody/skills/dex1/*", "tests/*"]
+model = "gpt-6-astra"
+effort = "medium"
+parallel = 28
+brief_note = """
+This benchmark's robot is the G1 with Unitree Dex1-1 two-jaw parallel grippers in place of the Dex3
+hands (settings `[robot] hands = "dex1"`, model and calibration in assets/robot/dex1, built by
+tools/build_dex1_hand.py). Its pick and place are `src/homebody/skills/dex1/`; they began as copies of
+the Dex3 skills, which other robots still use, so the shared code (`motion/`, `helpers/`, `toolkit/`)
+is read-only here: put anything Dex1-specific in `src/homebody/skills/dex1/` (new modules there are
+fine) and tests.
+
+The gripper: two jaws on prismatic joints (`<side>_hand_finger_1_joint` / `_2_joint`, 0.0245 m open,
+sliding toward each other along the palm frame's y axis); jaw opening about 0.095 m fully open down to
+about 0.006 m; about 16 N per jaw; the pads sit 0.09-0.14 m out along the palm frame's +x axis, which
+points straight out of the wrist along the forearm. So the jaws approach along the forearm, unlike
+Dex3, whose fingers close beside the palm and approach perpendicular to the forearm: the copied
+pick's top-down grasps need the forearm vertical, which this arm cannot reach at table height (the
+copy refuses NO_GRASP with nothing reachable). `planning.jaw_samples[side]` holds the calibrated jaw
+frames (columns closing, across, approach; origin between the pads) across the closure. A hand's
+`HandState` joints count from the open pose; its finger evidence is thumb = jaw 1, index and middle =
+jaw 2; `grip` closure 0 opens and 1 closes most of the way, with the squeeze (up to 1.12) for a firm
+hold.
+"""

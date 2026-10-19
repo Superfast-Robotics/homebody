@@ -2,6 +2,7 @@
 benchmark (skill_bench.py episodes, no model at run time), round by round, from the version recorded
 as the skill baseline.
 
+    python3 -m evolve.skill_loop [--profile P] init COMMIT       Astra writes the skill's first version from COMMIT
     python3 -m evolve.skill_loop [--profile P] baseline COMMIT   measure COMMIT on every episode
     python3 -m evolve.skill_loop [--profile P] run --rounds N    diagnose, patch, evaluate, accept
     python3 -m evolve.skill_loop [--profile P] test CID          the version on the test episodes
@@ -196,6 +197,53 @@ class SkillLoop:
         summaries = self.evaluate(cid, path)
         self.record({"id": cid, "round": 0, "commit": git("rev-parse", "HEAD", cwd=path), "status": "baseline",
                      "reason": f"{self.skill} skill baseline", **summaries})
+
+    def init(self, commit, sample=8):
+        """Astra writes the skill's first version on top of COMMIT, for a robot the copied skill was not written
+        for, from the copy's results on SAMPLE train episodes; screened like a candidate. Its commit, or None."""
+        base = git("rev-parse", commit)
+        path = self.loop.worktree(self.cand("i000"), base)
+        round_dir = self.work / "rounds" / "i000"
+        round_dir.mkdir(parents=True, exist_ok=True)
+        train = sorted(self.episodes("train"))
+        evidence = train[::max(1, len(train) // sample)][:sample]
+        self.log(f"init: the copy on {len(evidence)} train episodes")
+        self.evaluate("i000-copy", path, splits=("train",), only={"train": evidence}, cand=self.cand("i000-copy"))
+        ws = self.workspace(round_dir, {"id": "i000-copy"})
+        note_path = round_dir / "i000_note.md"
+        entry = {"id": "i000", "round": 0, "parent": None, "status": "init"}
+        if git("rev-parse", "HEAD", cwd=path) == base:
+            prompt = (HERE / "prompts" / "skill_init.md").read_text().format(
+                workspace=ws, skill=self.skill, source=self.source, ruff=astra.settings()["ruff"],
+                python=astra.settings()["python"], editable=", ".join(p.format(skill=self.skill) for p in self.editable))
+            note = astra.codex(prompt, path, "workspace-write", note_path, **self.proposer())
+            git("add", "-A", cwd=path)
+            changed = [f for f in git("diff", "--cached", "--name-only", "--diff-filter=AM", cwd=path).splitlines()
+                       if f.endswith(".py")]
+            if changed:
+                subprocess.run([astra.settings()["ruff"], "check", "--fix", "--quiet", *changed], cwd=path,
+                               check=False, capture_output=True)
+            git("add", "-A", cwd=path)
+            if not git("status", "--porcelain", cwd=path):
+                self.record({**entry, "status": "rejected", "reason": "no change", "notes": note})
+                return None
+            git("-c", "user.name=astra", "-c", "user.email=astra@localhost", "commit", "-q", "-m",
+                f"skill {self.skill} i000: first version\n\n{note[:3000]}", cwd=path)
+        commit = git("rev-parse", "HEAD", cwd=path)
+        files = git("diff", "--name-only", base, commit).splitlines()
+        entry.update(commit=commit, files=files, notes=note_path.read_text() if note_path.exists() else "")
+        outside, specific = self.allowed(files), self.specific(base, commit)
+        reason = (f"edits outside the skill: {outside}" if outside else
+                  f"not general: the source names {specific}" if specific else None)
+        if reason is None:
+            passed, output = self.loop.remote_checks(self.cand("i000"), path)
+            reason = None if passed else "lint or unit tests failed: " + output[-600:]
+        if reason is None:
+            crash = self.smoke("i000", path)
+            reason = f"crashed in a one-episode smoke run: {crash}" if crash else None
+        self.record({**entry, "reason": reason or "first version written", **({"status": "rejected"} if reason else {})})
+        self.log(f"init: {reason or 'ready'} ({commit[:10]}); optimisation credits {astra.credits_in(round_dir)}")
+        return None if reason else commit
 
     def workspace(self, round_dir, best):
         ws = round_dir / "workspace"
@@ -396,6 +444,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--profile", help="a [skills.<profile>] of config.toml (default: [skills] default)")
     sub = parser.add_subparsers(dest="command", required=True)
+    sub.add_parser("init").add_argument("commit")
     sub.add_parser("baseline").add_argument("commit")
     run = sub.add_parser("run")
     run.add_argument("--rounds", type=int, required=True)
@@ -404,7 +453,9 @@ def main(argv=None):
     sub.add_parser("status")
     args = parser.parse_args(argv)
     loop = SkillLoop(args.profile)
-    if args.command == "baseline":
+    if args.command == "init":
+        print(loop.init(args.commit))
+    elif args.command == "baseline":
         loop.baseline(args.commit)
     elif args.command == "test":
         loop.test(args.cid)
