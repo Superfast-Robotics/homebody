@@ -633,15 +633,13 @@ def warehouse_rack(name, rng):
         near_left = dest_bay > source  # the free section is the side nearer the products
         kind = rng.choice(list(WH_PRODUCTS) + list(WH_WIDE))
         catalogue = WH_PRODUCTS if kind in WH_PRODUCTS else WH_WIDE
+        # the stock stands on the far side, 5 cm clear of the free section
         stock_lo = d_lo + free + 0.05 if near_left else d_lo
+        stock_hi = d_hi if near_left else d_hi - free - 0.05
         items, right, _ = wh_section(scene, rng, kind, catalogue, stock_lo, front_y, depth, levels[dest_level],
                                      f"stock_{kind}")
-        if right > d_hi:
-            raise RuntimeError("stock does not fit the destination bay")
-        if not near_left:
-            shift = d_hi - right
-            for item in items:
-                item.position[0] += shift
+        if right > stock_hi:
+            raise RuntimeError("stock does not fit beside the free section")
         for item in items:
             scene.descriptions[item.identity] = (item.label, f"On the {bay_names[dest_bay]} bay's shelf, beside its free space.")
         scene.items.extend(items)

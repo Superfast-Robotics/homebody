@@ -41,6 +41,24 @@ def test_releases_land_inside_their_target_on_a_described_support():
             assert support in scene.descriptions and support == step["destination_label"]
 
 
+def overlaps(a_lo, a_hi, b_lo, b_hi):
+    return all(a_lo[k] < b_hi[k] and b_lo[k] < a_hi[k] for k in range(len(a_lo)))
+
+
+def test_the_destination_free_space_holds_no_object():
+    for scene in scenes(count=40, seed=7):
+        for step in scene.steps:
+            lo, hi = (np.array(b, dtype=float) for b in step["evaluator_target"]["bounds"])
+            target = next(item for item in scene.items if item.identity == step["fixture_id"])
+            half = (target.corners().max(axis=0) - target.corners().min(axis=0))[:2] / 2
+            release = np.array(step["release_map_xy_m"])
+            for item in scene.items:
+                corners = item.corners()
+                assert not overlaps(corners.min(axis=0), corners.max(axis=0), lo, hi), (scene.name, item.identity)
+                assert not overlaps(corners.min(axis=0)[:2], corners.max(axis=0)[:2], release - half, release + half) \
+                    or corners.min(axis=0)[2] > hi[2] or corners.max(axis=0)[2] < lo[2], (scene.name, item.identity)
+
+
 def test_every_stance_is_reachable_from_the_start(tmp_path):
     scene = scenes(count=3, seed=11)[-1]
     start = scene.robot_start[:2]
