@@ -376,7 +376,9 @@ class EvoLoop(SkillLoop):
             extended_path.write_text(json.dumps(slots[len(base):] + added, indent=1))
         self.log(f"evolve round {number}: extend with " + "; ".join(
             f"c{i} {s['operator']} {'+'.join(s['parents'])} m{s['mechanism'] or '-'} {s['model']}" for i, s in chosen))
-        ws = self.evo_workspace(round_dir, best, population, summaries)
+        extension_dir = round_dir / "extend"  # its own workspace: the round may be rebuilding round_dir's
+        extension_dir.mkdir(exist_ok=True)
+        ws = self.evo_workspace(extension_dir, best, population, summaries)
         with ThreadPoolExecutor(len(chosen)) as pool:
             ready = [e for e in pool.map(lambda item: self.write(number, item[0], item[1], population, summaries, ws,
                                                                   diagnosis, round_dir), chosen) if e]
