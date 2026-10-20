@@ -495,8 +495,218 @@ def move_variety(name, rng):
     return scene
 
 
+WH_STANCE_BACK = 0.48  # m from a product's centre to its pick stance in the aisle, as the warehouse scenes' stances
+WH_PLACE_BACK = 0.4  # m from the shelf's front edge to a place stance, as the scenes' carry goals (0.38-0.40)
+WH_GRIP_LIMIT = 0.08  # m: the widest face the Dex1-1 jaws close on with clearance (calibrated aperture 0.095)
+# Products of the two scanned warehouse scenes: (label, shape, size, mass range, colours). Sizes are box half
+# sizes (x along the rack, y into it, z) or cylinder (radius, half height); every pickable kind has a face under
+# WH_GRIP_LIMIT. Trays and bowls are wider than the open jaws: they stand on shelves but are never asked for.
+WH_PRODUCTS = {
+    "can": ("food can", "cylinder", ((0.033, 0.05), (0.038, 0.06)), (0.35, 0.46), ("yellow", "red", "green")),
+    "jam_jar": ("jam jar", "cylinder", ((0.021, 0.018), (0.028, 0.03)), (0.1, 0.2), ("purple", "red", "orange")),
+    "spice_jar": ("spice jar", "cylinder", ((0.031, 0.07), (0.035, 0.08)), (0.15, 0.25), ("green", "brown", "white")),
+    "sweetener_box": ("sweetener box", "box", ((0.04, 0.013, 0.1), (0.046, 0.016, 0.11)), (0.15, 0.3),
+                      ("white", "blue", "pink")),
+    "sauce_bottle": ("sauce bottle", "cylinder", ((0.025, 0.07), (0.03, 0.09)), (0.2, 0.35), ("red", "orange", "brown")),
+    "tea_box": ("tea box", "box", ((0.035, 0.03, 0.06), (0.04, 0.034, 0.07)), (0.1, 0.2), ("teal", "green", "black")),
+}
+WH_WIDE = {
+    "food_tray": ("film-wrapped food tray", "box", ((0.115, 0.045, 0.02), (0.115, 0.045, 0.02)), (0.25, 0.35), ("white",)),
+    "steel_bowl": ("wrapped steel bowl", "cylinder", ((0.056, 0.035), (0.056, 0.035)), (0.2, 0.3), ("grey",)),
+}
+WH_FRAME_RGBA = (0.82, 0.78, 0.62, 1.0)  # beige steel uprights, as rack bay 13
+WH_BOARD_RGBA = (0.7, 0.7, 0.68, 1.0)
+
+
+def wh_product(kind, identity, xy, base_z, rng, colour_name, catalogue):
+    label, shape, (lo, hi), mass, _ = catalogue[kind]
+    size = tuple(rng.uniform(a, b) for a, b in zip(lo, hi))
+    return Item(identity, shape, size, np.array([*xy, base_z + size[-1] + 0.002]), 0.0, rng.uniform(*mass),
+                (*PALETTE[colour_name], 1.0), f"{colour_name.capitalize()} {label}")
+
+
+def wh_grip_width(item):
+    return 2 * item.size[0] if item.shape == "cylinder" else 2 * min(item.size[0], item.size[1])
+
+
+def wh_section(scene, rng, kind, catalogue, x_lo, front_y, depth, base_z, prefix, max_cols=3):
+    """A block of one product kind on a shelf from X_LO: up to 4 rows deep and 3 wide, the front row near the
+    shelf's front edge. Returns the items row by row, front-left first, the block's right edge and its width
+    in items."""
+    colour_name = rng.choice(catalogue[kind][4])
+    probe = wh_product(kind, "probe", (0, 0), base_z, rng, colour_name, catalogue)
+    half_x = probe.size[0]
+    half_y = probe.size[0] if probe.shape == "cylinder" else probe.size[1]
+    gap = rng.uniform(0.01, 0.06)
+    inset = rng.uniform(0.03, 0.06)
+    cols = int(rng.integers(1, max_cols + 1))
+    rows = int(min(rng.integers(1, 5), max(1, (depth - inset - 0.03) // (2 * half_y + gap))))
+    items = []
+    for r in range(rows):
+        for c in range(cols):
+            xy = (x_lo + half_x + c * (2 * half_x + gap) + rng.uniform(-0.004, 0.004),
+                  front_y + inset + half_y + r * (2 * half_y + gap) + rng.uniform(-0.004, 0.004))
+            items.append(Item(f"{prefix}_{r * cols + c + 1}", probe.shape, probe.size, np.array([*xy, probe.position[2]]),
+                              0.0, probe.mass, probe.rgba, probe.label))  # one product, so one size per block
+    return items, x_lo + cols * (2 * half_x + gap) - gap, cols
+
+
+def warehouse_rack(name, rng):
+    """A warehouse rack row along x (front edge toward the aisle at -y) with 2-3 bays of 2-4 shelf levels,
+    after the scanned warehouse scenes: one bay's product shelf (about elbow height, 0.65-0.92 m) holds 2-4
+    pickable kinds in blocks left to right, sometimes beside a block of wide products; the destination is
+    the same shelf of the bay to the left or right (empty, or with a free section next to the products) or,
+    rarely, another level of the same bay. Products are named by their colour and kind, one per kind is
+    taken (the front-left one of its block), the robot starts in the aisle, and floor boxes may stand there."""
+    scene = Scene(name, "warehouse_rack")
+    bays = int(rng.integers(2, 4))
+    widths = rng.uniform(0.9, 1.6, size=bays)
+    depth = rng.uniform(0.5, 0.62)
+    front_y = -depth / 2
+    product_z = rng.uniform(0.65, 0.92)
+    levels = [rng.uniform(0.08, 0.16), product_z]
+    if product_z - levels[0] > 0.9 and rng.random() < 0.5:
+        levels.insert(1, rng.uniform(levels[0] + 0.4, product_z - 0.42))
+    if rng.random() < 0.8:
+        levels.append(rng.uniform(product_z + 0.42, min(product_z + 0.6, 1.5)))
+    levels = levels[:4]
+    product_level = levels.index(product_z)
+    height = max(levels) + rng.uniform(0.4, 0.8)
+    edges = np.concatenate([[0.0], np.cumsum(widths)]) - widths.sum() / 2 + rng.uniform(-0.3, 0.3)
+    if edges[0] < -ROOM_HALF + 0.4 or edges[-1] > ROOM_HALF - 0.4:
+        raise RuntimeError("rack outside the room")
+    bay_names = ("left", "right") if bays == 2 else ("left", "middle", "right")
+    for i, x in enumerate(edges):
+        for j, y in enumerate((front_y + 0.025, -front_y - 0.025)):
+            scene.statics.append(Box("rack_frame", f"upright_{i}_{j}", np.array([x, y, height / 2]),
+                                     np.array([0.025, 0.025, height / 2]), 0.0, WH_FRAME_RGBA))
+    for b in range(bays):
+        centre = (edges[b] + edges[b + 1]) / 2
+        scene.statics.append(Box("rack_frame", f"back_{b}", np.array([centre, -front_y + 0.005, height / 2]),
+                                 np.array([widths[b] / 2, 0.005, height / 2]), 0.0, (0.45, 0.45, 0.45, 1.0)))
+        for k, z in enumerate(levels):
+            entity = f"bay_{bay_names[b]}_level_{k + 1}"
+            scene.statics.append(Box(entity, "board", np.array([centre, 0.0, z - 0.015]),
+                                     np.array([widths[b] / 2 - 0.025, depth / 2, 0.015]), 0.0, WH_BOARD_RGBA))
+            scene.descriptions[entity] = (f"Shelf, {bay_names[b]} bay, level {k + 1} of {len(levels)}",
+                                          f"The rack's {bay_names[b]} bay, {z:.2f} m above the floor.")
+    scene.descriptions["rack_frame"] = ("Steel rack frame", f"Uprights and mesh backs of the rack's {bays} bays.")
+
+    source = int(rng.integers(0, bays))
+    neighbours = [b for b in (source - 1, source + 1) if 0 <= b < bays]
+    other_levels = [k for k in range(len(levels)) if k != product_level and 0.5 <= levels[k] <= 1.05]
+    if other_levels and rng.random() < 0.15:
+        dest_bay, dest_level = source, int(rng.choice(other_levels))
+    else:
+        dest_bay, dest_level = int(rng.choice(neighbours)), product_level
+    count = int(rng.integers(2, 5))
+    kinds = list(rng.choice(list(WH_PRODUCTS), size=count, replace=False))
+    wide = rng.choice(list(WH_WIDE)) if rng.random() < 0.4 else None
+    lo, hi = edges[source] + 0.05, edges[source + 1] - 0.05
+    x, targets, used = lo + rng.uniform(0.0, 0.08), [], {}
+    order = kinds + ([wide] if wide is not None else [])
+    rng.shuffle(order)
+    for kind in order:
+        catalogue = WH_PRODUCTS if kind in WH_PRODUCTS else WH_WIDE
+        items, right, cols = wh_section(scene, rng, kind, catalogue, x, front_y, depth, levels[product_level], kind,
+                                        max_cols=3 if len(order) <= 2 else 2)
+        if right > hi:
+            raise RuntimeError("products do not fit the bay")
+        scene.items.extend(items)
+        if kind in WH_PRODUCTS:
+            targets.append(items[0])
+        used[kind] = (items, cols)
+        x = right + rng.uniform(0.04, 0.12)
+    if any(wh_grip_width(item) > WH_GRIP_LIMIT for item in targets):
+        raise RuntimeError("a named product is wider than the jaws")
+    bay_text = f"the {bay_names[source]} bay's shelf at level {product_level + 1}"
+    for kind, (items, cols) in used.items():
+        for n, item in enumerate(items):
+            row = ("front", "second", "third", "back")[n // cols]
+            scene.descriptions[item.identity] = (item.label, f"On {bay_text}, in the {kind.replace('_', ' ')} block, {row} row.")
+
+    # the destination: the whole board when that shelf is empty, else a free section beside its own stock
+    dest_entity = f"bay_{bay_names[dest_bay]}_level_{dest_level + 1}"
+    d_lo, d_hi = edges[dest_bay] + 0.05, edges[dest_bay + 1] - 0.05
+    if dest_bay != source and rng.random() < 0.5:
+        free = rng.uniform(0.3, 0.5)
+        near_left = dest_bay > source  # the free section is the side nearer the products
+        kind = rng.choice(list(WH_PRODUCTS) + list(WH_WIDE))
+        catalogue = WH_PRODUCTS if kind in WH_PRODUCTS else WH_WIDE
+        stock_lo = d_lo + free + 0.05 if near_left else d_lo
+        items, right, _ = wh_section(scene, rng, kind, catalogue, stock_lo, front_y, depth, levels[dest_level],
+                                     f"stock_{kind}")
+        if right > d_hi:
+            raise RuntimeError("stock does not fit the destination bay")
+        if not near_left:
+            shift = d_hi - right
+            for item in items:
+                item.position[0] += shift
+        for item in items:
+            scene.descriptions[item.identity] = (item.label, f"On the {bay_names[dest_bay]} bay's shelf, beside its free space.")
+        scene.items.extend(items)
+        free_lo, free_hi = (d_lo, d_lo + free) if near_left else (d_hi - free, d_hi)
+        side_text = "left" if near_left else "right"
+        dest_text = f"the free space at the front {side_text} of the {bay_names[dest_bay]} bay's shelf at the same height"
+        scene.descriptions[dest_entity] = (f"Shelf, {bay_names[dest_bay]} bay, level {dest_level + 1} (free space at the "
+                                           f"{side_text})", f"The rack's {bay_names[dest_bay]} bay, beside the products' bay.")
+    else:
+        free_lo, free_hi = d_lo, d_hi
+        if dest_bay == source:
+            dest_text = f"the empty shelf at level {dest_level + 1} of the same bay"
+        else:
+            dest_text = f"the empty shelf of the adjoining bay to the {'left' if dest_bay < source else 'right'}"
+        scene.descriptions[dest_entity] = (f"Empty shelf, {bay_names[dest_bay]} bay, level {dest_level + 1}",
+                                           f"The rack's {bay_names[dest_bay]} bay, {levels[dest_level]:.2f} m above the floor.")
+    top_z = levels[dest_level]
+    above = (levels[dest_level + 1] - 0.03 - top_z) if dest_level + 1 < len(levels) else 0.33
+    target = {"bounds": [[round(free_lo, 4), round(front_y, 4), round(top_z - 0.02, 4)],
+                         [round(free_hi, 4), round(-front_y, 4), round(top_z + min(above, 0.33), 4)]],
+              "support_contacts": [dest_entity]}
+    release_y = front_y + rng.uniform(0.12, 0.17)
+    for n, item in enumerate(targets):
+        release_x = free_lo + (free_hi - free_lo) * (n + 1) / (len(targets) + 1)
+        scene.steps.append({
+            "goal": [round(float(item.position[0]), 4), round(float(item.position[1]) - WH_STANCE_BACK, 4), round(math.pi / 2, 4)],
+            "facing": item.position[:2].round(4).tolist(), "hand": "right", "label": item.identity,
+            "fixture_id": item.identity,
+            "carry_goal": [round(release_x, 4), round(front_y - WH_PLACE_BACK, 4), round(math.pi / 2, 4)],
+            "carry_facing": [round(release_x, 4), round(release_y, 4)], "destination_label": dest_entity,
+            "release_map_xy_m": [round(release_x, 4), round(release_y, 4)], "release_delta_z_m": 0.0,
+            "evaluator_target": target})
+
+    # the aisle: sometimes the opposite rack row behind the robot, and floor boxes away from every stance
+    aisle = rng.uniform(1.9, 2.4)
+    if rng.random() < 0.5 and front_y - aisle - 0.6 > -ROOM_HALF + 0.05:
+        scene.statics.append(Box("opposite_rack", "body", np.array([(edges[0] + edges[-1]) / 2, front_y - aisle - 0.3, 1.0]),
+                                 np.array([(edges[-1] - edges[0]) / 2, 0.3, 1.0]), 0.0, WH_FRAME_RGBA))
+        scene.descriptions["opposite_rack"] = ("Opposite rack row", "The rack row across the aisle, behind the robot.")
+    stances = [np.array(s["goal"][:2]) for s in scene.steps] + [np.array(s["carry_goal"][:2]) for s in scene.steps]
+    start = np.array([rng.uniform(edges[0] + 0.3, edges[-1] - 0.3), front_y - rng.uniform(0.75, 1.1)])
+    for i in range(int(rng.integers(0, 3))):
+        at = np.array([rng.uniform(edges[0] - 0.6, edges[-1] + 0.6), front_y - rng.uniform(0.35, 0.6)])
+        if min(np.linalg.norm(at - p) for p in [*stances, start]) < 0.75:
+            continue
+        half = np.array([0.25, 0.25, rng.uniform(0.25, 0.5)])
+        scene.statics.append(Box(f"cardboard_boxes_{i}", "stack", np.array([*at, half[2]]), half, rng.uniform(-0.3, 0.3),
+                                 (0.6, 0.45, 0.3, 1.0)))
+        scene.descriptions[f"cardboard_boxes_{i}"] = ("Stack of cardboard boxes", "On the floor of the aisle by the rack.")
+    if not all(routable(scene, start, p) for p in stances) or not all(
+            routable(scene, s["goal"][:2], s["carry_goal"][:2]) for s in scene.steps):
+        raise RuntimeError("a stance cannot be reached from the start, or a place stance from its pick stance")
+
+    names = [f"the front-left {item.label.lower()}" for item in targets]
+    listing = ", then ".join(names)
+    scene.task = (f"Pick one product of each kind from {bay_text}, in left-to-right order: first {listing}. After each "
+                  f"pick, place it on {dest_text}. Keep all other products in place. If a product cannot be picked "
+                  f"after two reasonable attempts, record that failure and continue to the next kind. Finish only "
+                  f"after attempting all {len(targets)} kinds. Report actual outcomes, including failed grasps.")
+    scene.robot_start = [float(start[0]), float(start[1]), math.pi / 2]
+    return scene
+
+
 FAMILIES = {"bin_to_carton": bin_to_carton, "shelf_return": shelf_return, "counter_clutter": counter_clutter,
-            "place_variety": place_variety, "move_variety": move_variety}
+            "place_variety": place_variety, "move_variety": move_variety, "warehouse_rack": warehouse_rack}
 
 
 # --- package writer ---
@@ -600,11 +810,13 @@ def main(argv=None):
     parser.add_argument("--count", type=int, required=True)
     parser.add_argument("--seed", type=int, required=True)
     parser.add_argument("--families", nargs="+", default=list(FAMILIES), choices=list(FAMILIES))
+    parser.add_argument("--first", type=int, default=0, help="Index of the first scene (its name's NN)")
+    parser.add_argument("--plain-names", action="store_true", help="Name scenes SPLIT_NN, without the family")
     args = parser.parse_args(argv)
     rng = np.random.default_rng(args.seed)
-    for index in range(args.count):
+    for index in range(args.first, args.first + args.count):
         family = args.families[index % len(args.families)]
-        name = f"{args.split}_{index:02d}_{family}"
+        name = f"{args.split}_{index:02d}" + ("" if args.plain_names else f"_{family}")
         for _ in range(200):
             try:
                 scene = FAMILIES[family](name, rng)
