@@ -52,6 +52,14 @@ EPISODE_TIMEOUT = 5400  # seconds run_skill_jobs.sh allows an episode: a missing
 EDITABLE = ("src/homebody/skills/{skill}.py", "src/homebody/motion/*", "src/homebody/helpers/*",
             "src/homebody/toolkit/*", "tests/*")
 SPLITS = ("train", "val")
+# what the operator may spend, not what is measured: kept out of every identity, so raising a cap keeps the results
+SPENDING = ("round_credit_budget", "evaluation_credit_budget", "session_credit_cap", "expected_session_credits",
+            "decision_credit_ceiling", "coder_credit_ceiling", "astra_call_credit_ceiling")
+
+
+def measured(cfg):
+    """A profile without its spending authorisation (SPENDING) and its prose note: what an identity hashes."""
+    return {k: v for k, v in cfg.items() if k not in SPENDING and k != "brief_note"}
 
 
 def touched(row):
@@ -318,7 +326,7 @@ class SkillLoop:
         prompts), and the setup fingerprint (scenes, robot, episodes, driver and scorer, planner, the seed's Python
         environment). Checked before and after a baseline runs."""
         self.verify_checkout(path, commit)
-        profile = hashlib.md5(json.dumps(self.cfg, sort_keys=True).encode()).hexdigest()[:12]
+        profile = hashlib.md5(json.dumps(measured(self.cfg), sort_keys=True).encode()).hexdigest()[:12]
         return {"tree": git("rev-parse", f"{commit}^{{tree}}"), "profile": profile,
                 "setup": self.setup_fingerprint(refresh=refresh)}
 
@@ -555,6 +563,8 @@ class SkillLoop:
                 editable=", ".join(p.format(skill=self.skill) for p in self.editable))
             try:
                 note = self.codex_write(prompt, path, note_path, **self.proposer())
+            except astra.BudgetExceeded:  # the round's credit cap, not the proposal: stop the round
+                raise
             except Exception as error:  # noqa: BLE001 -- a failed proposal is recorded, not fatal
                 self.record({**entry, "status": "failed", "reason": f"proposer error: {error}"})
                 return None
@@ -663,13 +673,17 @@ class SkillLoop:
         """The folders a jailed proposer may also read (astra.jailed), or None to run Codex without a jail."""
         return None
 
+    def astra_call(self, prompt, cd, sandbox, out, **model):
+        """Every Codex call of a round (diagnosis, proposals, crossover, rewrite, lessons) goes through here."""
+        return astra.codex(prompt, cd, sandbox, out, jail=self.jail(), **model)
+
     def codex_write(self, prompt, path, out, **model):
         """A proposer writing a patch in the worktree PATH."""
-        return astra.codex(prompt, path, "workspace-write", out, jail=self.jail(), **model)
+        return self.astra_call(prompt, path, "workspace-write", out, **model)
 
     def codex_read(self, prompt, path, out, **model):
         """A read-only diagnosis of the checkout PATH."""
-        return astra.codex(prompt, path, "read-only", out, jail=self.jail(), **model)
+        return self.astra_call(prompt, path, "read-only", out, **model)
 
     def screen(self, base, commit, files):
         """Why a patch from BASE to COMMIT (changing FILES) is refused before it runs, or None."""

@@ -175,8 +175,11 @@ QUOTA_MARKERS = ("usage limit", "rate limit exceeded", "insufficient_quota")
 
 
 def quota_hit(local):
-    """Whether any collected session ended because the model's usage quota ran out."""
+    """Whether any collected session ended because the model's usage quota ran out. Earlier attempts kept beside a
+    session (task/rN.attempt-K) are evidence only: their old failure says nothing about the session's latest run."""
     for path in Path(local).rglob("*"):
+        if any(".attempt-" in part for part in path.relative_to(local).parts):
+            continue
         if path.name in ("outcome.json", "run.log") and path.is_file():
             text = path.read_text(errors="replace").lower()
             if any(marker in text for marker in QUOTA_MARKERS):

@@ -83,11 +83,15 @@ the standard error; val must also be shown non-inferior (`val_margin`, `val_z`, 
 exploratory until test. Each task-repeat runs on the same host for every version, and the planner services must
 check ready, running this checkout's `tools/curobo_server.py`, before sessions start. One experiment id (suite and
 its content, runner and scorer, settings and model, every host's environment and planner, scheduling and statistical
-policy, profile) guards baselines, parents and cached results; a baseline measures it again after its sessions and
-a round before its first proposal. A session with unknown usage, or a result that is not a complete scoring record,
-is never judged: it is re-scored, then run again with its earlier attempt kept (`task/rN.attempt-K`). A persistent
-ledger per round (`session_credit_cap` reserved by every running session, settled at its measured credits, plus
-Astra's) stops dispatch before `round_credit_budget` is passed, across resumes. `rounds.json` records the round under
+policy, profile; not the credit caps) guards baselines, parents and cached results; a baseline measures it again
+after its sessions, a round before its first proposal and after its candidates' evaluation. A session whose usage
+could not be read, or whose result is not a complete, type-checked scoring record with a known status, is never
+judged: it is re-scored, then run again with its earlier attempt kept (`task/rN.attempt-K`, evidence and charges
+kept, never read as the session's own failure); one with unmetered parts is judged and charged its worst case. A
+persistent ledger per round (per command outside rounds) takes a worst-case reservation from every session (its
+settings' decisions and coder calls at measured ceilings) and every Astra call before it starts, settles each at its
+measured credits, and refuses what would pass the cap (`round_credit_budget`; outside a round the evaluation's own
+allowance), across resumes. `rounds.json` records the round under
 way before its first proposal, and its completion together with the stop decision (a first round with no accepted
 candidate stops the run). The proposer works
 in a source export (no git history, no suite generators, no loop code) and sees train sessions only; patches outside

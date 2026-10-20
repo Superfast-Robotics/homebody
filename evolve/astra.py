@@ -9,9 +9,13 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 # Codex credits per 1M tokens (input, cached input, output); unknown models are priced as Astra.
 RATES = {"gpt-6-astra": (250.0, 25.0, 1250.0), "gpt-6.1-sol": (50.0, 2.5, 250.0), "gpt-6-luna": (2.5, 0.25, 12.5)}
-TIMED_OUT_CREDITS = 50.0  # charged for a call killed at its time limit before it reported any finished turn
+TIMED_OUT_CREDITS = 50.0  # charged for a call that reported no finished turn (killed at its time limit, failed or cut)
 CODEX_HOME = Path.home() / ".codex"  # the real one: only auth.json and config.toml are copied into a jailed call's
 SYSTEM_DIRS = ("/usr", "/etc", "/mnt/wsl")  # read-only in the jail (/mnt/wsl holds WSL's resolv.conf)
+
+
+class BudgetExceeded(RuntimeError):
+    """A credit cap was reached: the call or evaluation was not started; resume deliberately."""
 
 
 def settings(path=HERE / "config.toml"):
@@ -89,21 +93,22 @@ def codex(prompt, cd, sandbox, out, extra_dirs=(), model=None, effort=None, jail
     except subprocess.TimeoutExpired as error:  # the call was paid for: record what it reported, never nothing
         stdout, stderr = error.stdout or b"", error.stderr or b""
         (Path(out).parent / (Path(out).stem + ".stderr.txt")).write_bytes(stdout[-20000:] + stderr[-20000:])
-        record_usage(stdout, model or s["model"], usage, unreported=TIMED_OUT_CREDITS)
+        record_usage(stdout, model or s["model"], usage, unreported=TIMED_OUT_CREDITS, timed_out=True)
         raise RuntimeError(f"codex timed out after {s['timeout']} s; see {out}") from error
     finally:
         if home is not None:
             return_home(home)
     (Path(out).parent / (Path(out).stem + ".stderr.txt")).write_bytes(result.stdout[-20000:] + result.stderr[-20000:])
-    record_usage(result.stdout, model or s["model"], usage)
+    record_usage(result.stdout, model or s["model"], usage, unreported=TIMED_OUT_CREDITS)
     if result.returncode != 0:
         raise RuntimeError(f"codex exited {result.returncode}; see {out}")
     return Path(out).read_text()
 
 
-def record_usage(stdout, model, path, unreported=0.0):
-    """Write the call's tokens and credits (from Codex's turn.completed events) to PATH, at least UNREPORTED (what a
-    timed-out call is charged for the turn it never reported)."""
+def record_usage(stdout, model, path, unreported=0.0, timed_out=False):
+    """Write the call's tokens and credits (from Codex's turn.completed events) to PATH. A call that reported no
+    finished turn (failed, cut off) is charged at least UNREPORTED, never nothing; a TIMED_OUT one too, since its
+    last turn never reports."""
     turns = []
     for line in stdout.decode(errors="replace").splitlines():
         if '"turn.completed"' in line:
@@ -116,14 +121,25 @@ def record_usage(stdout, model, path, unreported=0.0):
     output = sum(t.get("output_tokens", 0) for t in turns)
     rate_in, rate_cached, rate_out = RATES.get(model, RATES["gpt-6-astra"])
     credits = ((total_in - cached) * rate_in + cached * rate_cached + output * rate_out) / 1e6
-    credits = max(credits, unreported)  # a killed call's last turn never reports
+    if timed_out or not turns:
+        credits = max(credits, unreported)
     path.write_text(json.dumps({"model": model, "input": total_in, "cached": cached, "output": output,
-                                "credits": round(credits, 2), "metered": bool(turns)}))
+                                "credits": round(credits, 2), "metered": bool(turns) and not timed_out}))
 
 
 def credits_in(folder):
     """Total credits of the Codex calls recorded under FOLDER (*.usage.json)."""
     return round(sum(json.loads(p.read_text()).get("credits", 0) for p in Path(folder).glob("*.usage.json")), 2)
+
+
+def call_credits(out, default):
+    """The credits the call writing OUT recorded beside it (OUT's .usage.json), or DEFAULT when it recorded none."""
+    path = Path(out).parent / (Path(out).stem + ".usage.json")
+    try:
+        value = json.loads(path.read_text()).get("credits")
+    except (OSError, ValueError, AttributeError):
+        return float(default)
+    return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) and value >= 0 else float(default)
 
 
 def diagnose(worktree, workspace, out):

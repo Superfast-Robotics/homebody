@@ -6,8 +6,17 @@ import tomllib
 from pathlib import Path
 
 from evolve import skill_score
-from evolve.e2e_loop import (RESCORABLE, E2EMixin, host_of, layout_cluster, ledger_total, read_split, session_row,
-                              summarise, unsafe)
+from evolve.e2e_loop import (
+    RESCORABLE,
+    E2EMixin,
+    host_of,
+    layout_cluster,
+    ledger_total,
+    read_split,
+    session_row,
+    summarise,
+    unsafe,
+)
 from evolve.skill_loop import SkillLoop
 
 HERE = Path(__file__).resolve().parents[1]
@@ -62,9 +71,10 @@ def test_results_that_cannot_be_judged_are_infrastructure(tmp_path):
     assert row["infra"] and row["status"] == "unscored" and row["status"] in RESCORABLE
 
 
-def test_a_session_with_unknown_usage_is_charged_the_cap_and_never_judged(tmp_path):
-    for name, usage in (("missing", None), ("unmetered", {"credits": 0.0, "unmetered": True}), ("list", [1]),
-                        ("no_credits", {"main_input": 5})):
+def test_a_session_whose_usage_cannot_be_read_is_charged_the_cap_and_never_judged(tmp_path):
+    for name, usage in (("missing", None), ("failed", {"credits": None, "unmetered": True, "failed": True}),
+                        ("list", [1]), ("no_credits", {"main_input": 5}), ("negative", {"credits": -1.0}),
+                        ("text", {"credits": "2.0"}), ("boolean", {"credits": True})):
         folder = tmp_path / name / "r0"
         write_result(folder, [3, 3])
         if usage is None:
@@ -73,6 +83,18 @@ def test_a_session_with_unknown_usage_is_charged_the_cap_and_never_judged(tmp_pa
             (folder / "usage.json").write_text(json.dumps(usage))
         row = session_row(name, "r0", folder, ["o0", "o1"], cap=8.0)
         assert row["infra"] and row["status"] == "unmetered" and row["credits"] == 8.0 and row["placed"] == 0.0
+    folder = tmp_path / "nan" / "r0"  # json writes NaN as a bare literal, which Python reads back as nan
+    write_result(folder, [3, 3])
+    (folder / "usage.json").write_text('{"credits": NaN}')
+    assert session_row("nan", "r0", folder, ["o0", "o1"], cap=8.0)["status"] == "unmetered"
+
+
+def test_a_session_with_unmetered_parts_is_judged_and_charged_its_worst_case(tmp_path):
+    folder = tmp_path / "t" / "r0"
+    write_result(folder, [3, 0])
+    (folder / "usage.json").write_text(json.dumps({"credits": 1.2, "unmetered": True, "main_unmetered": 2}))
+    row = session_row("t", "r0", folder, ["o0", "o1"], cap=102.0)
+    assert not row["infra"] and row["placed"] == 0.5 and row["credits"] == 102.0 and not row["metered"]
 
 
 def test_a_result_that_is_not_a_record_or_has_no_status_never_gets_credit(tmp_path):
@@ -252,3 +274,169 @@ def test_a_codex_call_killed_at_its_time_limit_still_records_its_charge(tmp_path
     usage = json.loads((tmp_path / "note.usage.json").read_text())
     assert usage["credits"] == astra.TIMED_OUT_CREDITS and not usage["metered"]
     assert astra.credits_in(tmp_path) == astra.TIMED_OUT_CREDITS
+
+
+def test_malformed_scoring_records_are_infrastructure_never_exceptions_or_credit(tmp_path):
+    malformed = {"objects_number": {"objects": 7}, "stage_text": {"objects": {"o0": {"stage": "3"}}},
+                 "stage_bool": {"objects": {"o0": {"stage": True}}}, "wall_text": {"wall_seconds": "bad"},
+                 "wall_nan": {"wall_seconds": float("nan")}, "disturbed_number": {"disturbed": 1},
+                 "disturbed_items": {"disturbed": [1]}, "invalid_none": {"invalid": None},
+                 "success_text": {"success": "yes"}, "stage_high": {"stage": 9}, "steps_negative": {"steps": -1},
+                 "status_unknown": {"status": "all_good"}, "status_number": {"status": 3}}
+    for name, change in malformed.items():
+        folder = tmp_path / name / "r0"
+        write_result(folder, [3])
+        record = {**json.loads((folder / "result.json").read_text()), **change}
+        (folder / "result.json").write_text(json.dumps(record))
+        row = session_row(name, "r0", folder, ["o0"])
+        assert row["infra"] and row["status"] == "invalid result" and row["placed"] == 0.0, name
+        assert row["status"] in RESCORABLE  # scored again, then run again
+    folder = tmp_path / "unreadable" / "r0"
+    write_result(folder, [3])
+    (folder / "exit_code").write_bytes(b"\xff\xfe")  # nothing a session leaves can raise out of the row
+    assert session_row("unreadable", "r0", folder, ["o0"])["placed"] == 0.0
+
+
+def test_finished_statuses_are_judged_and_every_other_known_one_is_a_crash_or_infrastructure(tmp_path):
+    from evolve.e2e_loop import CRASHED, FINISHED, INFRA_STATUS
+    for status in FINISHED + CRASHED + INFRA_STATUS:
+        folder = tmp_path / status / "r0"
+        write_result(folder, [3], status=status)
+        row = session_row(status, "r0", folder, ["o0"])
+        assert (not row["infra"] and not row["crashed"]) if status in FINISHED else (
+            row["crashed"] if status in CRASHED else row["infra"])
+
+
+def test_an_old_quota_failure_kept_as_an_attempt_is_not_the_sessions_failure(tmp_path):
+    from evolve import score
+    write_result(tmp_path / "train" / "t" / "r0", [3])
+    old = tmp_path / "train" / "t" / "r0.attempt-1"
+    old.mkdir(parents=True)
+    (old / "run.log").write_text("error: You've hit your usage limit\n")
+    assert not score.quota_hit(tmp_path)
+    (tmp_path / "train" / "t" / "r0" / "run.log").write_text("usage limit reached\n")
+    assert score.quota_hit(tmp_path)
+
+
+def test_raising_a_credit_cap_changes_no_identity():
+    from evolve.skill_loop import SPENDING, measured
+    profile = tomllib.loads((HERE / "config.toml").read_text())["e2e"]["demo-wh"]
+    raised = {**profile, **{key: 99999.0 for key in SPENDING}}
+    assert measured(raised) == measured(profile)
+    assert measured({**profile, "repeats": 3}) != measured(profile)  # what is measured still counts
+
+
+def worst_case_loop(cfg):
+    from types import SimpleNamespace
+    loop = SimpleNamespace(cfg=cfg)
+    loop.session_worst_case = lambda: E2EMixin.session_worst_case(loop)
+    loop.cap = E2EMixin.cap.fget(loop)
+    return loop
+
+
+def test_a_session_reserves_its_worst_case_from_its_settings():
+    profile = tomllib.loads((HERE / "config.toml").read_text())["e2e"]["demo-wh"]
+    settings = tomllib.loads((HERE / profile["settings"]).read_text())
+    loop = worst_case_loop(profile)
+    decisions = settings["agent"]["max_steps"] + 1 + settings["plan"]["replans"]
+    expected = decisions * profile["decision_credit_ceiling"] + settings["coder"]["calls"] * profile["coder_credit_ceiling"]
+    assert E2EMixin.session_worst_case(loop) == expected == 102.0
+    assert E2EMixin.cap.fget(loop) == expected  # no fixed session_credit_cap: the worst case
+    assert E2EMixin.budget(loop, 48) == 48 * expected  # a baseline's own allowance, not the round's cap
+    loop.round_dir = Path("e001")
+    assert E2EMixin.budget(loop, 48) == profile["round_credit_budget"]
+
+
+def run_ledger(tmp_path, budget, reserve, keys, ledger_text=""):
+    """run_jobs.sh's reserve() for KEYS in turn (each settled at once unless it is the last), returning the codes."""
+    import subprocess
+    ledger = tmp_path / "ledger.txt"
+    ledger.write_text(ledger_text)
+    script = (HERE / "run_jobs.sh").read_text()
+    functions = script[script.index("LEDGER_PY="):script.index("jailed()")]
+    settle = script[script.index("settle()"):script.index("\n", script.index("settle()"))]
+    body = "\n".join(f'reserve {k}; echo "rc=$?"' for k in keys)
+    program = (f"{functions}\n{settle}\nLEDGER={ledger}; STOP={tmp_path}/STOP; RESERVE={reserve}; BUDGET={budget}\n"
+               f"sleep() {{ echo waited; exit 0; }}\n{body}")
+    result = subprocess.run(["bash", "-c", program], capture_output=True, text=True, timeout=60, check=False)
+    return result.stdout, ledger.read_text()
+
+
+def test_a_session_reservation_waits_for_sessions_in_flight_and_is_refused_when_none_are(tmp_path):
+    out, ledger = run_ledger(tmp_path, budget=250, reserve=102, keys=["a", "b"])
+    assert out.count("rc=0") == 2 and ledger_total(ledger) == 204  # both fit
+    out, ledger = run_ledger(tmp_path, budget=250, reserve=102, keys=["c"], ledger_text="reserve:a 102\nreserve:b 102\n")
+    assert "waited" in out and "rc=" not in out  # two in flight: it waits (sleep stubbed to end the test)
+    out, ledger = run_ledger(tmp_path, budget=250, reserve=102, keys=["c"], ledger_text="a 160\n")
+    assert "rc=1" in out and "exceeded" in (tmp_path / "STOP").read_text()  # nothing in flight: refused
+    assert ledger_total("reserve:a 102\nreserve:a 0\na 140.5\n") == 140.5  # a settlement that passes its reservation
+
+
+def test_every_astra_call_of_a_round_reserves_and_settles_in_the_round_ledger(tmp_path, monkeypatch):
+    import subprocess
+
+    import pytest
+
+    from evolve import astra
+    from evolve.e2e_loop import BudgetExceeded
+    remote = tmp_path / "remote"
+
+    def ssh(command, timeout=None, check=True):  # the remote's commands, run here on a local folder
+        return subprocess.run(["bash", "-c", command.replace("/r/", f"{remote}/")], capture_output=True, text=True,
+                              check=check).stdout
+    from types import SimpleNamespace
+    loop = SimpleNamespace(cfg={"round_credit_budget": 300, "astra_call_credit_ceiling": 120.0, "workdir": "w"},
+                           remote=SimpleNamespace(work="/r", ssh=ssh), skill="s",
+                           round_dir=tmp_path / "e001", jail=lambda: None)
+    for name in ("ledger", "budget", "reserve", "settle_charge", "astra_call"):
+        setattr(loop, name, getattr(E2EMixin, name).__get__(loop))
+
+    def fake_codex(prompt, cd, sandbox, out, jail=None, **model):
+        Path(out).parent.mkdir(parents=True, exist_ok=True)
+        (Path(out).parent / (Path(out).stem + ".usage.json")).write_text(json.dumps({"credits": 70.0}))
+        if "fail" in prompt:
+            raise RuntimeError("codex exited 1")
+        Path(out).write_text("note")
+        return "note"
+    monkeypatch.setattr(astra, "codex", fake_codex)
+    loop.astra_call("diagnose", tmp_path, "read-only", tmp_path / "e001" / "diagnosis.md")
+    with pytest.raises(RuntimeError):
+        loop.astra_call("fail", tmp_path, "read-only", tmp_path / "e001" / "c1_note.md")
+    ledger = remote / "e2e" / "w" / "ledger-e001.txt"
+    assert ledger_total(ledger.read_text()) == 140.0  # both settled at their recorded credits, the failed one too
+    loop.astra_call("lessons", tmp_path, "read-only", tmp_path / "e001" / "lessons.md")  # 140 + 120 fits under 300
+    with pytest.raises(BudgetExceeded):  # 210 + 120 would not: the call is never started
+        loop.astra_call("more", tmp_path, "read-only", tmp_path / "e001" / "more.md")
+    assert ledger_total(ledger.read_text()) == 210.0 and not (tmp_path / "e001" / "more.md").exists()
+
+
+def test_a_failed_codex_call_that_reported_no_turn_is_charged(tmp_path, monkeypatch):
+    import subprocess
+
+    import pytest
+
+    from evolve import astra
+    monkeypatch.setattr(astra, "settings", lambda: {"model": "gpt-6-astra", "effort": "medium", "timeout": 5})
+    monkeypatch.setattr(astra.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a, 1, b"", b"auth error"))
+    with pytest.raises(RuntimeError, match="exited 1"):
+        astra.codex("prompt", tmp_path, "read-only", tmp_path / "note.md")
+    assert astra.call_credits(tmp_path / "note.md", 0) == astra.TIMED_OUT_CREDITS
+
+
+def test_a_decision_without_usage_marks_the_session_unmetered(tmp_path):
+    import runpy
+    episode = runpy.run_path(str(HERE / "score_episode.py"), run_name="score_episode")
+    task = tmp_path / "task-000"
+    for i, body in enumerate(('{"usage": {"input_tokens": 1000, "output_tokens": 100}}', '{"output": []}')):
+        (task / "decisions" / f"{i:03d}").mkdir(parents=True)
+        (task / "decisions" / f"{i:03d}" / "reply.json").write_text(body)
+    cost = episode["cost"](task)
+    assert cost["main_unmetered"] == 1 and cost["unmetered"] and cost["credits"] > 0
+
+
+def test_candidates_are_judged_against_a_freshly_measured_setup():
+    import inspect
+
+    from evolve.evo_loop import EvoLoop
+    source = inspect.getsource(EvoLoop.judge_candidates)
+    assert "refresh=index == 0" in source

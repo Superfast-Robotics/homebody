@@ -57,3 +57,4 @@ def test_sandboxed_candidate_checks_run_under_bubblewrap(monkeypatch):
     jailed = remote.Remote("h", "/r", "/r/base", "/r/work", 1, sandbox=True)
     assert plain.static_checks("c")[0] and jailed.static_checks("c")[0]
     assert "bwrap" not in commands[0] and f"{remote.SANDBOX} /r/base/.venv/bin/python -m pytest" in commands[1]
+    assert {"--unshare-pid", "--unshare-ipc", "--proc"} <= set(remote.SANDBOX.split())

@@ -487,12 +487,22 @@ disturbance_penalty = 0.25   # a session loses a quarter of one object per other
 # errors, with layouts as clusters) above -val_margin of the placed share; round winners are exploratory until test.
 val_margin = 0.05
 val_z = 1.0
-# Credit caps: one persistent ledger per round (per command outside rounds; e2e/<profile>/ledger-*.txt on the remote)
-# holds Astra's credits, every session attempt's settled credits and the session_credit_cap each running session
-# reserves when it starts (also what a session of unknown usage is charged). A session whose reservation would take the
-# ledger over round_credit_budget is not started, and an evaluation whose sessions (expected_session_credits each)
-# would is refused. Both stop without a verdict; the ledger survives a resume, so raise the cap deliberately.
-session_credit_cap = 8.0
+# Credit caps (spending authorisation, kept out of the experiment's identity: raising one keeps every result). One
+# persistent ledger per round (per command outside rounds; e2e/<profile>/ledger-*.txt on the remote) holds every
+# Astra call and every session attempt: each reserves its worst case before it starts and settles at its measured
+# credits when it ends. A session's worst case is its settings' every decision (max_steps, plus the plan and replans:
+# 63) at decision_credit_ceiling and every coder call (calls: 3) at coder_credit_ceiling = 102 credits (also what a
+# session of unknown usage is charged); an Astra call reserves astra_call_credit_ceiling. The ceilings are about 1.5
+# times the largest seen (2026-10-20: 811 sessions, 7,484 decisions at most 0.67 credits, 1,019 coder calls at most
+# 8.7; 182 Astra calls at most 96). A reservation that would take the ledger past its cap waits while others are in
+# flight and is otherwise refused; an evaluation whose sessions at expected_session_credits each would exceed it is
+# refused up front. The cap is round_credit_budget in a round; outside one (a baseline, test) it is the evaluation's
+# own allowance, evaluation_credit_budget or else its sessions at their worst case. With worst-case reservations, the
+# sessions in flight are at most (cap - committed) / 102: a 900-credit round runs at most 8 at once, fewer as it
+# spends; raise round_credit_budget for more parallel sessions.
+decision_credit_ceiling = 1.0
+coder_credit_ceiling = 13.0
+astra_call_credit_ceiling = 120.0
 expected_session_credits = 3.0
 round_credit_budget = 900
 clusters = { wh_shelf = "wh_shelf", wh_picking = "wh_picking" }  # variants of one scanned scene: one sample

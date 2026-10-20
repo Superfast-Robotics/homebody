@@ -7,9 +7,11 @@
 # "PORT ready VERSION" only when it runs the current server file and passes its CUDA check (the server's "check"
 # endpoint: CUDA work and each planner's kinematics), "PORT busy VERSION" when a session holds it (its admission
 # lock, /tmp/homebody-curobo-PORT.lock) and its process is up, else "PORT down", "PORT silent", "PORT failed" or
-# "PORT stale RECORDED"; it exits 1 unless all are ready or busy. `watch` restarts every server that is down, or,
-# when no session holds it, fails its check (a server exits on a CUDA error, tools/curobo_server.py), and prints
-# "PORT restarted REASON" for each, then the check lines.
+# "PORT stale RECORDED"; it exits 1 unless all are ready or busy. Both inspect a server only while holding its
+# admission lock themselves (a non-blocking try; a held server reads busy, or "PORT down held" when its process is
+# gone), so no session can take it between the check and a restart. `watch` restarts, under that lock, every
+# server that is down, stale or fails its check twice in a row (a server exits on a CUDA error,
+# tools/curobo_server.py), and prints "PORT restarted REASON" for each, then the check lines.
 W=/lambda/nfs/group-volume/workcell-sim/homebody-baseline
 H=$(hostname -s); COUNT=${2:-3}
 SERVER=$W/curobo_dex1/curobo_server.py
@@ -36,25 +38,42 @@ while True:
 EOF
   )
 }
-held() { ! flock -n "/tmp/homebody-curobo-$1.lock" true 2> /dev/null; }  # a session holds port $1's admission lock
 launch() {  # start port $1's server and wait for it
   local LOG=$W/curobo_dex1/server-$H-$1.log
   echo "=== started $(date -u +%FT%TZ) version $current" >> "$LOG"
   cd "$W/curobo" && setsid -f .venv/bin/python "$SERVER" --curobo-root "$W/curobo" \
-    --hand "$W/homebody-astra/assets/robot/dex1" --endpoint tcp://127.0.0.1:$1 >> "$LOG" 2>&1 < /dev/null
+    --hand "$W/homebody-astra/assets/robot/dex1" --endpoint tcp://127.0.0.1:$1 >> "$LOG" 2>&1 < /dev/null 9>&-
   echo "$current" > "$W/curobo_dex1/server-$H-$1.version"
   ask $1 180 ping
 }
 halt() { pids=$(server $1); [ -n "$pids" ] && kill $pids; for _ in $(seq 1 20); do [ -z "$(server $1)" ] && break; sleep 1; done
   [ -n "$(server $1)" ] && kill -9 $(server $1); true; }
-state() {  # one check line for port $1
+state() {  # one check line for port $1, whose admission lock the caller holds
   local recorded
   recorded=$(cat "$W/curobo_dex1/server-$H-$1.version" 2>/dev/null || echo unknown)
   if [ -z "$(server $1)" ]; then echo "$1 down"
   elif [ "$recorded" != "$current" ]; then echo "$1 stale $recorded"
-  elif held $1; then echo "$1 busy $current"
   else ask $1 10 check; case $? in 0) echo "$1 ready $current";; 1) echo "$1 silent";; *) echo "$1 failed";; esac
   fi
+}
+inspect() {  # port $1's check line, restarting it when $2 is watch, all under its admission lock (fd 9)
+  local line again
+  exec 9> "/tmp/homebody-curobo-$1.lock"
+  if ! flock -n 9; then
+    exec 9>&-
+    if [ -n "$(server $1)" ]; then echo "$1 busy $current"; else echo "$1 down held"; fi
+    return
+  fi
+  line=$(state $1)
+  if [ "$2" = watch ] && ! [[ "$line" =~ \ ready\  ]]; then
+    again=$(state $1)  # revalidate before halting: a slow answer once is not a broken server
+    if ! [[ "$again" =~ \ ready\  ]]; then
+      halt $1; launch $1 > /dev/null; echo "$1 restarted ${again#$1 }"; line=$(state $1)
+    else line=$again
+    fi
+  fi
+  flock -u 9; exec 9>&-
+  echo "$line"
 }
 current=$(md5sum "$SERVER" | cut -c1-12)
 status=0
@@ -70,11 +89,8 @@ for i in $(seq 0 $((COUNT - 1))); do
     status)
       if [ -n "$(server $PORT)" ]; then echo "$PORT running $(server $PORT)"; else echo "$PORT down"; fi ;;
     check|watch)
-      line=$(state $PORT)
-      if [ "$1" = watch ] && ! [[ "$line" =~ \ (ready|busy)\  ]]; then
-        halt $PORT; launch $PORT > /dev/null; echo "$PORT restarted ${line#$PORT }"; line=$(state $PORT)
-      fi
-      echo "$line"; [[ "$line" =~ \ (ready|busy)\  ]] || status=1 ;;
+      lines=$(inspect $PORT "$1"); echo "$lines"
+      [[ "$(echo "$lines" | tail -1)" =~ \ (ready|busy)\  ]] || status=1 ;;
   esac
 done
 exit $status

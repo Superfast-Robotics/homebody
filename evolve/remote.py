@@ -32,8 +32,10 @@ def rsync(*args):
 
 # Candidate code on a host runs with the whole filesystem read-only (the seed, the scorer, settings, scenes, other
 # candidates and results), /dev and /tmp as they are (GPU devices; the planners' admission locks), and the network
-# shared (the proxy, relay and planner tunnels on localhost); run_jobs.sh adds the session's own folder writable.
-SANDBOX = "bwrap --die-with-parent --ro-bind / / --dev-bind /dev /dev --proc /proc --bind /tmp /tmp --"
+# shared (the proxy, relay and planner tunnels on localhost), and its own process and IPC namespaces (a /proc of its
+# own: no outside process is visible or signalled); run_jobs.sh adds the session's own folder writable.
+SANDBOX = ("bwrap --die-with-parent --unshare-pid --unshare-ipc --ro-bind / / --dev-bind /dev /dev --proc /proc "
+           "--bind /tmp /tmp --")
 
 
 @dataclass(frozen=True)

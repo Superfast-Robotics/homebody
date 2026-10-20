@@ -41,7 +41,7 @@ def agent_rates(model):
 
 def decision_usage(reply):
     """(input, cached, output) tokens of one agent decision's reply: a Responses API event stream or a
-    JSON body with usage; zeros when it has none (a CLI provider)."""
+    JSON body with usage; None when it reports none (a CLI provider, a cut-off stream): its cost is unknown."""
     text = reply.read_text(errors="replace")
     usage = None
     if text.startswith("data:"):
@@ -53,16 +53,19 @@ def decision_usage(reply):
             usage = json.loads(text).get("usage")
         except (json.JSONDecodeError, AttributeError):
             usage = None
-    if not usage:
-        return 0, 0, 0
+    if not isinstance(usage, dict) or not usage:
+        return None
     total = usage.get("input_tokens", usage.get("prompt_tokens", 0))
     cached = (usage.get("input_tokens_details") or usage.get("prompt_tokens_details") or {}).get("cached_tokens", 0)
     return total, cached, usage.get("output_tokens", usage.get("completion_tokens", 0))
 
 
 def cost(task_dir, model=None):
-    """The task's token use and credits: agent decisions (every attempt, retries included) and coder calls."""
-    main = [decision_usage(reply) for reply in task_dir.glob("decisions/*/reply.json")]
+    """The task's token use and credits: agent decisions (every attempt, retries included) and coder calls. A decision
+    or coder call that reported no usage is counted (main_unmetered, coder_unmetered) and makes the record
+    "unmetered": its credits are then a lower estimate, and the loop charges the session its cap instead."""
+    replies = [decision_usage(reply) for reply in task_dir.glob("decisions/*/reply.json")]
+    main, main_unmetered = [r for r in replies if r is not None], sum(r is None for r in replies)
     coder, unmetered = [], 0
     for events in task_dir.glob("coder/call-*/events.jsonl"):
         turns = [json.loads(line)["usage"] for line in events.read_text(errors="replace").splitlines()
@@ -78,8 +81,8 @@ def cost(task_dir, model=None):
                 else credits(*CODER_FALLBACK))
     return {"main_input": main_in, "main_cached": main_cached, "main_output": main_out,
             "coder_input": coder_in, "coder_cached": coder_cached, "coder_output": coder_out,
-            "coder_metered": len(coder), "coder_unmetered": unmetered,
-            "credits": round(metered + unmetered * per_call, 3)}
+            "coder_metered": len(coder), "coder_unmetered": unmetered, "main_unmetered": main_unmetered,
+            "unmetered": bool(main_unmetered or unmetered), "credits": round(metered + unmetered * per_call, 3)}
 
 
 def latest(session):

@@ -31,12 +31,14 @@ import argparse
 import dataclasses
 import hashlib
 import json
+import math
 import re
 import shlex
 import shutil
 import subprocess
 import threading
 import time
+import tomllib
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -44,7 +46,7 @@ from . import astra, score, skill_score, tiers
 from .evo_loop import EvoLoop
 from .loop import REPO, QuotaExhausted, git
 from .remote import rsync, suite_tasks
-from .skill_loop import COMPLETE, HERE, SPLITS, SkillLoop, coder_digest, public_reason
+from .skill_loop import COMPLETE, HERE, SPLITS, SkillLoop, coder_digest, measured, public_reason
 from .workspace import copy_runs
 
 WATCH_SECONDS = 60  # planner servers are watched (and restarted) this often while a batch runs
@@ -52,12 +54,17 @@ SESSION_TIMEOUT = 7200  # seconds run_jobs.sh allows a session: a timed-out or c
 # the planner's Python environment, listed without pip (it has none)
 PACKAGES = ("import importlib.metadata as m, sys; print(sys.version.split()[0]); "
             "[print(d.metadata['Name'], d.version) for d in sorted(m.distributions(), key=lambda d: d.metadata['Name'].lower())]")
-SESSION_CREDIT_CAP = 8.0  # credits a session is charged when its usage is unknown (the profile's session_credit_cap)
+SESSION_CREDIT_CAP = 8.0  # a session's charge when its usage is unknown, where no profile gives the worst case
+# Credit ceilings (the profile may override): about 1.5 times the largest seen in 811 recorded sessions (2026-10-20:
+# 7,484 decisions, at most 0.67 credits each; 1,019 coder calls, at most 8.7) and in 182 Astra calls (at most 96).
+DECISION_CEILING, CODER_CEILING, ASTRA_CALL_CEILING = 1.0, 13.0, 120.0
 KEYFRAMES = 40           # head and wrist keyframes kept per failed train session in the workspace
 COLLECTED = ("result.json", "usage.json", "score.out", "score.err", "skipped", "run.log", "exit_code", "events.jsonl",
              "outcome.json", "trace.json", "REQUEST.md", "tools.jsonl", "start_*.py", "last_message.json")
+FINISHED = ("model_done", "step_limit")  # session statuses of a session that ran its course
 CRASHED = ("error", "physics_invalid", "cancelled", "interrupted")  # session statuses its own code caused
 INFRA_STATUS = ("provider_error",)  # the model provider failed: not the candidate's doing
+STATUSES = FINISHED + CRASHED + INFRA_STATUS  # any other status is a record the loop cannot judge
 RESCORABLE = ("unscored", "invalid result", "unmetered")  # a session ran but its record could not be read
 ASSIGNMENT = "host = (task index + repeat) mod hosts; versions interleaved per host"  # part of the experiment
 # what the proposer's source export leaves out: how held-out tasks are made, the loop itself, the original targets
@@ -80,8 +87,28 @@ class InfrastructureFailure(RuntimeError):
     """Sessions failed for reasons outside the candidate's code: no verdict; resume after fixing the cause."""
 
 
-class BudgetExceeded(RuntimeError):
-    """The evaluation or the round reached its credit cap: no verdict; resume deliberately."""
+BudgetExceeded = astra.BudgetExceeded  # the evaluation or the round reached its credit cap: no verdict
+# reserve ARGV[3] credits as ARGV[2] in the ledger ARGV[1] (under its lock) when the ledger stays within ARGV[4]
+LEDGER_RESERVE = """import fcntl, sys
+path, key, amount, budget = sys.argv[1], sys.argv[2], float(sys.argv[3]), float(sys.argv[4])
+with open(path + ".lock", "a") as lock:
+    fcntl.flock(lock, fcntl.LOCK_EX)
+    last = {}
+    for line in open(path):
+        name, _, value = line.strip().rpartition(" ")
+        try:
+            if name:
+                last[name] = float(value)
+        except ValueError:
+            continue
+    total = sum(last.values())
+    if total + amount > budget:
+        print(f"refused {total:.3f}")
+    else:
+        with open(path, "a") as ledger:
+            ledger.write(f"{key} {amount}\\n")
+        print(f"reserved {total:.3f}")
+"""
 
 
 def episode_key(task, repeat):
@@ -95,24 +122,71 @@ def read_json(path):
         return None
 
 
+def finite(value, low=None, high=None):
+    """VALUE as a finite float within [LOW, HIGH], else None: booleans, strings, NaN and infinities are no numbers."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        return None
+    if (low is not None and value < low) or (high is not None and value > high):
+        return None
+    return float(value)
+
+
+def count(value):
+    """VALUE as a count (an int >= 0, not a boolean), else None."""
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
+
+
 def session_credits(folder, cap):
-    """(credits, known) of one session's usage.json: a missing, unreadable or unmetered record is not free, it is
-    charged CAP (the per-session cap) and marked unknown."""
+    """(credits, known, readable) of one session's usage.json. A missing or unreadable record, one the runner marked
+    failed, or credits that are not a finite number >= 0 is unreadable: charged CAP, and the session is scored again.
+    A readable record with unmetered parts (a decision or coder call that reported no usage) is charged CAP (the
+    worst case a session can cost) and marked unknown; it is judged on its outcome."""
     usage = read_json(folder / "usage.json")
-    if not isinstance(usage, dict) or usage.get("unmetered") or not isinstance(usage.get("credits"), (int, float)):
-        return float(cap), False
-    return float(usage["credits"]), True
+    if not isinstance(usage, dict) or usage.get("failed") or finite(usage.get("credits"), 0) is None:
+        return float(cap), False, False
+    if usage.get("unmetered"):
+        return float(cap), False, True
+    return finite(usage["credits"], 0), True, True
+
+
+def invalid_fields(result, objects, targets):
+    """Why a scoring record cannot be judged (every field the loop reads, type-checked), or None."""
+    if not isinstance(objects, dict) or (targets is not None and sorted(objects) != sorted(targets)):
+        return f"it does not score the task's targets {sorted(targets or [])}: {sorted(objects) if isinstance(objects, dict) else objects!r}"
+    if any(not isinstance(o, dict) or count(o.get("stage")) not in (0, 1, 2, 3) for o in objects.values()):
+        return "an object has no stage 0-3"
+    checks = {"stage": finite(result.get("stage", 0.0), 0, 3) is not None,
+              "wall_seconds": result.get("wall_seconds") is None or finite(result["wall_seconds"], 0) is not None,
+              "success": isinstance(result.get("success", False), bool),
+              "disturbed": isinstance(result.get("disturbed", []), list)
+              and all(isinstance(n, str) for n in result.get("disturbed", [])),
+              "invalid": isinstance(result.get("invalid", []), list),
+              "steps": count(result.get("steps", 0)) is not None,
+              "customizations": count(result.get("customizations", 0)) is not None}
+    bad = sorted(name for name, ok in checks.items() if not ok)
+    return f"malformed {', '.join(bad)}" if bad else None
 
 
 def session_row(task, repeat, folder, targets=None, penalty=0.0, cap=SESSION_CREDIT_CAP):
     """One collected session as an episode row: value (placed share less the disturbance penalty), stage, success,
-    credits and seconds. "infra" marks a session that could not be judged on its merits (never full credit); "crashed"
-    one its own code ended (an error status, a nonzero exit, a timeout): a failure that counts toward the crash share,
-    charged its credits and, without a measured time, the whole timeout. A session that ran with unknown usage is
-    charged CAP and is infrastructure: its cost could not be measured."""
+    credits and seconds. "infra" marks a session that could not be judged on its merits (never credit, scored again
+    or run again); "crashed" one its own code ended (an error status, a nonzero exit, a timeout): a failure that
+    counts toward the crash share, charged its credits and, without a measured time, the whole timeout. A session
+    whose usage could not be read is charged CAP and is infrastructure; one with unmetered parts is charged CAP.
+    Never raises: any malformed record is an infrastructure row."""
+    try:
+        return judged_row(task, repeat, folder, targets, penalty, cap)
+    except (TypeError, ValueError, AttributeError, KeyError, OSError) as error:
+        return {"episode": episode_key(task, repeat), "task": task, "stage": 0.0, "placed": 0.0, "success": False,
+                "credits": float(cap), "seconds": float(SESSION_TIMEOUT), "objects": {}, "disturbed": [],
+                "invalid": [], "infra": True, "crashed": False, "status": "invalid result", "metered": False,
+                "error": f"the session's record could not be read: {type(error).__name__}: {error}"}
+
+
+def judged_row(task, repeat, folder, targets, penalty, cap):
     key = episode_key(task, repeat)
     exit_code = (folder / "exit_code").read_text().strip() if (folder / "exit_code").exists() else None
-    credits, metered = session_credits(folder, cap) if exit_code is not None else (0.0, True)
+    credits, metered, readable = session_credits(folder, cap) if exit_code is not None else (0.0, True, True)
     log = folder / "run.log"
     tail = " | ".join(log.read_text(errors="replace").strip().splitlines()[-3:])[:300] if log.exists() else "no output"
     base = {"episode": key, "task": task, "stage": 0.0, "placed": 0.0, "success": False, "credits": credits,
@@ -121,7 +195,7 @@ def session_row(task, repeat, folder, targets=None, penalty=0.0, cap=SESSION_CRE
     if (folder / "skipped").exists() or exit_code is None:
         why = (folder / "skipped").read_text().strip() if (folder / "skipped").exists() else "never ran"
         return {**base, "infra": True, "status": "not run", "error": f"session not run: {why}"}
-    if not metered:
+    if not readable:
         return {**base, "infra": True, "status": "unmetered",
                 "error": f"the session's usage could not be read; charged {cap:g} credits: {tail}"}
     result = read_json(folder / "result.json")
@@ -134,28 +208,29 @@ def session_row(task, repeat, folder, targets=None, penalty=0.0, cap=SESSION_CRE
         return {**base, "crashed": True, "status": "crashed" if exit_code != "124" else "timed out",
                 "error": f"session exited {exit_code} without a scorable record: {tail}"}
     objects = result.get("objects")
-    if not isinstance(objects, dict) or (targets is not None and sorted(objects) != sorted(targets)) \
-            or any(not isinstance(o, dict) or o.get("stage") not in (0, 1, 2, 3) for o in objects.values()):
-        return {**base, "infra": True, "status": "invalid result",
-                "error": f"result does not score the task's targets {sorted(targets or [])}: {sorted(objects or {})}"}
+    why = invalid_fields(result, objects, targets)
+    if why:
+        return {**base, "infra": True, "status": "invalid result", "error": f"the result cannot be judged: {why}"}
     status = result.get("status")
-    if not status:  # no outcome record: a crash when the session failed, else a result that cannot be judged
+    if status is None or status == "":  # no outcome record: a crash when the session failed, else unjudgeable
         if exit_code != "0":
             return {**base, "crashed": True, "status": "crashed" if exit_code != "124" else "timed out",
                     "error": f"session exited {exit_code} without an outcome: {tail}"}
         return {**base, "infra": True, "status": "invalid result", "error": "the result records no session status"}
+    if status not in STATUSES:
+        return {**base, "infra": True, "status": "invalid result", "error": f"unknown session status {status!r}"}
     if status in INFRA_STATUS:
         return {**base, "infra": True, "status": status, "error": f"the model provider failed: {tail}"}
-    disturbed = list(result.get("disturbed") or [])
+    disturbed = list(result.get("disturbed", []))
     placed = sum(o["stage"] == 3 for o in objects.values())
     crashed = status in CRASHED or exit_code != "0"
-    seconds = float(result.get("wall_seconds") or 0.0)
+    seconds = finite(result.get("wall_seconds"), 0) or 0.0
     return {**base, "stage": float(result.get("stage", 0.0)), "placed_objects": placed,
             "placed": max(0.0, placed - penalty * len(disturbed)) / max(1, len(objects)),
-            "success": bool(result.get("success")) and not crashed, "crashed": crashed, "status": status,
+            "success": result.get("success", False) and not crashed, "crashed": crashed, "status": status,
             "seconds": seconds if seconds > 0 and exit_code != "124" else float(SESSION_TIMEOUT),
             "steps": result.get("steps", 0), "coder_calls": result.get("customizations", 0), "objects": objects,
-            "disturbed": disturbed, "invalid": list(result.get("invalid") or []),
+            "disturbed": disturbed, "invalid": list(result.get("invalid", [])),
             **({"error": f"exit {exit_code}, status {status}: {tail}"} if crashed else {})}
 
 
@@ -254,7 +329,24 @@ class E2EMixin:
 
     @property
     def cap(self):
-        return float(self.cfg.get("session_credit_cap", SESSION_CREDIT_CAP))
+        """What a session reserves before it starts and is charged when its usage is unknown: the profile's
+        session_credit_cap, else the worst case a session can cost (session_worst_case)."""
+        return float(self.cfg.get("session_credit_cap") or self.session_worst_case())
+
+    def session_worst_case(self):
+        """The most a session can cost under its settings: every decision it may make (the step limit, plus the
+        plan and its replans) at decision_credit_ceiling, and every coder call it may make at coder_credit_ceiling.
+        A retry of a busy service is refused before generation and costs nothing."""
+        settings = tomllib.loads((HERE / self.cfg["settings"]).read_text())
+        try:
+            steps, calls = int(settings["agent"]["max_steps"]), int(settings["coder"]["calls"])
+        except KeyError as error:
+            raise SystemExit(f"{self.cfg['settings']} must set [agent] max_steps and [coder] calls: the worst case a "
+                             f"session can cost is computed from them") from error
+        plan = settings.get("plan", {})
+        decisions = steps + (1 + int(plan.get("replans", 0)) if plan.get("enabled") else 0)
+        return round(decisions * float(self.cfg.get("decision_credit_ceiling", DECISION_CEILING))
+                     + calls * float(self.cfg.get("coder_credit_ceiling", CODER_CEILING)), 2)
 
     def split_rows(self, folder, split):
         """The rows of SPLIT's expected sessions collected under FOLDER."""
@@ -405,7 +497,7 @@ class E2EMixin:
                                       f"| md5sum | cut -c1-12").strip() for h in self.hosts()}
         planner = {h.host: h.ssh(f"cd {Path(h.base).parent}/curobo && (.venv/bin/python -c {shlex.quote(PACKAGES)}; "
                                  f"git rev-parse HEAD 2>/dev/null) | md5sum | cut -c1-12").strip() for h in self.hosts()}
-        profile = {k: v for k, v in self.cfg.items() if k not in ("brief_note",)}
+        profile = measured(self.cfg)  # raising a credit cap is no new experiment
         parts = {"local": md5(HERE / "run_jobs.sh", HERE / "score_episode.py", REPO / "evaluation/evaluate.py",
                               HERE / self.cfg["settings"]),
                  "acceptance": md5(HERE / "skill_score.py"), "suite": listing, "content": content,
@@ -444,22 +536,49 @@ class E2EMixin:
     def committed(self, ledger):
         return ledger_total(self.remote.ssh(f"cat {ledger} 2>/dev/null; true"))
 
-    def charge_astra(self, ledger):
-        """Bring the ledger's Astra line up to the round's Codex credits so far (diagnosis, proposals, lessons)."""
-        round_dir = getattr(self, "round_dir", None)
-        if round_dir is not None and round_dir.exists():
-            self.remote.ssh(f"echo 'astra {astra.credits_in(round_dir)}' >> {ledger}")
+    def budget(self, sessions):
+        """The cap of the ledger being charged: in a round, round_credit_budget (sessions and Astra calls alike);
+        outside one, the evaluation's own allowance: evaluation_credit_budget, else every one of its SESSIONS at the
+        worst case a session can cost."""
+        if getattr(self, "round_dir", None) is not None:
+            return float(self.cfg["round_credit_budget"])
+        return float(self.cfg.get("evaluation_credit_budget") or sessions * self.cap)
 
-    def check_budget(self, sessions, ledger):
+    def check_budget(self, sessions, ledger, budget):
         """Refuse an evaluation the cap cannot pay for: the ledger's credits (earlier sessions and attempts, Astra)
         plus SESSIONS at the expected credits per session."""
-        cap = float(self.cfg.get("round_credit_budget") or 0)
-        if not cap:
-            return
         estimate = self.committed(ledger) + sessions * float(self.cfg.get("expected_session_credits", 3.0))
-        if estimate > cap:
+        if estimate > budget:
             raise BudgetExceeded(f"{sessions} sessions would bring {Path(ledger).name} to about {estimate:.0f} credits, "
-                                 f"over its cap of {cap:g}; raise round_credit_budget deliberately to go on")
+                                 f"over its cap of {budget:g}; raise the cap deliberately to go on (results are kept)")
+
+    def reserve(self, ledger, key, amount, budget):
+        """Write KEY's AMOUNT into LEDGER (under its lock) when the ledger stays within BUDGET; else BudgetExceeded."""
+        self.remote.ssh(f"mkdir -p {Path(ledger).parent} && touch {ledger}")
+        verdict, _, total = self.remote.ssh(f"python3 - {shlex.quote(ledger)} {shlex.quote(key)} {amount} {budget} "
+                                            f"<< 'EOF'\n{LEDGER_RESERVE}EOF").strip().partition(" ")
+        if verdict != "reserved":
+            raise BudgetExceeded(f"{key} ({amount:g} credits) would take {Path(ledger).name} past its cap of "
+                                 f"{budget:g} ({total} committed); raise the cap deliberately to go on")
+
+    def settle_charge(self, ledger, key, amount):
+        """KEY's reservation back to 0 and KEY at the AMOUNT it cost, in one locked append."""
+        self.remote.ssh(f"( flock 9; printf 'reserve:%s 0\\n%s %s\\n' {shlex.quote(key)} {shlex.quote(key)} "
+                        f"{amount} >> {ledger} ) 9>> {ledger}.lock")
+
+    def astra_call(self, prompt, cd, sandbox, out, **model):
+        """Every Codex call of a round reserves astra_call_credit_ceiling in the round's ledger before it starts (a
+        call that would take the round past round_credit_budget is not started: BudgetExceeded), and settles at the
+        credits it recorded, failed and timed-out calls included."""
+        if getattr(self, "round_dir", None) is None:
+            return astra.codex(prompt, cd, sandbox, out, jail=self.jail(), **model)
+        ledger, ceiling = self.ledger((), ()), float(self.cfg.get("astra_call_credit_ceiling", ASTRA_CALL_CEILING))
+        key = f"astra:{Path(out).name}@{time.time_ns()}"
+        self.reserve(ledger, f"reserve:{key}", ceiling, self.budget(0))
+        try:
+            return astra.codex(prompt, cd, sandbox, out, jail=self.jail(), **model)
+        finally:
+            self.settle_charge(ledger, key, astra.call_credits(out, ceiling))
 
     # --- collecting, re-scoring and re-running ---
     def collect(self, root, split, local):
@@ -554,13 +673,12 @@ class E2EMixin:
         sessions = sum(map(len, per_host))
         ledger = self.ledger([cid for cid, *_ in pending], splits)
         self.remote.ssh(f"mkdir -p {Path(ledger).parent} && touch {ledger}")
-        self.charge_astra(ledger)
-        self.check_budget(sessions, ledger)
+        budget = self.budget(len(items) * sum(len(self.expected(s)) for s in splits))  # all of it, resumes alike
+        self.check_budget(sessions, ledger, budget)
         started = time.monotonic()
         batch = f"{self.remote.work}/e2e/{self.cfg.get('workdir', self.skill)}/batch-{pending[0][0]}-{len(pending)}"
         stop = f"{batch}/STOP"
         self.remote.ssh(f"mkdir -p {batch} && rm -f {stop}")
-        budget = float(self.cfg.get("round_credit_budget") or 1e9)
         parallel, model = int(self.cfg.get("parallel", self.remote.parallel)), self.cfg.get(
             "agent_model", self.loop.cfg["agent"]["model"])
 
@@ -673,8 +791,7 @@ class E2EMixin:
         """The proposer writes in a source export; its changes are copied back into the worktree PATH, where the
         screens judge them like any patch."""
         folder = self.export(path, out)
-        note = astra.codex(prompt.replace(str(path), str(folder)), folder, "workspace-write", out, jail=self.jail(),
-                           **model)
+        note = self.astra_call(prompt.replace(str(path), str(folder)), folder, "workspace-write", out, **model)
         git("add", "-A", cwd=folder)
         for line in git("diff", "--cached", "--name-status", "--no-renames", cwd=folder).splitlines():
             status, name = line.split("\t", 1)
@@ -688,7 +805,7 @@ class E2EMixin:
 
     def codex_read(self, prompt, path, out, **model):
         folder = self.export(path, out)
-        return astra.codex(prompt.replace(str(path), str(folder)), folder, "read-only", out, jail=self.jail(), **model)
+        return self.astra_call(prompt.replace(str(path), str(folder)), folder, "read-only", out, **model)
 
     def run_table(self, cid):
         rows = self.split_rows(self.work / "results" / cid / "train", "train")

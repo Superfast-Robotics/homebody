@@ -8,9 +8,11 @@
 # succeeded; the scorer's own output stays in score.out and score.err) and exit_code. With STOP_FILE, a session
 # that hit the model's usage limit creates STOP_FILE: the sessions not yet started are skipped (OUT/skipped) for a
 # later resume. With LEDGER (lines "KEY CREDITS", the last line of a key counting; it outlives the batch and is
-# shared by every host and every resume of the evaluation), each session reserves RESERVE credits before it starts
-# and settles at its measured credits (RESERVE when unmeasured) after; a session whose reservation would take the
-# ledger over BUDGET is not started and creates STOP_FILE.
+# shared by every host, every resume and the round's Astra calls), each session reserves RESERVE credits (the worst
+# case a session can cost) as "reserve:KEY" before it starts, and on finishing settles: the reservation goes to 0 and
+# "KEY" to its measured credits (RESERVE when unmeasured), so the next session sees the actual spend at once. A
+# reservation that would take the ledger over BUDGET waits while other reservations are in flight (they settle below
+# their worst case) and, when none is, is refused: the session is not started and creates STOP_FILE.
 # With SANDBOX=1 each session runs in bubblewrap with the whole filesystem read-only except its OUT folder, its
 # candidate's walking-policy cache (CANDIDATE/.cache), /tmp (the planners' admission locks) and the coding sub-agent's
 # home (~/.homebody-coder): candidate code cannot touch the scorer, settings, scenes, the seed or other sessions.
@@ -23,32 +25,42 @@ BASE=$1; PARALLEL=$2; JOBS=$3; EVOLVE=$4; MODEL=$5; SETTINGS=${6:-$4/episode_set
 STOP=${7:-}; BUDGET=${8:-0}; RESERVE=${9:-0}; LEDGER=${10:-}; SANDBOX=${11:-0}
 W=$(dirname "$BASE")
 QUOTA='usage limit|rate limit exceeded|insufficient_quota'
-committed() {  # the ledger's credits: the last amount of every key
-  python3 -c "import sys
+LEDGER_PY='import sys
 last = {}
 for line in open(sys.argv[1]):
-    key, _, amount = line.rpartition(' ')
-    if key:
-        last[key] = float(amount)
-print(round(sum(last.values()), 3))" "$LEDGER" 2>/dev/null || echo 0
-}
-reserve() {  # 0 when KEY's RESERVE fits under BUDGET (and is written); else STOP_FILE says why
-  ( flock 9
-    local total; total=$(committed)
-    if python3 -c "import sys;sys.exit(0 if float(sys.argv[1]) + float(sys.argv[2]) <= float(sys.argv[3]) else 1)" \
-        "$total" "$RESERVE" "$BUDGET"; then echo "$1 $RESERVE" >> "$LEDGER"
-    else echo "the credit budget ($BUDGET) would be exceeded: $total committed" > "$STOP"; exit 1; fi
-  ) 9>> "$LEDGER.lock"
+    key, _, amount = line.strip().rpartition(" ")
+    try:
+        if key:
+            last[key] = float(amount)
+    except ValueError:
+        continue
+total = sum(last.values())
+flight = sum(v for k, v in last.items() if k.startswith("reserve:"))
+reserve, budget = float(sys.argv[2]), float(sys.argv[3])
+print(f"{total:.3f}")
+sys.exit(0 if total + reserve <= budget else 2 if flight > 0 else 1)'
+reserve() {  # 0 once KEY's RESERVE fits under BUDGET (written as reserve:KEY); 1 (STOP_FILE says why) when it cannot
+  local rc total
+  while true; do
+    [ -e "$STOP" ] && return 1
+    total=$( ( flock 9
+      python3 -c "$LEDGER_PY" "$LEDGER" "$RESERVE" "$BUDGET"; rc=$?
+      [ $rc = 0 ] && echo "reserve:$1 $RESERVE" >> "$LEDGER"; exit $rc ) 9>> "$LEDGER.lock")
+    rc=$?
+    [ $rc = 0 ] && return 0
+    if [ $rc = 1 ]; then echo "the credit budget ($BUDGET) would be exceeded: $total committed" > "$STOP"; return 1; fi
+    sleep 20  # others are in flight: their settlements free room
+  done
 }
 jailed() {  # jailed DIR... -- COMMAND: COMMAND, in bubblewrap with only the DIRs writable when SANDBOX=1
   local binds=()
   while [ "$1" != -- ]; do mkdir -p "$1"; binds+=(--bind "$1" "$1"); shift; done; shift
   [ "$SANDBOX" = 1 ] || { "$@"; return; }
   mkdir -p ~/.homebody-coder
-  bwrap --die-with-parent --ro-bind / / --dev-bind /dev /dev --proc /proc --bind /tmp /tmp \
+  bwrap --die-with-parent --unshare-pid --unshare-ipc --ro-bind / / --dev-bind /dev /dev --proc /proc --bind /tmp /tmp \
     "${binds[@]}" --bind ~/.homebody-coder ~/.homebody-coder -- "$@"
 }
-settle() { ( flock 9; echo "$1 $2" >> "$LEDGER" ) 9>> "$LEDGER.lock"; }
+settle() { ( flock 9; printf 'reserve:%s 0\n%s %s\n' "$1" "$1" "$2" >> "$LEDGER" ) 9>> "$LEDGER.lock"; }
 run_one() {
   local cand=$1 scene=$2 targets=$3 out=$4
   mkdir -p "$out"
@@ -65,7 +77,7 @@ run_one() {
     --task "$task" > "$out/run.log" 2>&1
   echo "$?" > "$out/exit_code"
   "$BASE/.venv/bin/python" "$EVOLVE/score_episode.py" --usage "$out/session" "$MODEL" > "$out/usage.json" 2>> "$out/score.err" \
-    || echo '{"credits": 0.0, "unmetered": true}' > "$out/usage.json"
+    || echo '{"credits": null, "unmetered": true, "failed": true}' > "$out/usage.json"
   rm -f "$out/result.json"
   "$BASE/.venv/bin/python" "$EVOLVE/score_episode.py" "$out/session" "$targets" "$EVOLVE/evaluate.py" "$MODEL" \
     > "$out/score.out" 2>> "$out/score.err" && cp "$out/score.out" "$out/result.json"
@@ -74,11 +86,12 @@ run_one() {
     echo "the model's usage limit was hit in $out" > "$STOP"
   fi
   [ -n "$LEDGER" ] || return 0
-  settle "$key" "$(python3 -c "import json,sys
+  settle "$key" "$(python3 -c "import json, math, sys
 u = json.load(open(sys.argv[1]))
-print(u['credits'] if isinstance(u, dict) and not u.get('unmetered') and isinstance(u.get('credits'), (int, float)) else sys.argv[2])" \
-    "$out/usage.json" "$RESERVE" 2>/dev/null || echo "$RESERVE")"
+c = u.get('credits') if isinstance(u, dict) and not u.get('unmetered') else None
+ok = isinstance(c, (int, float)) and not isinstance(c, bool) and math.isfinite(c) and c >= 0
+print(c if ok else sys.argv[2])" "$out/usage.json" "$RESERVE" 2>/dev/null || echo "$RESERVE")"
 }
-export -f run_one committed reserve settle jailed
-export BASE W EVOLVE MODEL SETTINGS STOP BUDGET RESERVE LEDGER QUOTA SANDBOX
+export -f run_one reserve settle jailed
+export BASE W EVOLVE MODEL SETTINGS STOP BUDGET RESERVE LEDGER QUOTA SANDBOX LEDGER_PY
 xargs -P "$PARALLEL" -L 1 bash -c 'run_one "$@"' _ < "$JOBS"

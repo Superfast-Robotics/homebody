@@ -354,6 +354,8 @@ class EvoLoop(SkillLoop):
                 editable=", ".join(p.format(skill=self.skill) for p in self.editable))
             try:
                 note = self.codex_write(prompt, path, note_path, model=slot["model"], effort=self.cfg["effort"])
+            except astra.BudgetExceeded:  # the round's credit cap, not the proposal: stop the round
+                raise
             except Exception as error:  # noqa: BLE001 -- a failed proposal is recorded, not fatal
                 self.record({**entry, "status": "failed", "reason": f"proposer error: {error}"})
                 return None
@@ -392,8 +394,8 @@ class EvoLoop(SkillLoop):
         everything = self.evaluate_many([(e["id"], Path(e["path"]), None, None) for e in entries])
         reference = self.summaries(best["id"])
         judged = []
-        for entry in entries:
-            after = self.manifest(Path(entry["path"]), entry["commit"])
+        for index, entry in enumerate(entries):  # the setup measured afresh once after the evaluation, then reused
+            after = self.manifest(Path(entry["path"]), entry["commit"], refresh=index == 0)
             summaries = everything[entry["id"]]
             verdict = self.judge(reference, summaries)
             if after != before[entry["id"]]:
@@ -439,8 +441,8 @@ class EvoLoop(SkillLoop):
         scratch = round_dir / "lessons_workdir"
         scratch.mkdir(exist_ok=True)
         try:
-            text = astra.codex(prompt, scratch, "read-only", round_dir / "lessons.md", model=self.lesson_model,
-                               effort=self.cfg["effort"], jail=self.jail())
+            text = self.astra_call(prompt, scratch, "read-only", round_dir / "lessons.md", model=self.lesson_model,
+                                   effort=self.cfg["effort"])
             shutil.copy(round_dir / "lessons.md", current)
             self.log(f"lessons updated ({len(text.splitlines())} lines)")
         except Exception as error:  # noqa: BLE001 -- lessons are advice; the round's verdicts stand without them
