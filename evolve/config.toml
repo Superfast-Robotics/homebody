@@ -454,3 +454,57 @@ it for extraction or carrying, which it cannot model. Whether pick uses it at al
 Both the train and the held-out episodes of this benchmark are development data (versions have been judged
 on them many times); claims about unseen layouts need episodes no round has used.
 """
+
+[e2e]
+# End-to-end optimisation (e2e_loop.py --profile NAME): Astra improves a profile's editable code, judged by full
+# HomeBody agent sessions on a task suite (each task a scene package with sequence.json targets) scored from physics.
+default = "demo-wh"
+
+[e2e.demo-wh]
+# The G1 with Dex1-1 grippers on the warehouse suite (dex1-demos/2026-10-20/warehouse_suite: procedural warehouse
+# layouts and variants of the two scanned scenes; test holds the two original tasks and is run only by `test`).
+# Astra improves the Dex1 skills and the agent harness; Sol plays the agent and the coding sub-agent.
+name = "dex1-warehouse"
+workdir = "demo-wh"
+source = "src/homebody/skills/dex1/ and src/homebody/harness/"
+repeats = 2                  # sessions per task and version
+settings = "episode_settings_dex1.toml"
+agent_model = "sol61-litellm"
+parallel = 22                # sessions at once per host
+services = ["/lambda/nfs/group-volume/workcell-sim/homebody-baseline/curobo_dex1/curobo_dex1_server.sh start > /dev/null 2>&1 < /dev/null"]
+objective = "placed"         # accept on the share of target objects placed (stage value is reported, not decisive)
+clusters = { wh_shelf = "wh_shelf", wh_picking = "wh_picking" }  # variants of one scanned scene: one sample
+speed_acceptance = false     # session time varies with the model and host load: no time-only or cost-only wins
+strategy = "evolve"          # run --strategy greedy for one patch per mechanism from the best version
+prompts = "e2e"
+evo_prompts = "e2e"
+evo_candidates = 4           # per round: focused diffs, plus a crossover and (after barren rounds) a rewrite
+evo_models = ["gpt-6-astra", "gpt-6.1-sol"]
+evo_lesson_model = "gpt-6.1-sol"
+proposals = 4                # greedy: patches per round
+editable = ["src/homebody/skills/dex1/*", "src/homebody/harness/*", "tests/*"]
+model = "gpt-6-astra"
+effort = "medium"
+brief_note = """
+The robot is the G1 with Unitree Dex1-1 two-jaw parallel grippers in place of the Dex3 hands (settings
+`[robot] hands = "dex1"`, model and calibration in assets/robot/dex1). Its pick, transport and place are
+`src/homebody/skills/dex1/` (the registry selects them for these hands); the Dex3 skills and the shared code
+(`motion/`, `helpers/`, `toolkit/`) are read-only here: put anything Dex1-specific in `src/homebody/skills/dex1/`.
+
+The gripper: two jaws on prismatic joints sliding toward each other along the palm frame's y axis, about 0.095 m
+open down to about 0.006 m; the pads sit 0.09-0.14 m out along the palm frame's +x axis, straight out of the wrist
+along the forearm, so the jaws approach along the forearm. `planning.jaw_samples[side]` holds the calibrated jaw
+frames across the closure; `grip` closure 0 opens and 1 closes most of the way, with the squeeze (up to 1.12) for a
+firm hold.
+
+A collision-aware arm planner is available (cuRobo, three servers per evaluation host): `env.plan_path(pre_poses,
+goal_poses, side, exempt=targets)` takes TORSO-frame poses (src/homebody/harness/env.py, API.md);
+`homebody.helpers.curobo.CuroboPlanner(ctx.settings).plan(...)` takes WORLD-frame poses and label ids. It sees only
+the current depth, plans the unloaded hand only (no model of a held object) and a request takes 1.5-3 s on an idle
+server, longer under load. Execute its paths with `env.move_through` (live-checked), never `env.follow`.
+"""
+
+[e2e.demo-wh.suite]
+train = ["/lambda/nfs/group-volume/dex1-demos/2026-10-20/warehouse_suite/train/wh_*"]
+val = ["/lambda/nfs/group-volume/dex1-demos/2026-10-20/warehouse_suite/val/wh_*"]
+test = ["/lambda/nfs/group-volume/dex1-demos/2026-10-20/warehouse_suite/test/wh_*"]

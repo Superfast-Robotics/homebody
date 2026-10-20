@@ -25,6 +25,9 @@ Z_RISE_SLOWER = 2.5
 CRASH_SHARE = 0.05  # a candidate whose code crashes in more than this share of its episodes is rejected
 NONINFERIOR = 0.02  # a time or cost win needs accuracy shown no worse than this (lower bound at Z_RISE)
 Z_PROMISING = 1.0  # a first round with no candidate this far up (pooled) or accepted ends the run
+# per-episode outcome keys a version can be judged by: stage value, completed holds, placed objects (end to end)
+VALUE_KEYS = ("values", "held_values", "placed_values")
+METRICS = {"values": "value", "held_values": "held", "placed_values": "placed"}
 
 
 def read(split_dir):
@@ -121,9 +124,11 @@ def cluster(episode):
     return re.sub(r"_v\d+$", "", episode.split("/")[-1])
 
 
-def paired(parent, child, key, weights=None):
+def paired(parent, child, key, weights=None, clusters=None):
     """(weighted mean difference, standard error) of CHILD over PARENT in per-episode KEY, over shared episodes;
-    the standard error is cluster-robust (CR1: residuals summed within each cluster, G / (G - 1))."""
+    the standard error is cluster-robust (CR1: residuals summed within each cluster, G / (G - 1)); CLUSTERS maps an
+    episode to its independent unit (default cluster())."""
+    cluster_of = clusters or cluster
     shared = sorted(set(parent.get(key, {})) & set(child.get(key, {})))
     if len(shared) < 2:
         return 0.0, 0.0
@@ -133,7 +138,7 @@ def paired(parent, child, key, weights=None):
     mean = sum(w[e] * diffs[e] for e in shared) / total
     sums = {}
     for e in shared:
-        sums[cluster(e)] = sums.get(cluster(e), 0.0) + w[e] * (diffs[e] - mean)
+        sums[cluster_of(e)] = sums.get(cluster_of(e), 0.0) + w[e] * (diffs[e] - mean)
     groups = len(sums)
     if groups < 2:
         return mean, 0.0
@@ -144,20 +149,20 @@ def pooled(side):
     """One split-like summary of train and val together, episodes keyed split/id."""
     return {key: {f"{split}/{episode}": value for split in ("train", "val")
                   for episode, value in side[split].get(key, {}).items()}
-            for key in ("values", "held_values", "seconds", "credit_values")}
+            for key in (*VALUE_KEYS, "seconds", "credit_values")}
 
 
-def judge(parent, child, key="values", weights=None, speed=True):
+def judge(parent, child, key="values", weights=None, speed=True, clusters=None):
     """Accuracy first (KEY: "values", stage / 2, or "held_values", completed holds; WEIGHTS by episode prefix):
     no split may fall by more than Z_DROP standard errors; accepted when train and val pooled (every episode
     paired) rise by more than Z_RISE; with accuracy unchanged, also when the skill's time per call falls by
     TIME_CUT or more, significantly."""
     child = {split: lost_as_failures(parent[split], child[split]) for split in ("train", "val")}
-    out = {"metric": "held" if key == "held_values" else "value"}
+    out = {"metric": METRICS.get(key, "value")}
     for split in ("train", "val"):
-        d, se = paired(parent[split], child[split], key, weights)
+        d, se = paired(parent[split], child[split], key, weights, clusters)
         out[split] = (round(d, 4), round(se, 4))
-    d, se = paired(pooled(parent), pooled(child), key, weights)
+    d, se = paired(pooled(parent), pooled(child), key, weights, clusters)
     out["pooled"] = (round(d, 4), round(se, 4))
     out["time"] = round(relative(parent, child, "seconds"), 3)
     out["cost"] = round(relative(parent, child, "credit_values"), 3)
@@ -180,10 +185,10 @@ def judge(parent, child, key="values", weights=None, speed=True):
                                              f"no time or cost acceptance)"}
     if out["pooled"][0] - Z_RISE * out["pooled"][1] < -NONINFERIOR:  # cheaper or faster only when no worse
         return {**out, "ok": False, "basis": "no clear gain (accuracy not shown non-inferior)"}
-    d_cost, se_cost = paired(pooled(parent), pooled(child), "credit_values")
+    d_cost, se_cost = paired(pooled(parent), pooled(child), "credit_values", clusters=clusters)
     if out["cost"] <= -TIME_CUT and d_cost + Z_RISE * se_cost < 0:
         return {**out, "ok": True, "basis": "cost (accuracy unchanged)"}
-    d_time, se_time = paired(pooled(parent), pooled(child), "seconds")
+    d_time, se_time = paired(pooled(parent), pooled(child), "seconds", clusters=clusters)
     if out["time"] <= -TIME_CUT and d_time + Z_RISE * se_time < 0 and out["cost"] <= COST_SLACK:
         return {**out, "ok": True, "basis": "time (accuracy and cost unchanged)"}
     return {**out, "ok": False, "basis": "no clear gain"}
@@ -192,11 +197,13 @@ def judge(parent, child, key="values", weights=None, speed=True):
 def lost_as_failures(parent, child):
     """CHILD with every episode PARENT scored but CHILD did not (a setup failure or a missing result on its side)
     added as a failure, so a version cannot gain by losing episodes; listed under "lost"."""
-    lost = sorted(set(parent.get("values", {})) - set(child.get("values", {})))
+    def scored(side):
+        return set().union(*(side.get(key, {}) for key in VALUE_KEYS))
+    lost = sorted(scored(parent) - scored(child))
     if not lost:
         return child
     out = {**child, "lost": lost}
-    for key in ("values", "held_values"):
+    for key in VALUE_KEYS:
         out[key] = {**child.get(key, {}), **dict.fromkeys(lost, 0.0)}
     return out
 

@@ -59,3 +59,22 @@ Benchmarks: `skill_episodes.py` (generated scenes), `warehouse_episodes.py` (fro
 warehouse scene packages, mixed with a sample of generated episodes). End to end: `warehouse_e2e.py` runs the
 current checkout's agent sessions on the warehouse scenes. `review.py` runs one read-only Astra review of the loop;
 past reviews are in `reviews/`.
+
+## End-to-end loop (`e2e_loop.py`)
+
+The same greedy and evolutionary search, judged by full agent sessions instead of skill episodes. A profile
+(`[e2e.<P>]` in `config.toml`) names a task suite (train, val and test globs of scene packages with `sequence.json`
+targets), sessions per task, the session settings and agent model, the hosts' services and the editable files.
+
+    python3 -m evolve.e2e_loop [--profile P] baseline COMMIT [--id b000]
+    python3 -m evolve.e2e_loop [--profile P] run --rounds N [--strategy greedy|evolve]
+    python3 -m evolve.e2e_loop [--profile P] test CID       test tasks: only on this command
+    python3 -m evolve.e2e_loop [--profile P] status
+
+An episode is one session of one task (`TASK__rN`), valued by the share of its objects placed (`objective =
+"placed"`; stage value reported); a session that leaves no result is a failure. Sessions of a task, and every task
+whose name starts with one of the profile's `clusters` prefixes (the variants of one scanned scene), are one sample
+in the standard error. Every candidate's sessions run in one queue across the hosts; each evaluation logs its
+session credits. The proposer sees train sessions only (transcripts, skill-call traces, keyframes, coder calls);
+patches outside the editable files or touching frozen files (`tiers.toml`) are rejected unseen. Profile `demo-wh`:
+the Dex1 skills and the agent harness on the warehouse suite in `dex1-demos/2026-10-20/warehouse_suite`.

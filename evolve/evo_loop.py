@@ -100,6 +100,7 @@ class EvoLoop(SkillLoop):
         self.candidates = int(self.cfg.get("evo_candidates", 4))
         self.lesson_model = self.cfg.get("evo_lesson_model", "gpt-6.1-sol")
         self.rng = random.Random(self.cfg.get("evo_seed", 0))
+        self.evo_prompts = self.cfg.get("evo_prompts", "evo")  # prompts/<this>_diagnose.md, _diff.md, ... _lessons.md
 
     def fit(self, summaries):
         return fitness(summaries, self.objective, self.weights)
@@ -282,7 +283,7 @@ class EvoLoop(SkillLoop):
             commit = git("rev-parse", "HEAD", cwd=path)
             manifest = self.manifest(path, commit)
             summaries = self.evaluate(new, path)
-            verdict = skill_score.judge(self.summaries(best["id"]), summaries, self.objective, self.weights, self.speed)
+            verdict = self.judge(self.summaries(best["id"]), summaries)
             if self.manifest(path, commit) != manifest:
                 self.log(f"remeasure {cid}: the experiment changed while it ran; not recorded")
                 continue
@@ -307,7 +308,7 @@ class EvoLoop(SkillLoop):
             diagnosis = diagnosis_path.read_text()
         else:
             reader = self.loop.worktree(self.cand(f"e{number:03d}d"), best["commit"])
-            prompt = (HERE / "prompts" / "evo_diagnose.md").read_text().format(workspace=ws, skill=self.skill,
+            prompt = (HERE / "prompts" / f"{self.evo_prompts}_diagnose.md").read_text().format(workspace=ws, skill=self.skill,
                                                                               source=self.source)
             diagnosis = astra.codex(prompt, reader, "read-only", diagnosis_path, **self.diagnoser())
         mechanisms = max(1, diagnosis.count("## Mechanism "))
@@ -343,7 +344,7 @@ class EvoLoop(SkillLoop):
                  "operator": slot["operator"], "mechanism": slot["mechanism"], "model": slot["model"], "strategy": "evolve"}
         if git("rev-parse", "HEAD", cwd=path) == parent["commit"]:
             other = population[slot["parents"][1]] if slot["operator"] == "crossover" else None
-            prompt = (HERE / "prompts" / f"evo_{slot['operator']}.md").read_text().format(
+            prompt = (HERE / "prompts" / f"{self.evo_prompts}_{slot['operator']}.md").read_text().format(
                 workspace=ws, skill=self.skill, source=self.source, diagnosis=diagnosis,
                 mechanism=slot.get("focus") or slot["mechanism"],
                 parent=parent["id"], parent_results=self.parent_results(ws, parent["id"], summaries),
@@ -396,7 +397,7 @@ class EvoLoop(SkillLoop):
         for entry in entries:
             after = self.manifest(Path(entry["path"]), entry["commit"])
             summaries = everything[entry["id"]]
-            verdict = skill_score.judge(reference, summaries, self.objective, self.weights, self.speed)
+            verdict = self.judge(reference, summaries)
             if after != before[entry["id"]]:
                 verdict = {**verdict, "ok": False, "basis": f"the experiment changed while it ran ({before[entry['id']]} -> {after})"}
             judged.append({**entry, **summaries, "probe": self.activation(entry), "status": "accepted" if verdict["ok"]
@@ -435,7 +436,7 @@ class EvoLoop(SkillLoop):
             f"{'probe: ' + json.dumps(e['probe']) + chr(10) if e.get('probe') else ''}{(e.get('notes') or '')[:1200]}"
             for e in self.archive())
         current = self.work / "lessons.md"
-        prompt = (HERE / "prompts" / "evo_lessons.md").read_text().format(
+        prompt = (HERE / "prompts" / f"{self.evo_prompts}_lessons.md").read_text().format(
             skill=self.skill, history=history, lessons=current.read_text() if current.exists() else "none yet")
         scratch = round_dir / "lessons_workdir"
         scratch.mkdir(exist_ok=True)

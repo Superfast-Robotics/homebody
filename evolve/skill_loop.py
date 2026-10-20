@@ -115,13 +115,16 @@ def coder_digest(split_dir):
 
 
 class SkillLoop:
+    TABLE = "skills"  # the config.toml table of this loop's profiles
+    FOLDER = "skill"  # its work folder, under the loop's
+
     def __init__(self, profile=None):
         self.loop = Loop()
-        profiles = self.loop.cfg["skills"]
+        profiles = self.loop.cfg[self.TABLE]
         self.profile = profile or profiles["default"]
         self.cfg = profiles[self.profile]
         self.skill = self.cfg["name"]
-        self.work = self.loop.work / "skill" / self.cfg.get("workdir", self.skill)
+        self.work = self.loop.work / self.FOLDER / self.cfg.get("workdir", self.skill)
         self.editable = tuple(self.cfg.get("editable", EDITABLE))
         # the skill's module (a hand's own version lives under skills/<hands>/) and what the brief adds about the robot
         self.source = self.cfg.get("source", "src/homebody/skills/{skill}.py").format(skill=self.skill)
@@ -134,7 +137,7 @@ class SkillLoop:
         self.remote = self.loop.remote
         self.diagnose_model = None
         # what accepts a candidate: "value" (stage / 2) or "held" (completed holds), episodes weighted by id prefix
-        self.objective = "held_values" if self.cfg.get("objective", "value") == "held" else "values"
+        self.objective = {"held": "held_values", "placed": "placed_values"}.get(self.cfg.get("objective"), "values")
         self.weights = dict(self.cfg.get("weights", {}))
         self.speed = bool(self.cfg.get("speed_acceptance", True))  # whether a time or cost win alone may accept
 
@@ -146,8 +149,8 @@ class SkillLoop:
 
     def record(self, entry):
         stored = {k: v for k, v in entry.items() if k not in ("train", "val")}
-        stored.update({s: {k: v for k, v in entry[s].items() if k not in ("values", "seconds")} for s in SPLITS
-                       if s in entry})
+        stored.update({s: {k: v for k, v in entry[s].items() if k not in ("values", "seconds", "placed_values")}
+                       for s in SPLITS if s in entry})
         with RECORDING, self.archive_path.open("a") as out:  # candidates of a round finish on parallel threads
             out.write(json.dumps(stored) + "\n")
         self.log(f"archive: {entry['id']} {entry['status']} {entry.get('reason', '')}")
@@ -165,6 +168,14 @@ class SkillLoop:
         print(line, flush=True)
         with (self.work / "loop.log").open("a") as out:
             out.write(line + "\n")
+
+    def cluster(self, episode):
+        """The independent unit EPISODE belongs to, for the standard errors."""
+        return skill_score.cluster(episode)
+
+    def judge(self, parent, child):
+        """The acceptance rule with this profile's objective, weights, speed switch and clusters."""
+        return skill_score.judge(parent, child, self.objective, self.weights, self.speed, self.cluster)
 
     def summaries(self, cid, splits=SPLITS):
         return {s: skill_score.summary(skill_score.read(self.work / "results" / cid / s)) for s in splits}
@@ -514,7 +525,7 @@ class SkillLoop:
         accepted = []
         for entry in ready:  # one at a time: the coder shares one GPU, and three evaluations at once starve it
             summaries = self.evaluate(entry["id"], paths[entry["mechanism"]])
-            verdict = skill_score.judge(self.summaries(best["id"]), summaries, self.objective, self.weights, self.speed)
+            verdict = self.judge(self.summaries(best["id"]), summaries)
             entry = {**entry, **summaries, "status": "accepted" if verdict["ok"] else "rejected",
                      "reason": skill_score.describe(verdict), "verdict": verdict}
             (accepted.append(entry) if verdict["ok"] else self.record(entry))
