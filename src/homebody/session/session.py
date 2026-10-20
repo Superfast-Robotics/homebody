@@ -143,6 +143,7 @@ class Session:
         self.planner = None
         self.trace = Trace(backend, lambda: self.context.carried)
         self.history = []
+        self.paused_seconds = 0.0
         self.status = "Ready"
         self._physics_fault = None
 
@@ -244,29 +245,45 @@ class Session:
             "Current observation:\n" + json.dumps(model_observation(frame)),
             "Recent steps, oldest first:\n" + (steps or "none")))
 
+    def paused_tick(self):
+        """Wait one heartbeat period without advancing the world (agent.pause_while_thinking)."""
+        time.sleep(.02)
+
     def decide(self, prompt, images, names, attempt):
-        """One decision. A busy service is asked again under attempt-retryN."""
+        """One decision. A busy service is asked again under attempt-retryN. With agent.pause_while_thinking the
+        world holds still throughout, retries included, and the held wall time is recorded."""
         agent = self.settings.agent
-        for retry in range(agent.busy_retries + 1):
-            try:
-                return self.provider.generate(prompt, images=images, names=names,
-                                              attempt=attempt if not retry else attempt.with_name(f"{attempt.name}-retry{retry}"),
-                                              tick=self.heartbeat, cancelled=self.controls.cancel.is_set)
-            except ProviderBusy as busy:
-                if retry == agent.busy_retries:
-                    raise
-                self.update("Thinking", f"{busy} Asking again in {agent.busy_wait * (retry + 1):g} s.")
-                until = time.monotonic() + agent.busy_wait * (retry + 1)
-                while time.monotonic() < until and not self.controls.cancel.is_set():
-                    self.heartbeat()
-                if self.controls.cancel.is_set():
-                    raise Cancelled("Operator cancelled while waiting to ask again")
-        raise AssertionError("unreachable")
+        tick = self.paused_tick if agent.pause_while_thinking else self.heartbeat
+        started, sim = time.monotonic(), self.backend.time
+        try:
+            for retry in range(agent.busy_retries + 1):
+                try:
+                    return self.provider.generate(prompt, images=images, names=names,
+                                                  attempt=attempt if not retry else attempt.with_name(f"{attempt.name}-retry{retry}"),
+                                                  tick=tick, cancelled=self.controls.cancel.is_set)
+                except ProviderBusy as busy:
+                    if retry == agent.busy_retries:
+                        raise
+                    self.update("Thinking", f"{busy} Asking again in {agent.busy_wait * (retry + 1):g} s.")
+                    until = time.monotonic() + agent.busy_wait * (retry + 1)
+                    while time.monotonic() < until and not self.controls.cancel.is_set():
+                        tick()
+                    if self.controls.cancel.is_set():
+                        raise Cancelled("Operator cancelled while waiting to ask again")
+            raise AssertionError("unreachable")
+        finally:
+            if agent.pause_while_thinking:
+                held = time.monotonic() - started
+                self.paused_seconds += held
+                self.recorder.event("physics_paused", reason="agent_decision", decision=attempt.name,
+                                    wall_seconds=held, simulation_time=self.backend.time,
+                                    simulation_advanced=self.backend.time - sim)
 
     def run_task(self, task: str) -> dict:
         task_dir = self.recorder.start_task(task, self.backend.epoch)
         started_wall, started_sim = time.monotonic(), self.backend.time
         outcome = {"status": "error", "steps": 0, "model_claim": None}
+        self.paused_seconds = 0.0
         self.history.append({"operator_task": task})
         self.coder.reset(task_dir)  # coded skills live for one task
         self.recovery.reset()
@@ -353,7 +370,9 @@ class Session:
                 outcome.update(status="error", status_before_cleanup=outcome["status"],
                                cleanup_error="; ".join(cleanup_errors))
             outcome.update(wall_seconds=time.monotonic() - started_wall,
-                           simulation_seconds=self.backend.time - started_sim)
+                           simulation_seconds=self.backend.time - started_sim,
+                           pause_while_thinking=self.settings.agent.pause_while_thinking,
+                           physics_paused_seconds=self.paused_seconds)
             self.recorder.end_task(outcome)
             if not self.requires_reset:
                 self.update(outcome["status"], outcome.get("reason") or outcome.get("model_claim") or "")

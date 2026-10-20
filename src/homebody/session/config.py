@@ -124,6 +124,8 @@ class Agent:
     busy_wait: float = 20.0
     max_steps: int = 80
     done_settle_seconds: float = 3.0
+    # the world holds still while a decision is outstanding, as for the coder; false: physics runs on, as on a robot
+    pause_while_thinking: bool = True
 
     def __post_init__(self):
         if self.service_tier not in ("default", "fast", "flex"):

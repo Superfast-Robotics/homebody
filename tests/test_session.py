@@ -124,7 +124,8 @@ def build(tmp_path):
 
     def create(provider, *, settings=None, observer_frame=None, backend=None, controls=None, ui=None,
                scene_update=None):
-        settings = settings or Settings(agent=Agent(done_settle_seconds=0.))
+        # these tests watch the heartbeat while the model thinks: physics runs on (pause_while_thinking off)
+        settings = settings or Settings(agent=Agent(done_settle_seconds=0., pause_while_thinking=False))
         backend, controls = backend or Backend(), controls or Controls()
         recorder = ImageOnlyRecorder(tmp_path / "source", settings, tmp_path / "runs")
         session = Session(backend, provider, settings, recorder, controls,
@@ -155,6 +156,18 @@ def test_thinking_advances_physics_and_does_not_expose_scorer(build):
     times = [row["time"] for row in physics_rows(session)]
     assert len(times) == 4 and times[0] == 0.0 and times[-1] == session.backend.time
     assert all(a < b for a, b in pairwise(times))
+
+
+def test_paused_thinking_holds_the_world_and_records_the_held_time(build):
+    provider = Provider([Decision("Observed completion", "done", {"summary": "claim"})], ticks=5)
+    session = build(provider, settings=Settings(agent=Agent(done_settle_seconds=0.)))
+    result = session.run_task("Inspect the current view")
+    assert result["status"] == "model_done"
+    assert session.backend.time == 0.0
+    assert result["pause_while_thinking"] is True and result["physics_paused_seconds"] >= 5 * 0.02
+    events = [json.loads(line) for line in (session.recorder.path / "events.jsonl").read_text().splitlines()]
+    paused = [event for event in events if event.get("kind") == "physics_paused"]
+    assert len(paused) == 1 and paused[0]["simulation_advanced"] == 0.0 and paused[0]["wall_seconds"] >= 0.1
 
 
 def test_cancel_between_decision_and_execution(build):
@@ -415,7 +428,7 @@ def test_after_done_the_robot_stands_still_before_the_final_sample(build):
                     settings=Settings(agent=Agent(done_settle_seconds=1.)))
     session.run_task("Inspect")
     times = [row["time"] for row in physics_rows(session)]
-    assert times[-1] - times[0] >= 1.
+    assert times[-1] - times[0] >= 1. - 1e-9  # the settle steps sum in floating point
 
 
 def test_terminal_state_read_failure_still_records_outcome(build):
