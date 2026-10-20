@@ -335,11 +335,12 @@ class EvoLoop(SkillLoop):
         self.log(f"evolve round {number}: done; best is now {self.best()['id']}; "
                  f"optimisation credits this round {astra.credits_in(round_dir)}")
 
-    def extend(self, number, extra, wait=False):
+    def extend(self, number, extra=0, wait=False, only=()):
         """EXTRA more candidates for round NUMBER, from the same parent pool and diagnosis, judged against the round's
         own starting best; then one winner across all of the round's candidates (a beaten earlier winner gets a later
         "rejected" verdict, the archive's correction rule). With WAIT, the candidates are written while the round is
-        still evaluating, and their sessions wait until rounds.json records the round finished."""
+        still evaluating, and their sessions wait until rounds.json records the round finished. ONLY (slot numbers of
+        plan.json) resumes those planned candidates instead of planning EXTRA new ones; a written one is reused."""
         round_dir = self.work / "rounds" / f"e{number:03d}"
         self.round_dir = round_dir  # the round's ledger (end-to-end loops)
         plan_path, diagnosis_path = round_dir / "plan.json", round_dir / "diagnosis.md"
@@ -353,23 +354,25 @@ class EvoLoop(SkillLoop):
         summaries = self.scored(population)
         diagnosis = diagnosis_path.read_text()
         mechanisms = max(1, diagnosis.count("## Mechanism "))
-        width, self.candidates = self.candidates, extra
-        added = self.plan(best, population, summaries, mechanisms)
-        self.candidates = width
-        diffs = sum(s["operator"] == "diff" for s in slots)
-        for slot in added:  # the next mechanisms in turn, after the ones the round already tried
-            if slot["operator"] == "diff":
-                slot["mechanism"] = diffs % mechanisms + 1
-                diffs += 1
-        start = len(slots) + 1
-        plan_path.write_text(json.dumps(slots + added, indent=1))
+        if only:
+            chosen = [(index, slots[index - 1]) for index in only]
+        else:
+            width, self.candidates = self.candidates, extra
+            added = self.plan(best, population, summaries, mechanisms)
+            self.candidates = width
+            diffs = sum(s["operator"] == "diff" for s in slots)
+            for slot in added:  # the next mechanisms in turn, after the ones the round already tried
+                if slot["operator"] == "diff":
+                    slot["mechanism"] = diffs % mechanisms + 1
+                    diffs += 1
+            chosen = list(enumerate(added, len(slots) + 1))
+            plan_path.write_text(json.dumps(slots + added, indent=1))
         self.log(f"evolve round {number}: extend with " + "; ".join(
-            f"c{i} {s['operator']} {'+'.join(s['parents'])} m{s['mechanism'] or '-'} {s['model']}"
-            for i, s in enumerate(added, start)))
+            f"c{i} {s['operator']} {'+'.join(s['parents'])} m{s['mechanism'] or '-'} {s['model']}" for i, s in chosen))
         ws = self.evo_workspace(round_dir, best, population, summaries)
-        with ThreadPoolExecutor(len(added)) as pool:
+        with ThreadPoolExecutor(len(chosen)) as pool:
             ready = [e for e in pool.map(lambda item: self.write(number, item[0], item[1], population, summaries, ws,
-                                                                  diagnosis, round_dir), enumerate(added, start)) if e]
+                                                                  diagnosis, round_dir), chosen) if e]
         while wait and number not in self.round_state()["finished"]:
             time.sleep(30)  # the round's own candidates still hold the hosts; their verdicts come first
         if wait:

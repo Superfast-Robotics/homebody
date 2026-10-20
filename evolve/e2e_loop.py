@@ -971,7 +971,8 @@ def main(argv=None):
     run.add_argument("--candidates", type=int, help="versions a round proposes, this run only (default: evo_candidates)")
     ext = sub.add_parser("extend", help="more candidates for a finished round (evolutionary strategy)")
     ext.add_argument("round", type=int)
-    ext.add_argument("--candidates", type=int, required=True)
+    ext.add_argument("--candidates", type=int, default=0, help="new candidates to plan")
+    ext.add_argument("--slots", type=int, nargs="+", default=(), help="resume these planned candidates instead")
     ext.add_argument("--wait", action="store_true", help="write now; evaluate once the round is recorded finished")
     sub.add_parser("test").add_argument("cid")
     sub.add_parser("legacy").add_argument("cid")
@@ -986,7 +987,7 @@ def main(argv=None):
     elif args.command in ("test", "legacy"):
         loop.test(args.cid, args.command)
     elif args.command == "extend":
-        loop.extend(args.round, args.candidates, wait=args.wait)
+        loop.extend(args.round, args.candidates, wait=args.wait, only=tuple(args.slots))
     elif args.command == "run":
         if args.candidates:  # the run's search width, outside the profile and so outside the experiment identity
             loop.candidates = args.candidates
