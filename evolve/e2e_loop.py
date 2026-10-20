@@ -530,6 +530,13 @@ class E2EMixin:
         self.round_dir = self.work / "rounds" / f"{'e' if isinstance(self, EvoLoop) else 's'}{number:03d}"
         return super().round(number)
 
+    def measured_before(self, cid, commit):
+        """Whether a split of CID was dispatched for COMMIT under this experiment (its remote identity marker): the
+        candidate passed its checks before that, so a resumed round does not screen it again."""
+        root = self.results_root(cid)
+        markers = self.remote.ssh(f"cat {root}/*/identity.json 2>/dev/null; true").splitlines()
+        return any((read_json_text(line) or {}).get("commit") == commit for line in markers if line.strip())
+
     # --- credits: one persistent ledger per round (or per evaluation outside a round) ---
     def ledger(self, cids, splits):
         """The remote ledger file this evaluation charges: the round's when in a round, else the commands' own

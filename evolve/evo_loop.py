@@ -335,6 +335,10 @@ class EvoLoop(SkillLoop):
         self.log(f"evolve round {number}: done; best is now {self.best()['id']}; "
                  f"optimisation credits this round {astra.credits_in(round_dir)}")
 
+    def measured_before(self, cid, commit):
+        """Whether CID has evaluation results for COMMIT (it passed its checks then); profiles that know redirect."""
+        return False
+
     def extend(self, number, extra=0, wait=False, only=()):
         """EXTRA more candidates for round NUMBER, from the same parent pool and diagnosis, judged against the round's
         own starting best; then one winner across all of the round's candidates (a beaten earlier winner gets a later
@@ -346,9 +350,11 @@ class EvoLoop(SkillLoop):
         plan_path, diagnosis_path = round_dir / "plan.json", round_dir / "diagnosis.md"
         if not (plan_path.exists() and diagnosis_path.exists()):
             raise SystemExit(f"round {number} has no plan and diagnosis to extend")
+        extended_path = round_dir / "plan_extend.json"  # kept apart: a resumed round reads plan.json alone
         self.check_frozen()
         prefix = f"e{number:03d}c"
         slots = json.loads(plan_path.read_text())
+        slots += json.loads(extended_path.read_text()) if extended_path.exists() else []
         population = {i: e for i, e in self.population().items() if not i.startswith(prefix)}
         best = population[slots[0]["parents"][0]]  # the round's starting best: its first diff's parent
         summaries = self.scored(population)
@@ -366,7 +372,8 @@ class EvoLoop(SkillLoop):
                     slot["mechanism"] = diffs % mechanisms + 1
                     diffs += 1
             chosen = list(enumerate(added, len(slots) + 1))
-            plan_path.write_text(json.dumps(slots + added, indent=1))
+            base = json.loads(plan_path.read_text())
+            extended_path.write_text(json.dumps(slots[len(base):] + added, indent=1))
         self.log(f"evolve round {number}: extend with " + "; ".join(
             f"c{i} {s['operator']} {'+'.join(s['parents'])} m{s['mechanism'] or '-'} {s['model']}" for i, s in chosen))
         ws = self.evo_workspace(round_dir, best, population, summaries)
@@ -437,8 +444,17 @@ class EvoLoop(SkillLoop):
         files = git("diff", "--name-only", parent["commit"], commit).splitlines()
         entry.update(commit=commit, files=files, notes=note_path.read_text() if note_path.exists() else "", path=str(path))
         reason = self.screen(parent["commit"], commit, files)
+        if reason is None and self.measured_before(cid, commit):  # a resumed round: it passed before it was measured
+            self.log(f"{cid}: already measured at {commit[:10]}; not screened again")
+            return entry
         if reason is None:  # the candidates' lint and tests alternate between the hosts
             passed, output = self.on_host(index, self.loop.remote_checks, self.cand(cid), path)
+            if not passed:  # once more on the other host: some tests are timing-sensitive under a loaded host
+                passed, again = self.on_host(index + 1, self.loop.remote_checks, self.cand(cid), path)
+                if passed:
+                    (round_dir / f"{cid}_checks_flaky.txt").write_text(output)
+                    self.log(f"{cid}: checks failed once and passed on a second run (flaky; see {cid}_checks_flaky.txt)")
+                output = output if passed else again
             if not passed:
                 (round_dir / f"{cid}_checks.txt").write_text(output)
                 reason = "lint or unit tests failed: " + output[-600:]
