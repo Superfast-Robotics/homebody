@@ -92,7 +92,7 @@ def cost(task_dir, model=None):
                     continue
         last = turns[-1] if turns and isinstance(turns[-1], dict) else {}
         used = (last.get("input_tokens"), last.get("cached_input_tokens", 0), last.get("output_tokens"))
-        if all(tokens(value) for value in used):
+        if all(tokens(value) for value in used) and used[1] <= used[0]:
             coder.append(used)
         else:
             unmetered += 1

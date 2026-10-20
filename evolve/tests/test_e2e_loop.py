@@ -441,3 +441,23 @@ def test_candidates_are_judged_against_a_freshly_measured_setup():
     from evolve.evo_loop import EvoLoop
     source = inspect.getsource(EvoLoop.judge_candidates)
     assert "refresh=index == 0" in source
+
+
+def test_coder_usage_with_more_cached_than_input_tokens_is_unmetered(tmp_path):
+    from evolve import score_episode
+    call = tmp_path / "task" / "coder" / "call-1"
+    call.mkdir(parents=True)
+    usage = {"input_tokens": 100, "cached_input_tokens": 200, "output_tokens": 100}
+    (call / "events.jsonl").write_text(json.dumps({"type": "turn.completed", "usage": usage}) + "\n")
+    record = score_episode.cost(tmp_path / "task")
+    assert record["coder_unmetered"] == 1 and record["unmetered"]
+
+
+def test_an_astra_call_with_incomplete_usage_is_unmetered_and_charged_its_reservation(tmp_path):
+    from evolve import astra
+    path = tmp_path / "call.usage.json"
+    stdout = (json.dumps({"type": "turn.completed", "usage": {"input_tokens": 1000}}) + "\n").encode()
+    astra.record_usage(stdout, "gpt-6-astra", path, unreported=50.0)
+    record = json.loads(path.read_text())
+    assert record["metered"] is False and record["credits"] >= 50.0
+    assert astra.call_credits(tmp_path / "call.md", 120.0) == 120.0

@@ -109,22 +109,30 @@ def record_usage(stdout, model, path, unreported=0.0, timed_out=False):
     """Write the call's tokens and credits (from Codex's turn.completed events) to PATH. A call that reported no
     finished turn (failed, cut off) is charged at least UNREPORTED, never nothing; a TIMED_OUT one too, since its
     last turn never reports."""
-    turns = []
+    turns, malformed = [], False
     for line in stdout.decode(errors="replace").splitlines():
         if '"turn.completed"' in line:
             try:
-                turns.append(json.loads(line)["usage"])
-            except (json.JSONDecodeError, KeyError):
+                usage = json.loads(line)["usage"]
+            except (ValueError, KeyError, TypeError):
+                malformed = True
                 continue
+            counts = (usage.get("input_tokens"), usage.get("cached_input_tokens", 0), usage.get("output_tokens")) \
+                if isinstance(usage, dict) else (None,)
+            if all(isinstance(n, int) and not isinstance(n, bool) and n >= 0 for n in counts) and counts[1] <= counts[0]:
+                turns.append(usage)
+            else:
+                malformed = True  # incomplete or inconsistent usage: the call's cost is unknown
     total_in = sum(t.get("input_tokens", 0) for t in turns)
     cached = sum(t.get("cached_input_tokens", 0) for t in turns)
     output = sum(t.get("output_tokens", 0) for t in turns)
     rate_in, rate_cached, rate_out = RATES.get(model, RATES["gpt-6-astra"])
     credits = ((total_in - cached) * rate_in + cached * rate_cached + output * rate_out) / 1e6
-    if timed_out or not turns:
+    metered = bool(turns) and not timed_out and not malformed
+    if not metered:
         credits = max(credits, unreported)
     path.write_text(json.dumps({"model": model, "input": total_in, "cached": cached, "output": output,
-                                "credits": round(credits, 2), "metered": bool(turns) and not timed_out}))
+                                "credits": round(credits, 2), "metered": metered}))
 
 
 def credits_in(folder):
