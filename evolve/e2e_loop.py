@@ -972,6 +972,7 @@ def main(argv=None):
     ext = sub.add_parser("extend", help="more candidates for a finished round (evolutionary strategy)")
     ext.add_argument("round", type=int)
     ext.add_argument("--candidates", type=int, required=True)
+    ext.add_argument("--wait", action="store_true", help="write now; evaluate once the round is recorded finished")
     sub.add_parser("test").add_argument("cid")
     sub.add_parser("legacy").add_argument("cid")
     sub.add_parser("status")
@@ -985,7 +986,7 @@ def main(argv=None):
     elif args.command in ("test", "legacy"):
         loop.test(args.cid, args.command)
     elif args.command == "extend":
-        loop.extend(args.round, args.candidates)
+        loop.extend(args.round, args.candidates, wait=args.wait)
     elif args.command == "run":
         if args.candidates:  # the run's search width, outside the profile and so outside the experiment identity
             loop.candidates = args.candidates

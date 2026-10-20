@@ -26,6 +26,7 @@ import math
 import random
 import shutil
 import subprocess
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -334,10 +335,11 @@ class EvoLoop(SkillLoop):
         self.log(f"evolve round {number}: done; best is now {self.best()['id']}; "
                  f"optimisation credits this round {astra.credits_in(round_dir)}")
 
-    def extend(self, number, extra):
-        """EXTRA more candidates for finished round NUMBER, from the same parent pool and diagnosis, judged against the
-        round's own starting best; then one winner across all of the round's candidates (a beaten earlier winner gets
-        a later "rejected" verdict, the archive's correction rule)."""
+    def extend(self, number, extra, wait=False):
+        """EXTRA more candidates for round NUMBER, from the same parent pool and diagnosis, judged against the round's
+        own starting best; then one winner across all of the round's candidates (a beaten earlier winner gets a later
+        "rejected" verdict, the archive's correction rule). With WAIT, the candidates are written while the round is
+        still evaluating, and their sessions wait until rounds.json records the round finished."""
         round_dir = self.work / "rounds" / f"e{number:03d}"
         self.round_dir = round_dir  # the round's ledger (end-to-end loops)
         plan_path, diagnosis_path = round_dir / "plan.json", round_dir / "diagnosis.md"
@@ -368,6 +370,10 @@ class EvoLoop(SkillLoop):
         with ThreadPoolExecutor(len(added)) as pool:
             ready = [e for e in pool.map(lambda item: self.write(number, item[0], item[1], population, summaries, ws,
                                                                   diagnosis, round_dir), enumerate(added, start)) if e]
+        while wait and number not in self.round_state()["finished"]:
+            time.sleep(30)  # the round's own candidates still hold the hosts; their verdicts come first
+        if wait:
+            self.log(f"evolve round {number}: finished; evaluating the extension")
         judged = self.judge_candidates(ready, best)
         latest = {e["id"]: e for e in self.archive()}
         earlier = [e for i, e in latest.items() if i.startswith(prefix) and e["status"] == "accepted"]
