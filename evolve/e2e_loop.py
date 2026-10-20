@@ -124,7 +124,10 @@ def read_json(path):
 
 def finite(value, low=None, high=None):
     """VALUE as a finite float within [LOW, HIGH], else None: booleans, strings, NaN and infinities are no numbers."""
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+    try:
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+            return None
+    except OverflowError:  # an integer too large for a float
         return None
     if (low is not None and value < low) or (high is not None and value > high):
         return None

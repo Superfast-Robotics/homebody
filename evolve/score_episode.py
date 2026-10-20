@@ -42,36 +42,58 @@ def agent_rates(model):
 def decision_usage(reply):
     """(input, cached, output) tokens of one agent decision's reply: a Responses API event stream or a
     JSON body with usage; None when it reports none (a CLI provider, a cut-off stream): its cost is unknown."""
-    text = reply.read_text(errors="replace")
+    try:
+        text = reply.read_text(errors="replace")
+    except OSError:  # no reply recorded
+        return None
     usage = None
     if text.startswith("data:"):
         for line in text.splitlines():
             if line.startswith("data:") and '"response.completed"' in line:
-                usage = json.loads(line[5:])["response"].get("usage")
+                try:
+                    usage = json.loads(line[5:])["response"].get("usage")
+                except (ValueError, KeyError, AttributeError, TypeError):
+                    usage = None
     else:
         try:
             usage = json.loads(text).get("usage")
-        except (json.JSONDecodeError, AttributeError):
+        except (ValueError, AttributeError):
             usage = None
-    if not isinstance(usage, dict) or not usage:
+    if not isinstance(usage, dict):
         return None
-    total = usage.get("input_tokens", usage.get("prompt_tokens", 0))
-    cached = (usage.get("input_tokens_details") or usage.get("prompt_tokens_details") or {}).get("cached_tokens", 0)
-    return total, cached, usage.get("output_tokens", usage.get("completion_tokens", 0))
+    total = usage.get("input_tokens", usage.get("prompt_tokens"))
+    output = usage.get("output_tokens", usage.get("completion_tokens"))
+    details = usage.get("input_tokens_details") or usage.get("prompt_tokens_details") or {}
+    cached = details.get("cached_tokens", 0) if isinstance(details, dict) else None
+    if not all(tokens(value) for value in (total, output, cached)) or cached > total:
+        return None  # incomplete or malformed usage: its cost is unknown
+    return total, cached, output
+
+
+def tokens(value):
+    """VALUE is a token count: an int >= 0 below 10**9, not a boolean."""
+    return isinstance(value, int) and not isinstance(value, bool) and 0 <= value < 10**9
 
 
 def cost(task_dir, model=None):
     """The task's token use and credits: agent decisions (every attempt, retries included) and coder calls. A decision
     or coder call that reported no usage is counted (main_unmetered, coder_unmetered) and makes the record
     "unmetered": its credits are then a lower estimate, and the loop charges the session its cap instead."""
-    replies = [decision_usage(reply) for reply in task_dir.glob("decisions/*/reply.json")]
+    replies = [decision_usage(decision / "reply.json") for decision in task_dir.glob("decisions/*") if decision.is_dir()]
     main, main_unmetered = [r for r in replies if r is not None], sum(r is None for r in replies)
     coder, unmetered = [], 0
     for events in task_dir.glob("coder/call-*/events.jsonl"):
-        turns = [json.loads(line)["usage"] for line in events.read_text(errors="replace").splitlines()
-                 if '"turn.completed"' in line]
-        if turns:
-            coder.append((turns[-1]["input_tokens"], turns[-1].get("cached_input_tokens", 0), turns[-1]["output_tokens"]))
+        turns = []
+        for line in events.read_text(errors="replace").splitlines():
+            if '"turn.completed"' in line:
+                try:
+                    turns.append(json.loads(line)["usage"])
+                except (ValueError, KeyError, TypeError):
+                    continue
+        last = turns[-1] if turns and isinstance(turns[-1], dict) else {}
+        used = (last.get("input_tokens"), last.get("cached_input_tokens", 0), last.get("output_tokens"))
+        if all(tokens(value) for value in used):
+            coder.append(used)
         else:
             unmetered += 1
     main_in, main_cached, main_out = (sum(column) for column in zip(*main)) if main else (0, 0, 0)

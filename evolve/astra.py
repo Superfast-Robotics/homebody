@@ -136,10 +136,13 @@ def call_credits(out, default):
     """The credits the call writing OUT recorded beside it (OUT's .usage.json), or DEFAULT when it recorded none."""
     path = Path(out).parent / (Path(out).stem + ".usage.json")
     try:
-        value = json.loads(path.read_text()).get("credits")
+        record = json.loads(path.read_text())
+        value, metered = record.get("credits"), record.get("metered", True)
     except (OSError, ValueError, AttributeError):
         return float(default)
-    return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) and value >= 0 else float(default)
+    if not isinstance(value, (int, float)) or isinstance(value, bool) or not value >= 0 or value == float("inf"):
+        return float(default)
+    return float(value) if metered is True else max(float(value), float(default))  # unknown cost: the whole reservation
 
 
 def diagnose(worktree, workspace, out):
