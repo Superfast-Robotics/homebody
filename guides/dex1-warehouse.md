@@ -33,8 +33,50 @@ warehouse_picking placed none (basil lifted every time); score 0.354. The held-o
 confirm warehouse gains (5 pick objects; 2 place episodes reach the place call), and some place episodes' setup
 varies between runs.
 
-## Running
+## Running a warehouse simulation
 
-    python3 -m homebody --headless --root . --scene assets/real2sim/warehouse_picking --settings configs/dex1.toml --task "..."
-    python3 -m evolve.skill_loop --profile demo-pick-wh run --rounds 1
-    python3 -m evolve.warehouse_e2e --repeats 2
+The warehouse scenes are not in the repository. They are frozen on the group volume, one folder per date
+(`/lambda/nfs/group-volume/dex1-demos/<date>/`, each with a README saying where its scenes came from):
+
+| Scene | Folder |
+| --- | --- |
+| warehouse picking (the handoff) | `/lambda/nfs/group-volume/dex1-demos/2026-10-20/warehouse_picking` |
+| warehouse shelf | `/lambda/nfs/group-volume/dex1-demos/2026-10-20/warehouse_shelf` |
+
+On a GPU host that mounts the group volume, with this branch installed (`pip install -e .`, README step 2):
+
+**1. Start the Dex1 planning servers** (the pick and place plan their arm paths with them; skip if
+`status` already shows three running). The launcher is the deployed copy of `tools/curobo/curobo_dex1_server.sh`:
+
+    /lambda/nfs/group-volume/workcell-sim/homebody-baseline/curobo_dex1/curobo_dex1_server.sh start
+    /lambda/nfs/group-volume/workcell-sim/homebody-baseline/curobo_dex1/curobo_dex1_server.sh status
+
+**2. Give it a model.** The evaluation hosts use GPT-6.1 Sol through the team's LiteLLM proxy
+(`--model sol61-litellm`): set `LITELLM_BASE_URL` to the proxy and `LITELLM_API_KEY` to its key. Any other
+`--model` from the README works too.
+
+**3. Run one session.** Each scene carries its own task (`default_task` in `task_scene.json`):
+
+    SCENE=/lambda/nfs/group-volume/dex1-demos/2026-10-20/warehouse_shelf
+    MUJOCO_GL=egl python3 -m homebody --headless --root . --scene $SCENE --settings configs/dex1.toml \
+        --model sol61-litellm --output runs/warehouse \
+        --task "$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['default_task'])" $SCENE/task_scene.json)"
+
+Drop `--headless` (and `MUJOCO_GL`) to watch it in the live console. The session folder
+(`runs/warehouse/session-*`) holds `room.mp4` (the observer camera), `observations.mp4` (what the agent
+sees) and `events.jsonl`.
+
+**4. Score it** from physics against the scene's targets (`configs/warehouse_shelf_four.json` or
+`configs/warehouse_picking_three.json`):
+
+    python3 tools/score_session.py runs/warehouse/session-* --scene $SCENE --sequence configs/warehouse_shelf_four.json
+
+**Without a model**, the scripted pick-and-place sequence runs the same skills on fixed targets:
+
+    MUJOCO_GL=egl python3 tools/check_manipulation.py --scene $SCENE --settings configs/dex1.toml \
+        --sequence configs/warehouse_shelf_four.json
+
+## Skill loops and repeated sessions
+
+    python3 -m evolve.skill_loop --profile demo-pick-wh run --rounds 1   # evolve/README.md
+    python3 -m evolve.warehouse_e2e --repeats 2                          # sessions on both scenes, every host
