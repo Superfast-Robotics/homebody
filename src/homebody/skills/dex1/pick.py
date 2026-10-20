@@ -614,7 +614,8 @@ class PickTarget:
     def _wrist_match(self, frame):
         """When the head view no longer supports the target, the hand's own wrist camera: its match if
         it shows the captured surfaces, else None (the head view's verdict stands)."""
-        if not self.ctx.settings.grasp.wrist_camera:
+        # The original HomeBody has no wrist cameras: the head view's verdict stands
+        if not getattr(self.ctx.settings.grasp, "wrist_camera", False) or not hasattr(self.ctx, "wrist"):
             return None
         try:
             view = self.ctx.wrist(self.plan.epoch, self.plan.side)
