@@ -506,7 +506,7 @@ coder_credit_ceiling = 13.0
 astra_call_credit_ceiling = 120.0
 expected_session_credits = 3.0
 evaluation_credit_budget = 2500
-round_credit_budget = 5000
+round_credit_budget = 7000
 clusters = { wh_shelf = "wh_shelf", wh_picking = "wh_picking" }  # variants of one scanned scene: one sample
 speed_acceptance = false     # session time varies with the model and host load: no time-only or cost-only wins
 strategy = "evolve"          # run --strategy greedy for one patch per mechanism from the best version
