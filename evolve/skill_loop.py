@@ -55,14 +55,11 @@ SPLITS = ("train", "val")
 # what the operator may spend, not what is measured: kept out of every identity, so raising a cap keeps the results
 SPENDING = ("round_credit_budget", "evaluation_credit_budget", "session_credit_cap", "expected_session_credits",
             "decision_credit_ceiling", "coder_credit_ceiling", "astra_call_credit_ceiling")
-# how many versions a round proposes, not how any version is measured: also kept out of every identity
-SEARCH = ("evo_candidates",)
 
 
 def measured(cfg):
-    """A profile without its spending authorisation (SPENDING), its search width (SEARCH) and its prose note: what an
-    identity hashes."""
-    return {k: v for k, v in cfg.items() if k not in SPENDING + SEARCH and k != "brief_note"}
+    """A profile without its spending authorisation (SPENDING) and its prose note: what an identity hashes."""
+    return {k: v for k, v in cfg.items() if k not in SPENDING and k != "brief_note"}
 
 
 def touched(row):
