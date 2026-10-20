@@ -315,6 +315,14 @@ def md5(*paths):
 class E2EMixin:
     """The skill loops' bookkeeping, search and judging (SkillLoop, EvoLoop) over agent sessions."""
     TABLE = "e2e"
+
+    def proxy_fingerprint(self):
+        """The model proxy's request patch and model routes ([local] proxy: chatgpt_patch.py, config.yaml), which
+        decide what reaches the agent's model; "none" without a configured proxy."""
+        folder = self.loop.cfg.get("local", {}).get("proxy")
+        if not folder:
+            return "none"
+        return md5(Path(folder) / "chatgpt_patch.py", Path(folder) / "config.yaml")
     FOLDER = "e2e"
 
     def __init__(self, profile=None):
@@ -507,7 +515,8 @@ class E2EMixin:
                               HERE / self.cfg["settings"]),
                  "acceptance": md5(HERE / "skill_score.py"), "suite": listing, "content": content,
                  "environments": environments, "planner_environment": planner,
-                 "services": self.services_check(), "policy": self.policy(), "profile": profile}
+                 "services": self.services_check(), "policy": self.policy(), "profile": profile,
+                 "proxy": self.proxy_fingerprint()}
         self._experiment = hashlib.md5(json.dumps(parts, sort_keys=True, default=str).encode()).hexdigest()[:12]
         (self.work / f"experiment_{self._experiment}.json").write_text(json.dumps(parts, indent=1, default=str))
         return self._experiment
@@ -943,10 +952,14 @@ class E2EMixin:
             new[key] = [m for m in mechanisms(cid, row["task"], repeat)
                         if m not in set(mechanisms(parent, row["task"], repeat))]
         changed = sorted(k for k, r in child.items() if r["placed"] != before.get(k, {}).get("placed"))
+        # an edited prompt reaches every session whether or not code reports acting
+        prompts = [f for f in entry.get("files", []) if f.startswith("src/homebody/harness/") and f.endswith(".md")]
+        acted = sorted(child) if prompts else sorted(k for k, v in new.items() if v)
         record = {"episodes": len(child), "new_activations": sum(map(len, new.values())),
-                  "activated_in": sorted(k for k, v in new.items() if v), "changed": changed}
-        self.log(f"{cid}: new code acted in {len(record['activated_in'])} train sessions, placed share changed in "
-                 f"{len(changed)}")
+                  "activated_in": acted, "prompt_edits": prompts, "changed": changed}
+        self.log(f"{cid}: new code acted in {len(acted)} train sessions"
+                 + (f" (prompt edits {', '.join(Path(f).name for f in prompts)} reach every session)" if prompts else "")
+                 + f", placed share changed in {len(changed)}")
         return record
 
 

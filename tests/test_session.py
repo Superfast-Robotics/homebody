@@ -1051,3 +1051,13 @@ def test_plan_mode_plans_then_works_goal_by_goal(build, monkeypatch):
     assert "This turn: write the plan" in provider.prompts[0] and "Active goal g1" in provider.prompts[1]
     codes = [entry["result"]["code"] for entry in session.history if "result" in entry]
     assert codes == ["OK", "OK", "OK"] and session.planner.plan.status == {"g1": "done"}
+
+
+def test_a_skill_prompt_with_literal_braces_keeps_them_and_fills_its_settings():
+    from types import SimpleNamespace
+
+    from homebody.session.session import prompt_line
+    settings = {"grasp": SimpleNamespace(squeeze=0.12)}
+    text = 'push: squeeze {grasp.squeeze}; example {"hand":"right","verify_released":{"label":21}}'
+    assert prompt_line(text, settings) == 'push: squeeze 0.12; example {"hand":"right","verify_released":{"label":21}}'
+    assert prompt_line("plain {grasp.squeeze}", settings) == "plain 0.12"

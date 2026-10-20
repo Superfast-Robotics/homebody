@@ -1,6 +1,7 @@
 """One physics owner, one decision, one skill result; operator tasks can continue."""
 import json
 import math
+import re
 import time
 import traceback
 from collections.abc import Callable
@@ -47,6 +48,23 @@ def history_line(entry, full):
         line["result"] = {key: value for key, value in line["result"].items() if key != "details"}
     return line
 
+
+
+PLACEHOLDER = re.compile(r"\{(\w+(?:\.\w+)*)\}")
+
+
+def prompt_line(text, settings):
+    """A skill's PROMPT with its {group.value} settings filled in. A coder-written prompt may also hold literal braces
+    (a JSON example): then only the placeholders that name a setting are filled and the rest stays as written."""
+    try:
+        return text.format_map(settings)
+    except (KeyError, ValueError, IndexError, AttributeError):
+        def fill(match):
+            value = settings.get(match.group(1).split(".")[0], None)
+            for name in match.group(1).split(".")[1:]:
+                value = getattr(value, name, None)
+            return match.group(0) if value is None else str(value)
+        return PLACEHOLDER.sub(fill, text)
 
 class ObservedBackend:
     """Expose only the declared observation and action methods to skills. With `real_time` the physics is paced to the wall clock."""
@@ -219,7 +237,7 @@ class Session:
         """The turn's prompt: instructions, skills, scene annotations, hands, task, observation and recent steps."""
         settings = vars(self.settings)
         modules = {**self.coder.registry, **{name: self.coder.module(name) for name in self.coder.names()}}
-        skills = "\n".join(f"{skill.PROMPT.format_map(settings)} Refusals: {', '.join(dict.fromkeys(skill.FAILURES))}."
+        skills = "\n".join(f"{prompt_line(skill.PROMPT, settings)} Refusals: {', '.join(dict.fromkeys(skill.FAILURES))}."
                            for skill in modules.values())
         left = self.settings.coder.calls - self.coder.calls
         skills += (f"\n{CALL}: skill, goal, tried, success, constraints. A coding assistant changes the skill and "
