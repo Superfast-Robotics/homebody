@@ -51,6 +51,8 @@ from .workspace import copy_runs
 
 WATCH_SECONDS = 60  # planner servers are watched (and restarted) this often while a batch runs
 SESSION_TIMEOUT = 7200  # seconds run_jobs.sh allows a session: a timed-out or crashed session is charged all of it
+UNJUDGED = "sessions that could not be judged"
+UNJUDGED_RETRIES = 2  # in-call re-runs of sessions left unjudged (provider failures) before an infrastructure stop
 # the planner's Python environment, listed without pip (it has none)
 PACKAGES = ("import importlib.metadata as m, sys; print(sys.version.split()[0]); "
             "[print(d.metadata['Name'], d.version) for d in sorted(m.distributions(), key=lambda d: d.metadata['Name'].lower())]")
@@ -630,6 +632,18 @@ class E2EMixin:
                 "rerun": sorted(path[k] for k, r in infra.items() if r["status"] != "not run")}
 
     def evaluate_many(self, items, splits=SPLITS, videos=False):
+        """evaluate_once, and when sessions are left that could not be judged (a model provider's failed response,
+        an unreadable result), the same call again up to UNJUDGED_RETRIES times: it re-runs only those sessions,
+        keeping the earlier attempts and their charges. A quota or credit-cap stop is never retried."""
+        for attempt in range(UNJUDGED_RETRIES + 1):
+            try:
+                return self.evaluate_once(items, splits, videos)
+            except InfrastructureFailure as error:
+                if attempt == UNJUDGED_RETRIES or not str(error).count(UNJUDGED):
+                    raise
+                self.log(f"{error}; re-running them (retry {attempt + 1} of {UNJUDGED_RETRIES})")
+
+    def evaluate_once(self, items, splits=SPLITS, videos=False):
         """Every pending session of every version in ITEMS ((cid, checkout, only, cand)) in one queue per host, each
         task-repeat on its fixed host, versions interleaved; each version's splits are collected, checked (an
         infrastructure failure stops without a verdict) and summarised. A split already complete under the same
@@ -721,7 +735,7 @@ class E2EMixin:
                 raise BudgetExceeded(f"evaluation stopped ({stopped}); sessions of {cid} not run: {left}; resume "
                                      f"deliberately")
             if left:
-                raise InfrastructureFailure(f"{cid}: sessions that could not be judged: {left}; fix the cause and run "
+                raise InfrastructureFailure(f"{cid}: {UNJUDGED}: {left}; fix the cause and run "
                                             f"the command again (they run again, earlier attempts kept)")
             local.mkdir(parents=True, exist_ok=True)
             with (local / "planner_restarts.txt").open("a") as record:  # the batch's planner restarts, all versions

@@ -5,6 +5,8 @@ import string
 import tomllib
 from pathlib import Path
 
+import pytest
+
 from evolve import skill_score
 from evolve.e2e_loop import (
     RESCORABLE,
@@ -461,3 +463,32 @@ def test_an_astra_call_with_incomplete_usage_is_unmetered_and_charged_its_reserv
     record = json.loads(path.read_text())
     assert record["metered"] is False and record["credits"] >= 50.0
     assert astra.call_credits(tmp_path / "call.md", 120.0) == 120.0
+
+
+def test_unjudged_sessions_are_retried_in_the_same_call_but_quota_and_other_stops_are_not():
+    from types import SimpleNamespace
+
+    from evolve import e2e_loop
+    calls = []
+
+    def once(failures, error=None):
+        def run(items, splits, videos):
+            calls.append(1)
+            if len(calls) <= failures:
+                raise error or e2e_loop.InfrastructureFailure(f"c1: {e2e_loop.UNJUDGED}: {{'train': ['t/r1']}}")
+            return {"c1": "summaries"}
+        return run
+
+    loop = SimpleNamespace(log=lambda message: None)
+    loop.evaluate_once = once(e2e_loop.UNJUDGED_RETRIES)
+    assert e2e_loop.E2EMixin.evaluate_many(loop, []) == {"c1": "summaries"}
+    assert len(calls) == e2e_loop.UNJUDGED_RETRIES + 1
+    calls.clear()
+    loop.evaluate_once = once(e2e_loop.UNJUDGED_RETRIES + 1)
+    with pytest.raises(e2e_loop.InfrastructureFailure):
+        e2e_loop.E2EMixin.evaluate_many(loop, [])
+    calls.clear()
+    loop.evaluate_once = once(1, e2e_loop.InfrastructureFailure("planner servers not ready"))
+    with pytest.raises(e2e_loop.InfrastructureFailure):
+        e2e_loop.E2EMixin.evaluate_many(loop, [])
+    assert len(calls) == 1
