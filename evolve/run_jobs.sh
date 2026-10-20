@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# run_jobs.sh BASE PARALLEL JOBS_FILE EVOLVE_DIR MODEL: run every "CANDIDATE SCENE TARGETS OUT" line of
+# run_jobs.sh BASE PARALLEL JOBS_FILE EVOLVE_DIR MODEL [SETTINGS]: run every "CANDIDATE SCENE TARGETS OUT" line of
 # JOBS_FILE as one HomeBody session (the agent may customize skills) with the candidate's code,
 # then score it from physics. The agent model is reached through the LiteLLM proxy tunnel (port 14000) and
 # the coding sub-agent through the Codex relay.
@@ -7,7 +7,7 @@ set -uo pipefail
 # Episodes start together and share the candidate's folder on the group volume: concurrent bytecode-cache
 # writes and renames there deadlocked a host's mount (virtiofs), so no episode writes __pycache__.
 export PYTHONDONTWRITEBYTECODE=1
-BASE=$1; PARALLEL=$2; JOBS=$3; EVOLVE=$4; MODEL=$5
+BASE=$1; PARALLEL=$2; JOBS=$3; EVOLVE=$4; MODEL=$5; SETTINGS=${6:-$4/episode_settings.toml}
 W=$(dirname "$BASE")
 run_one() {
   local cand=$1 scene=$2 targets=$3 out=$4
@@ -17,12 +17,12 @@ run_one() {
   PATH="$W/relay-bin:$PATH" CODEX_RELAY_TOKEN="$(cat ~/.codex_relay_token)" MUJOCO_GL=egl \
     LITELLM_BASE_URL=http://127.0.0.1:14000 LITELLM_API_KEY="$(cat ~/.litellm_key)" HOMEBODY_CODER_CODEX="$W/coder-codex/codex" \
     PYTHONPATH="$cand/src:$cand/vendor" timeout 7200 "$BASE/.venv/bin/python" -m homebody --headless --root "$cand" \
-    --scene "$scene" --model "$MODEL" --settings "$EVOLVE/episode_settings.toml" --output "$out/session" \
+    --scene "$scene" --model "$MODEL" --settings "$SETTINGS" --output "$out/session" \
     --task "$task" > "$out/run.log" 2>&1
   echo "$?" > "$out/exit_code"
   "$BASE/.venv/bin/python" "$EVOLVE/score_episode.py" "$out/session" "$targets" "$cand/evaluation/evaluate.py" "$MODEL" \
     > "$out/result.json" 2> "$out/score.err" || rm -f "$out/result.json"
 }
 export -f run_one
-export BASE W EVOLVE MODEL
+export BASE W EVOLVE MODEL SETTINGS
 xargs -P "$PARALLEL" -L 1 bash -c 'run_one "$@"' _ < "$JOBS"

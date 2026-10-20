@@ -75,9 +75,10 @@ class Remote:
         passed = "PYTEST=0" in out and "RUFF=0" in out
         return passed, out[-3000:]
 
-    def run_suite(self, cid, tasks, repeats, label, model):
+    def run_suite(self, cid, tasks, repeats, label, model, settings=None):
         """Run one HomeBody session per task (dicts with name, scene, targets) REPEATS times with
-        candidate CID's code. Returns the remote results directory."""
+        candidate CID's code (SETTINGS: a settings file name in the evolve folder, default episode_settings.toml).
+        Returns the remote results directory."""
         cand = f"{self.work}/cands/{cid}"
         results = f"{self.work}/results/{cid}/{label}"
         lines = [f"{cand} {self.base}/{t['scene']} {self.base}/{t['targets']} {results}/{t['name']}/r{r}"
@@ -85,9 +86,10 @@ class Remote:
         jobs = f"{results}/jobs.txt"
         self.ssh(f"rm -rf {results} && mkdir -p {results} && cat > {jobs} << 'EOF'\n" + "\n".join(lines) + "\nEOF")
         rsync("-a", str(HERE / "run_jobs.sh"), str(HERE / "score_episode.py"), str(HERE / "episode_settings.toml"),
-              f"{self.host}:{self.work}/")
+              *([str(HERE / settings)] if settings else []), f"{self.host}:{self.work}/")
         waves = -(-len(lines) // self.parallel)
-        self.ssh(f"bash {self.work}/run_jobs.sh {self.base} {self.parallel} {jobs} {self.work} {model}",
+        extra = f" {self.work}/{settings}" if settings else ""
+        self.ssh(f"bash {self.work}/run_jobs.sh {self.base} {self.parallel} {jobs} {self.work} {model}{extra}",
                  timeout=waves * 7500 + 600)
         return results
 
