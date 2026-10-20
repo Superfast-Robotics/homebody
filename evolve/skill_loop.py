@@ -648,7 +648,8 @@ class SkillLoop:
         """Whether a round's ENTRIES hold no reasonable candidate (none accepted or more than one standard error up)."""
         return not skill_score.promising(entries)
 
-    def run(self, rounds):
+    def run(self, rounds, stop_rule=True):
+        """ROUNDS more rounds; with STOP_RULE, a barren round 1 stops the run (and later runs)."""
         state = self.round_state()
         if state["stop"]:
             self.log(f"stopped earlier: {state['stop']['reason']}; remove \"stop\" from {self.work / 'rounds.json'} "
@@ -659,7 +660,7 @@ class SkillLoop:
             self.save_round_state({**state, "started": number})
             self.round(number)
             stop = None
-            if number == 1 and self.barren([e for e in self.archive() if e.get("round") == 1]):
+            if stop_rule and number == 1 and self.barren([e for e in self.archive() if e.get("round") == 1]):
                 stop = {"round": number, "reason": "round 1 produced no reasonable candidate; not worth more rounds"}
             state = {"finished": sorted({*state["finished"], number}), "started": None, "stop": stop}
             self.save_round_state(state)

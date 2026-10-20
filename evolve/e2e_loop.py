@@ -967,6 +967,7 @@ def main(argv=None):
     run = sub.add_parser("run")
     run.add_argument("--rounds", type=int, required=True)
     run.add_argument("--strategy", choices=("greedy", "evolve"), help="the round's search (default: profile strategy)")
+    run.add_argument("--no-stop", action="store_true", help="run every round even if round 1 is barren")
     sub.add_parser("test").add_argument("cid")
     sub.add_parser("legacy").add_argument("cid")
     sub.add_parser("status")
@@ -979,7 +980,7 @@ def main(argv=None):
     elif args.command in ("test", "legacy"):
         loop.test(args.cid, args.command)
     elif args.command == "run":
-        loop.run(args.rounds)
+        loop.run(args.rounds, stop_rule=not args.no_stop)
     else:
         for entry in loop.archive():
             print(entry["id"], entry["status"], {s: (entry[s].get("placed"), entry[s].get("value")) for s in SPLITS
