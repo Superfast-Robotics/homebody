@@ -310,7 +310,7 @@ class EvoLoop(SkillLoop):
             reader = self.loop.worktree(self.cand(f"e{number:03d}d"), best["commit"])
             prompt = (HERE / "prompts" / f"{self.evo_prompts}_diagnose.md").read_text().format(workspace=ws, skill=self.skill,
                                                                               source=self.source)
-            diagnosis = astra.codex(prompt, reader, "read-only", diagnosis_path, **self.diagnoser())
+            diagnosis = self.codex_read(prompt, reader, diagnosis_path, **self.diagnoser())
         mechanisms = max(1, diagnosis.count("## Mechanism "))
         plan_path = round_dir / "plan.json"
         slots = json.loads(plan_path.read_text()) if plan_path.exists() else self.plan(best, population, summaries, mechanisms)
@@ -353,7 +353,7 @@ class EvoLoop(SkillLoop):
                 ruff=astra.settings()["ruff"], python=astra.settings()["python"],
                 editable=", ".join(p.format(skill=self.skill) for p in self.editable))
             try:
-                note = astra.codex(prompt, path, "workspace-write", note_path, model=slot["model"], effort=self.cfg["effort"])
+                note = self.codex_write(prompt, path, note_path, model=slot["model"], effort=self.cfg["effort"])
             except Exception as error:  # noqa: BLE001 -- a failed proposal is recorded, not fatal
                 self.record({**entry, "status": "failed", "reason": f"proposer error: {error}"})
                 return None
@@ -372,9 +372,7 @@ class EvoLoop(SkillLoop):
         commit = git("rev-parse", "HEAD", cwd=path)
         files = git("diff", "--name-only", parent["commit"], commit).splitlines()
         entry.update(commit=commit, files=files, notes=note_path.read_text() if note_path.exists() else "", path=str(path))
-        outside, specific = self.allowed(files), self.specific(parent["commit"], commit)
-        reason = (f"edits outside the skill: {outside}" if outside else
-                  f"not general: the source names {specific}" if specific else None)
+        reason = self.screen(parent["commit"], commit, files)
         if reason is None:  # the candidates' lint and tests alternate between the hosts
             passed, output = self.on_host(index, self.loop.remote_checks, self.cand(cid), path)
             if not passed:

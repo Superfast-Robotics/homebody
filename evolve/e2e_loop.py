@@ -4,16 +4,28 @@ Dex1 skills and the agent harness), judged by full HomeBody agent sessions on a 
     python3 -m evolve.e2e_loop [--profile P] baseline COMMIT [--id b000]
     python3 -m evolve.e2e_loop [--profile P] run --rounds N [--strategy greedy|evolve]
     python3 -m evolve.e2e_loop [--profile P] test CID       the version on the test tasks (never used by a round)
+    python3 -m evolve.e2e_loop [--profile P] legacy CID     the legacy tasks, reported apart from test
     python3 -m evolve.e2e_loop [--profile P] status
 
-A profile is an [e2e.<P>] table of config.toml: the suite (train, val and test globs of scene packages, each with a
-sequence.json of scoring targets), sessions per task, the session settings, the agent's model, the services every
-host starts, the editable files, the Astra models and the search. It runs the skill loops' machinery (skill_loop.py,
-evo_loop.py) with sessions in place of skill episodes: an episode is one session of one task (TASK__rN); its value
-is the share of the task's objects placed (objective "placed"), its stage value (mean object stage / 3) is reported.
-Sessions of one task, and every task of one shared layout (the profile's `clusters` prefixes), count as one
-independent unit in the standard errors. Val decides acceptance but never reaches the proposer; test runs only on
-the explicit command.
+A profile is an [e2e.<P>] table of config.toml: the suite (train, val, test and legacy globs of scene packages, each
+with a sequence.json of scoring targets), sessions per task, the session settings, the agent's model, the services
+every host starts and checks, the editable files, the Astra models, the search, the credit caps and the preregistered
+acceptance margin. It runs the skill loops' machinery (skill_loop.py, evo_loop.py) with sessions in place of skill
+episodes: an episode is one session of one task (TASK__rN). Its value is the share of the task's target objects
+placed (settled, in a valid recording), less `disturbance_penalty` of one object per other product it disturbed,
+floored at 0; its stage value (mean object stage / 3) is reported. Sessions of one task, and every task of one
+shared layout (the profile's `clusters` prefixes), count as one independent unit in the standard errors.
+
+Validation is development data, as in the skill loops: it decides acceptance (so the accepted version, the next
+parent, follows it), but its numbers, tasks and sessions never reach the proposer; round winners are exploratory
+until the untouched test confirms them. Test and legacy run only on their explicit commands.
+
+Every task-repeat runs on the same host for every version ((task index + repeat) mod hosts), so compared sessions
+share their host, and each version's sessions split evenly over the hosts. Before sessions start, the profile's
+services are checked ready on every host and running the planner this checkout ships. A session that could not be
+judged on its merits (not started, skipped after a stop, the model provider failing, a result that cannot be read
+or scored) is an infrastructure failure: the evaluation stops without a verdict, and running the command again
+resumes it, re-running only those sessions (results already written are kept and re-scored if needed).
 """
 import argparse
 import hashlib
@@ -21,62 +33,112 @@ import json
 import re
 import shlex
 import shutil
+import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor
-from itertools import zip_longest
 from pathlib import Path
 
-from . import score, tiers
+from . import astra, score, skill_score, tiers
 from .evo_loop import EvoLoop
-from .loop import QuotaExhausted, git
+from .loop import REPO, QuotaExhausted, git
 from .remote import rsync, suite_tasks
 from .skill_loop import COMPLETE, HERE, SPLITS, SkillLoop, coder_digest, public_reason
 from .workspace import copy_runs
 
-SESSION_TIMEOUT = 7200  # seconds run_jobs.sh allows a session: a missing result is charged all of it
+SESSION_TIMEOUT = 7200  # seconds run_jobs.sh allows a session: a timed-out or crashed session is charged all of it
 KEYFRAMES = 40           # head and wrist keyframes kept per failed train session in the workspace
-COLLECTED = ("result.json", "run.log", "exit_code", "events.jsonl", "outcome.json", "trace.json", "REQUEST.md",
-             "tools.jsonl", "start_*.py", "last_message.json")
+COLLECTED = ("result.json", "usage.json", "score.out", "score.err", "skipped", "run.log", "exit_code", "events.jsonl",
+             "outcome.json", "trace.json", "REQUEST.md", "tools.jsonl", "start_*.py", "last_message.json")
+CRASHED = ("error", "physics_invalid", "cancelled", "interrupted")  # session statuses its own code caused
+INFRA_STATUS = ("provider_error",)  # the model provider failed: not the candidate's doing
+ASSIGNMENT = "host = (task index + repeat) mod hosts; versions interleaved per host"  # part of the experiment
+# what the proposer's source export leaves out: how held-out tasks are made, the loop itself, the original targets
+EXPORT_EXCLUDES = ("evolve", "tools/warehouse_variants.py", "tools/scenegen.py", "tests/test_warehouse_variants.py",
+                   "tests/test_scenegen_warehouse.py", "configs/warehouse_*.json")
+# what a patch's added source lines may not do in the evaluated process
+UNSAFE = {r"\bimport\s+(os|subprocess|socket|importlib|shutil|ctypes|multiprocessing|signal)\b": "imports a system module",
+          r"\bfrom\s+(os|subprocess|socket|importlib|shutil|ctypes|multiprocessing|signal)\b": "imports a system module",
+          r"\b(os|sys)\.(system|popen|exec\w*|spawn\w*|remove|unlink|rename|replace|rmdir|makedirs|mkdir|environ|kill)\b":
+              "touches processes, files or the environment",
+          r"\bopen\([^)]*['\"][wax]\+?b?['\"]": "opens a file for writing",
+          r"\.(write_text|write_bytes|unlink|rmdir|mkdir|touch|rename|replace)\(": "writes the filesystem",
+          r"\b(__import__|eval|exec|compile)\(": "runs dynamic code",
+          r"\b(urllib|requests|http\.client|socket)\b": "reaches the network",
+          r"\bsettings\.\w+(\.\w+)*\s*=(?!=)|\bsetattr\([^,]*settings": "writes the settings",
+          r"\bobject\.__setattr__\(": "bypasses frozen settings"}
+
+
+class InfrastructureFailure(RuntimeError):
+    """Sessions failed for reasons outside the candidate's code: no verdict; resume after fixing the cause."""
+
+
+class BudgetExceeded(RuntimeError):
+    """The evaluation or the round reached its credit cap: no verdict; resume deliberately."""
 
 
 def episode_key(task, repeat):
     return f"{task}__{repeat}"
 
 
-def session_row(task, repeat, folder):
-    """One collected session as an episode row: placed share, stage, success, credits and seconds; a session that
-    wrote no result (crashed or timed out) is a failure charged the whole timeout."""
-    path = folder / "result.json"
+def read_json(path):
+    try:
+        return json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
+
+
+def session_row(task, repeat, folder, targets=None, penalty=0.0):
+    """One collected session as an episode row: value (placed share less the disturbance penalty), stage, success,
+    credits and seconds. "infra" marks a session that could not be judged on its merits; "crashed" one its own code
+    ended (an error status, a nonzero exit, a timeout): a failure that counts toward the crash share, charged its
+    credits and, without a measured time, the whole timeout."""
     key = episode_key(task, repeat)
-    if not path.exists():
-        log = folder / "run.log"
-        tail = " | ".join(log.read_text(errors="replace").strip().splitlines()[-3:])[:300] if log.exists() else "no output"
-        return {"episode": key, "task": task, "stage": 0.0, "placed": 0.0, "success": False, "crashed": True,
-                "status": "crashed", "credits": 0.0, "seconds": float(SESSION_TIMEOUT), "objects": {},
-                "error": f"session crashed: {tail}"}
-    result = json.loads(path.read_text())
-    objects = result.get("objects") or {}
-    return {"episode": key, "task": task, "stage": float(result.get("stage", 0.0)),
-            "placed": sum(o.get("stage") == 3 for o in objects.values()) / max(1, len(objects)),
-            "success": bool(result.get("success")), "crashed": False, "status": result.get("status") or "?",
-            "credits": float((result.get("cost") or {}).get("credits", 0.0)),
-            "seconds": float(result.get("wall_seconds") or 0.0), "steps": result.get("steps", 0),
-            "coder_calls": result.get("customizations", 0), "objects": objects}
+    usage = read_json(folder / "usage.json") or {}
+    credits = float(usage.get("credits", 0.0))
+    exit_code = (folder / "exit_code").read_text().strip() if (folder / "exit_code").exists() else None
+    log = folder / "run.log"
+    tail = " | ".join(log.read_text(errors="replace").strip().splitlines()[-3:])[:300] if log.exists() else "no output"
+    base = {"episode": key, "task": task, "stage": 0.0, "placed": 0.0, "success": False, "credits": credits,
+            "seconds": float(SESSION_TIMEOUT), "objects": {}, "disturbed": [], "invalid": [], "infra": False,
+            "crashed": False, "status": "?"}
+    if (folder / "skipped").exists() or exit_code is None:
+        why = (folder / "skipped").read_text().strip() if (folder / "skipped").exists() else "never ran"
+        return {**base, "infra": True, "status": "not run", "error": f"session not run: {why}"}
+    result = read_json(folder / "result.json")
+    if result is None:
+        if exit_code == "0":  # the session ended normally but its scoring failed: the scorer's problem
+            err = (folder / "score.err").read_text(errors="replace")[-300:] if (folder / "score.err").exists() else ""
+            return {**base, "infra": True, "status": "unscored", "error": f"scoring failed: {err}"}
+        return {**base, "crashed": True, "status": "crashed" if exit_code != "124" else "timed out",
+                "error": f"session exited {exit_code} without a scorable record: {tail}"}
+    objects = result.get("objects")
+    if not isinstance(objects, dict) or (targets is not None and sorted(objects) != sorted(targets)) \
+            or any(not isinstance(o, dict) or o.get("stage") not in (0, 1, 2, 3) for o in objects.values()):
+        return {**base, "infra": True, "status": "invalid result",
+                "error": f"result does not score the task's targets {sorted(targets or [])}: {sorted(objects or {})}"}
+    status = result.get("status") or "?"
+    if status in INFRA_STATUS:
+        return {**base, "infra": True, "status": status, "error": f"the model provider failed: {tail}"}
+    disturbed = list(result.get("disturbed") or [])
+    placed = sum(o["stage"] == 3 for o in objects.values())
+    crashed = status in CRASHED or exit_code != "0"
+    seconds = float(result.get("wall_seconds") or 0.0)
+    return {**base, "stage": float(result.get("stage", 0.0)), "placed_objects": placed,
+            "placed": max(0.0, placed - penalty * len(disturbed)) / max(1, len(objects)),
+            "success": bool(result.get("success")) and not crashed, "crashed": crashed, "status": status,
+            "seconds": seconds if seconds > 0 and exit_code != "124" else float(SESSION_TIMEOUT),
+            "steps": result.get("steps", 0), "coder_calls": result.get("customizations", 0), "objects": objects,
+            "disturbed": disturbed, "invalid": list(result.get("invalid") or []),
+            **({"error": f"exit {exit_code}, status {status}: {tail}"} if crashed else {})}
 
 
-def read_split(split_dir, expected=()):
-    """episode key -> row for every session under SPLIT_DIR/<task>/<repeat>/, and a crashed row for every EXPECTED
-    (task, repeat) that left nothing, so a version never gains by losing sessions."""
+def read_split(split_dir, expected=(), targets=None, penalty=0.0):
+    """episode key -> row for every EXPECTED (task, repeat) under SPLIT_DIR/<task>/<repeat>/ (a session that left
+    nothing is an infrastructure row, never left out); TARGETS: {task: target ids} to validate results against."""
     split_dir = Path(split_dir)
-    rows = {}
-    if split_dir.exists():
-        for task_dir in sorted(p for p in split_dir.iterdir() if p.is_dir()):
-            for repeat_dir in sorted(p for p in task_dir.iterdir() if p.is_dir()):
-                rows[episode_key(task_dir.name, repeat_dir.name)] = session_row(task_dir.name, repeat_dir.name, repeat_dir)
-    for task, repeat in expected:
-        if episode_key(task, repeat) not in rows:
-            rows[episode_key(task, repeat)] = session_row(task, repeat, split_dir / task / repeat)
-    return rows
+    return {episode_key(task, repeat): session_row(task, repeat, split_dir / task / repeat,
+                                                   (targets or {}).get(task), penalty)
+            for task, repeat in expected}
 
 
 def summarise(rows, cluster):
@@ -87,16 +149,19 @@ def summarise(rows, cluster):
     n = len(rows)
     outcomes, layouts, by_task = {}, {}, {}
     for key, row in rows.items():
-        outcome = "crashed" if row["crashed"] else f"{row['status']}, placed {row['placed']:.0%}"
+        outcome = ("infrastructure" if row["infra"] else "crashed" if row["crashed"] else
+                   f"{row['status']}, placed {row['placed']:.0%}")
         outcomes[outcome] = outcomes.get(outcome, 0) + 1
         placed, total = layouts.get(cluster(key), (0, 0))
-        layouts[cluster(key)] = (placed + sum(o.get("stage") == 3 for o in row["objects"].values()),
-                                 total + max(1, len(row["objects"])))
+        layouts[cluster(key)] = (placed + row.get("placed_objects", 0), total + max(1, len(row["objects"])))
         by_task.setdefault(row["task"], []).append(round(row["placed"], 3))
     return {"episodes": n, "errors": sum(r["crashed"] for r in rows.values()),
+            "infra": sorted(k for k, r in rows.items() if r["infra"]),
             "success_rate": round(sum(r["success"] for r in rows.values()) / n, 3),
             "value": round(sum(r["stage"] for r in rows.values()) / 3 / n, 3),
             "placed": round(sum(r["placed"] for r in rows.values()) / n, 3),
+            "disturbed": sum(len(r["disturbed"]) for r in rows.values()),
+            "invalid_recordings": sum(bool(r["invalid"]) for r in rows.values()),
             "credits": round(sum(r["credits"] for r in rows.values()) / n, 3),
             "minutes": round(sum(r["seconds"] for r in rows.values()) / 60 / n, 1),
             "outcomes": dict(sorted(outcomes.items(), key=lambda item: -item[1])),
@@ -106,7 +171,7 @@ def summarise(rows, cluster):
             "held_values": {k: float(r["success"]) for k, r in rows.items()},
             "seconds": {k: r["seconds"] for k, r in rows.items()},
             "credit_values": {k: r["credits"] for k, r in rows.items()},
-            "untimed": sorted(k for k, r in rows.items() if r["crashed"])}
+            "untimed": sorted(k for k, r in rows.items() if r["crashed"] or r["infra"])}
 
 
 def layout_cluster(episode, prefixes):
@@ -120,6 +185,26 @@ def absolute(path, base):
     return path if path.startswith("/") else f"{base}/{path}"
 
 
+def host_of(task_index, repeat, hosts):
+    """The host a task-repeat runs on, the same for every version (ASSIGNMENT)."""
+    return (task_index + repeat) % hosts
+
+
+def unsafe(added):
+    """What the ADDED source lines do that a patch may not (UNSAFE), as {reason: first offending line}."""
+    found = {}
+    for line in added:
+        code = line.split("#", 1)[0]
+        for pattern, reason in UNSAFE.items():
+            if reason not in found and re.search(pattern, code):
+                found[reason] = line.strip()[:120]
+    return found
+
+
+def md5(*paths):
+    return hashlib.md5(b"".join(Path(p).read_bytes() for p in paths)).hexdigest()[:12]
+
+
 class E2EMixin:
     """The skill loops' bookkeeping, search and judging (SkillLoop, EvoLoop) over agent sessions."""
     TABLE = "e2e"
@@ -130,11 +215,17 @@ class E2EMixin:
     def repeats(self):
         return int(self.cfg.get("repeats", 2))
 
+    @property
+    def penalty(self):
+        return float(self.cfg.get("disturbance_penalty", 0.25))
+
     def tasks(self, split):
-        cache = self.work / f"tasks_{split}.json"
-        if not cache.exists():
-            cache.write_text(json.dumps(suite_tasks(self.remote, self.cfg["suite"][split]), indent=1))
-        return json.loads(cache.read_text())
+        """The split's tasks, listed from the volume once per process (never cached across runs: a changed suite
+        is a changed experiment)."""
+        cache = self.__dict__.setdefault("_tasks", {})
+        if split not in cache:
+            cache[split] = suite_tasks(self.remote, self.cfg["suite"][split])
+        return cache[split]
 
     def expected(self, split):
         return [(t["name"], f"r{r}") for t in self.tasks(split) for r in range(self.repeats)]
@@ -142,23 +233,27 @@ class E2EMixin:
     def episodes(self, split):
         return [episode_key(task, repeat) for task, repeat in self.expected(split)]
 
-    def task_info(self):
-        """{task: {"instruction", "names"}} of every suite task (instruction and entity names), fetched once."""
-        cache = self.work / "task_info.json"
+    def task_info(self, splits=("train",)):
+        """{task: {"instruction", "names", "targets"}} of SPLITS' tasks, cached per suite listing."""
+        listing = {t["name"]: (absolute(t["scene"], self.remote.base), absolute(t["targets"], self.remote.base))
+                   for split in splits for t in self.tasks(split)}
+        cache = self.work / f"task_info_{hashlib.md5(json.dumps(listing, sort_keys=True).encode()).hexdigest()[:10]}.json"
         if not cache.exists():
-            folders = {t["name"]: (absolute(t["scene"], self.remote.base), absolute(t["targets"], self.remote.base))
-                       for split in self.cfg["suite"] for t in self.tasks(split)}
             script = ("import json,sys\nout={}\nfor name,(scene,targets) in json.loads(sys.argv[1]).items():\n"
                       " s=json.load(open(scene+'/task_scene.json'));q=json.load(open(targets))\n"
                       " steps=q.get('steps',[])\n"
                       " names=[str(x[k]) for x in steps for k in ('fixture_id','label','destination_label') if x.get(k)]\n"
-                      " out[name]={'instruction':s.get('default_task',''),'names':names+list(s.get('movable_entities',[]))}\n"
+                      " out[name]={'instruction':s.get('default_task',''),'names':names+list(s.get('movable_entities',[])),"
+                      "'targets':sorted({str(x['fixture_id']) for x in steps} if steps else q.get('objects',{}))}\n"
                       "print(json.dumps(out))")
-            raw = self.remote.ssh(f"python3 - {shlex.quote(json.dumps(folders))} << 'EOF'\n{script}\nEOF")
-            cache.write_text(raw)
+            cache.write_text(self.remote.ssh(f"python3 - {shlex.quote(json.dumps(listing))} << 'EOF'\n{script}\nEOF"))
         return json.loads(cache.read_text())
 
+    def targets(self, split):
+        return {task: info["targets"] for task, info in self.task_info((split,)).items()}
+
     def benchmark_names(self):
+        """Train task, object and place names only: a screen fed held-out names could quote them back."""
         names = set()
         for task, info in self.task_info().items():
             names.update([task, *info["names"]])
@@ -167,104 +262,231 @@ class E2EMixin:
     def cluster(self, episode):
         return layout_cluster(episode, self.cfg.get("clusters", {}))
 
+    def judge(self, parent, child):
+        return skill_score.judge(parent, child, self.objective, self.weights, self.speed, self.cluster,
+                                 val_margin=self.cfg.get("val_margin"), val_z=float(self.cfg.get("val_z", 1.0)))
+
+    def barren(self, entries):
+        """The user's rule for end-to-end rounds: a first round with no accepted candidate ends the run."""
+        return not any(e.get("status") == "accepted" for e in entries)
+
     def allowed(self, files):
         """Files outside the editable globs, and any the tier rules freeze (the agent loop, scorer, scenes)."""
         outside = super().allowed(files)
         return outside + [f for f in files if f not in outside and tiers.tier_of(f) == "frozen"]
 
+    def screen(self, base, commit, files):
+        """The skill loops' screens, then what the added code may not do in the evaluated process (UNSAFE)."""
+        reason = super().screen(base, commit, files)
+        if reason:
+            return reason
+        added = [line[1:] for line in git("diff", base, commit, "--", "src").splitlines()
+                 if line.startswith("+") and not line.startswith("+++")]
+        found = unsafe(added)
+        return ("unsafe in the session process: " + "; ".join(f"{why} ({line})" for why, line in found.items())
+                if found else None)
+
     def objective_text(self):
-        return ("placed objects: a session scores the share of its task's target objects the physics scorer finds "
-                "placed (stage 3); the stage value (0 untouched, 1 lifted, 2 in the region, 3 placed; mean / 3) is "
-                "reported but does not decide")
+        return (f"placed objects: a session scores the share of its task's target objects the physics scorer finds "
+                f"placed and settled (stage 3, in a valid recording), less {self.penalty:g} of an object for every "
+                f"other product it disturbed (floored at 0); the stage value (0 untouched, 1 lifted, 2 in the region, "
+                f"3 placed; mean / 3) is reported but does not decide")
+
+    # --- the experiment's identity ---
+    def services_check(self):
+        """Every host's services ready and running this checkout's planner: {host: check output}."""
+        expected, out = md5(REPO / "tools/curobo_server.py"), {}
+        for host in self.hosts():
+            for command in self.cfg.get("services", []):
+                host.ssh(command, timeout=900, check=False)
+            for command in self.cfg.get("service_checks", []):
+                result = host.ssh(command, timeout=300, check=False)
+                lines = [line for line in result.split("\n") if line.strip()]
+                bad = [line for line in lines if " ready " not in f"{line} " or not line.endswith(expected)]
+                if not lines or bad:
+                    raise InfrastructureFailure(f"{host.host}: services not ready or not running planner {expected}: "
+                                                f"{bad or 'no output'}")
+                out[host.host] = lines
+        return out
+
+    def policy(self):
+        """The scheduling and statistical policy a verdict depends on."""
+        return {"agent_model": self.cfg.get("agent_model", self.loop.cfg["agent"]["model"]), "repeats": self.repeats,
+                "parallel": int(self.cfg.get("parallel", self.remote.parallel)), "hosts": [h.host for h in self.hosts()],
+                "assignment": ASSIGNMENT, "objective": self.objective, "clusters": self.cfg.get("clusters", {}),
+                "disturbance_penalty": self.penalty, "val_margin": self.cfg.get("val_margin"),
+                "val_z": self.cfg.get("val_z", 1.0), "barren": "round 1 without an accepted candidate",
+                "judge": {k: getattr(skill_score, k) for k in ("Z_DROP", "Z_RISE", "Z_RISE_SLOWER", "SLOWER",
+                                                                 "CRASH_SHARE")}, "speed": self.speed}
+
+    def setup_fingerprint(self):
+        """The experiment id: every input a verdict assumes fixed. The runner, scorer and evaluator, the settings
+        and model, the suite's membership and content, the robot, every host's Python environment and planner
+        services, the scheduling and statistical policy and the profile. Computed once per process."""
+        if "_experiment" in self.__dict__:
+            return self._experiment
+        listing = {s: sorted(t["name"] for t in self.tasks(s)) for s in self.cfg["suite"]}
+        folders = " ".join(sorted({absolute(t["scene"], self.remote.base) for s in self.cfg["suite"]
+                                   for t in self.tasks(s)}))
+        content = self.remote.ssh(
+            f"(cd {self.remote.base}/assets && find -L robot -type f | sort | xargs md5sum; "
+            f"find -L {folders} -type f | sort | xargs md5sum) | awk '{{print $1}}' | md5sum | cut -c1-12",
+            timeout=1200).strip()
+        environments = {h.host: h.ssh(f"({h.base}/.venv/bin/python -V; {h.base}/.venv/bin/pip freeze 2>/dev/null) "
+                                      f"| md5sum | cut -c1-12").strip() for h in self.hosts()}
+        profile = {k: v for k, v in self.cfg.items() if k not in ("brief_note",)}
+        parts = {"local": md5(HERE / "run_jobs.sh", HERE / "score_episode.py", REPO / "evaluation/evaluate.py",
+                              HERE / self.cfg["settings"]),
+                 "suite": listing, "content": content, "environments": environments,
+                 "services": self.services_check(), "policy": self.policy(), "profile": profile}
+        self._experiment = hashlib.md5(json.dumps(parts, sort_keys=True, default=str).encode()).hexdigest()[:12]
+        (self.work / f"experiment_{self._experiment}.json").write_text(json.dumps(parts, indent=1, default=str))
+        return self._experiment
+
+    def lineage(self, population):
+        """The versions built on the latest baseline AND measured in today's experiment: an older measurement
+        (another suite, settings, planner or policy) never becomes a parent or a crossover donor."""
+        experiment = self.setup_fingerprint()
+        return {i: e for i, e in super().lineage(population).items()
+                if (e.get("manifest") or {}).get("setup", e.get("setup")) == experiment}
 
     # --- running sessions ---
     def results_root(self, cid):
         return f"{self.remote.work}/e2e/{self.cfg.get('workdir', self.skill)}/{cid}"
 
     def summaries(self, cid, splits=SPLITS):
-        return {s: summarise(read_split(self.work / "results" / cid / s, self.expected(s)), self.cluster) for s in splits}
+        return {s: summarise(read_split(self.work / "results" / cid / s, self.expected(s), self.targets(s), self.penalty),
+                             self.cluster) for s in splits}
 
-    def setup_fingerprint(self):
-        """A hash of what every session assumes fixed: the session runner and scorer, the settings, the suite's scene
-        packages, the robot, the planner and the seed's Python environment."""
-        local = hashlib.md5(b"".join((HERE / name).read_bytes() for name in (
-            "run_jobs.sh", "score_episode.py", self.cfg["settings"]))).hexdigest()[:6]
-        folders = " ".join(sorted({absolute(t["scene"], self.remote.base) for split in self.cfg["suite"]
-                                   for t in self.tasks(split)}))
-        return local + "-" + self.remote.ssh(
-            f"(cd {self.remote.base}/assets && find -L robot -type f | sort | xargs md5sum; "
-            f"find -L {folders} -type f | sort | xargs md5sum; "
-            f"md5sum {Path(self.remote.root)}/curobo_dex1/*.py {Path(self.remote.root)}/curobo_dex1/*.sh 2>/dev/null; "
-            f"{self.remote.base}/.venv/bin/pip freeze 2>/dev/null | md5sum) "
-            f"| awk '{{print $1}}' | md5sum | cut -c1-12", timeout=1200).strip()
+    def round(self, number):
+        self.round_dir = self.work / "rounds" / f"{'e' if isinstance(self, EvoLoop) else 's'}{number:03d}"
+        return super().round(number)
+
+    def check_budget(self, sessions):
+        """Refuse an evaluation the round's credit cap cannot pay for: Astra's credits so far this round plus
+        SESSIONS at the expected credits per session."""
+        cap = self.cfg.get("round_credit_budget")
+        round_dir = getattr(self, "round_dir", None)
+        if not cap or round_dir is None:
+            return
+        spent = astra.credits_in(round_dir) if round_dir.exists() else 0.0
+        estimate = spent + sessions * float(self.cfg.get("expected_session_credits", 3.0))
+        if estimate > float(cap):
+            raise BudgetExceeded(f"{sessions} sessions would bring this round to about {estimate:.0f} credits, over "
+                                 f"its cap of {cap}; raise round_credit_budget deliberately to go on")
+
+    def finished(self, root, split):
+        """The remote sessions of SPLIT under ROOT that ran to an exit code (skipped ones excluded)."""
+        listing = self.remote.ssh(f"cd {root}/{split} 2>/dev/null && for d in */r*; do [ -e $d/exit_code ] && "
+                                  f"[ ! -e $d/skipped ] && echo $d; done; true")
+        return set(listing.split())
+
+    def rescore(self, root, split, sessions):
+        """Score again, on the remote, the SESSIONS that ran but have no result (the scorer failed earlier)."""
+        if not sessions:
+            return
+        model = self.cfg.get("agent_model", self.loop.cfg["agent"]["model"])
+        targets = {t["name"]: absolute(t["targets"], self.remote.base) for t in self.tasks(split)}
+        commands = [f"cd {root}/{split}/{s} && {self.remote.base}/.venv/bin/python {self.remote.work}/score_episode.py "
+                    f"session {targets[s.split('/')[0]]} {self.remote.work}/evaluate.py {model} > score.out 2>> score.err "
+                    f"&& cp score.out result.json" for s in sorted(sessions)]
+        self.remote.ssh("; ".join(commands) + "; true", timeout=1800)
 
     def evaluate_many(self, items, splits=SPLITS, videos=False):
-        """Every session of every version in ITEMS ((cid, checkout, only, cand)) in one queue per host, versions
-        interleaved; each version is collected, filled (a missing session is a crash) and summarised. {cid: summaries}."""
-        setup, results, pending, queues = self.setup_fingerprint(), {}, [], []
+        """Every pending session of every version in ITEMS ((cid, checkout, only, cand)) in one queue per host, each
+        task-repeat on its fixed host, versions interleaved; each version's splits are collected, checked (an
+        infrastructure failure stops without a verdict) and summarised. A split already complete under the same
+        commit and experiment is reused; an interrupted one resumes. {cid: summaries}."""
+        experiment, results, pending = self.setup_fingerprint(), {}, []
+        hosts = self.hosts()
+        per_host = [[] for _ in hosts]
         settings = self.cfg["settings"]
+        rsync("-a", str(HERE / "run_jobs.sh"), str(HERE / "score_episode.py"), str(REPO / "evaluation/evaluate.py"),
+              str(HERE / "episode_settings.toml"), str(HERE / settings), f"{self.remote.host}:{self.remote.work}/")
         for cid, checkout, _, cand in items:
-            local = self.work / "results" / cid
-            identity = {"commit": git("rev-parse", "HEAD", cwd=checkout), "setup": setup, "repeats": self.repeats}
-            recorded = local / "identity.json"
-            if all((local / s / COMPLETE).exists() for s in splits) and recorded.exists() \
-                    and json.loads(recorded.read_text()) == identity:  # reused only for the same code and setup
+            local, root = self.work / "results" / cid, self.results_root(cid)
+            identity = {"commit": git("rev-parse", "HEAD", cwd=checkout), "experiment": experiment,
+                        "repeats": self.repeats}
+            todo = [s for s in splits if not ((local / s / COMPLETE).exists()
+                                              and read_json(local / s / "identity.json") == identity)]
+            if not todo:
                 results[cid] = self.summaries(cid, splits)
                 continue
             cand = cand or self.cand(cid)
             self.loop.remote.push_candidate(cand, checkout)
-            root = self.results_root(cid)
-            lines = [f"{self.remote.work}/cands/{cand} {absolute(t['scene'], self.remote.base)} "
-                     f"{absolute(t['targets'], self.remote.base)} {root}/{split}/{t['name']}/r{r}"
-                     for split in splits for t in self.tasks(split) for r in range(self.repeats)]
-            self.remote.ssh(f"rm -rf {root} && mkdir -p {root}")
-            pending.append((cid, local, root, identity))
-            queues.append(lines)
+            for split in todo:  # a split measured under another identity starts over; one interrupted resumes
+                marker = f"{root}/{split}/identity.json"
+                stale = self.remote.ssh(f"cat {marker} 2>/dev/null; true").strip()
+                if stale and read_json_text(stale) != identity:
+                    self.remote.ssh(f"rm -rf {root}/{split}")
+                self.remote.ssh(f"mkdir -p {root}/{split} && echo {shlex.quote(json.dumps(identity))} > {marker}")
+                done = self.finished(root, split)
+                for index, task in enumerate(self.tasks(split)):
+                    for r in range(self.repeats):
+                        if f"{task['name']}/r{r}" in done:
+                            continue
+                        per_host[host_of(index, r, len(hosts))].append(
+                            (index, r, f"{self.remote.work}/cands/{cand} {absolute(task['scene'], self.remote.base)} "
+                                       f"{absolute(task['targets'], self.remote.base)} {root}/{split}/{task['name']}/r{r}"))
+            pending.append((cid, local, root, identity, todo))
         if not pending:
             return results
-        queue = [line for batch in zip_longest(*queues) for line in batch if line]
-        rsync("-a", str(HERE / "run_jobs.sh"), str(HERE / "score_episode.py"), str(HERE / "episode_settings.toml"),
-              str(HERE / settings), f"{self.remote.host}:{self.remote.work}/")
-        hosts, started = self.hosts(), time.monotonic()
-        for host in hosts:
-            for command in self.cfg.get("services", []):
-                host.ssh(command, timeout=600)
+        sessions = sum(map(len, per_host))
+        self.check_budget(sessions)
+        started = time.monotonic()
         batch = f"{self.remote.work}/e2e/{self.cfg.get('workdir', self.skill)}/batch-{pending[0][0]}-{len(pending)}"
-        self.remote.ssh(f"rm -rf {batch} && mkdir -p {batch}")
-        parallel, model = int(self.cfg.get("parallel", self.remote.parallel)), self.cfg.get("agent_model",
-                                                                                            self.loop.cfg["agent"]["model"])
+        stop = f"{batch}/STOP"
+        self.remote.ssh(f"mkdir -p {batch} && rm -f {stop} {stop}.ledger")
+        budget = round(sessions * float(self.cfg.get("session_credit_cap", 8.0)), 1)
+        parallel, model = int(self.cfg.get("parallel", self.remote.parallel)), self.cfg.get(
+            "agent_model", self.loop.cfg["agent"]["model"])
 
         def run_share(index):
-            host, share = hosts[index], queue[index::len(hosts)]
+            host, share = hosts[index], [line for *_, line in sorted(per_host[index], key=lambda x: (x[0], x[1]))]
             if not share:
                 return
             jobs = f"{batch}/jobs{index}.txt"
             host.ssh(f"cat > {jobs} << 'EOF'\n" + "\n".join(share) + "\nEOF")
             waves = -(-len(share) // parallel)
             host.ssh(f"bash {host.work}/run_jobs.sh {host.base} {parallel} {jobs} {host.work} {model} "
-                     f"{host.work}/{settings}", timeout=waves * (SESSION_TIMEOUT + 300) + 600)
+                     f"{host.work}/{settings} {stop} {budget}", timeout=waves * (SESSION_TIMEOUT + 300) + 600)
 
-        with ThreadPoolExecutor(len(hosts)) as pool:
-            list(pool.map(run_share, range(len(hosts))))
+        if sessions:
+            self.log(f"dispatching {sessions} sessions ({', '.join(f'{h.host} {len(q)}' for h, q in zip(hosts, per_host))}), "
+                     f"credit cap {budget}")
+            with ThreadPoolExecutor(len(hosts)) as pool:
+                list(pool.map(run_share, range(len(hosts))))
         seconds = time.monotonic() - started
-        for cid, local, root, identity in pending:
-            if local.exists():
-                shutil.rmtree(local)
-            local.mkdir(parents=True)
-            rsync("-a", "--include=*/", *(f"--include={name}" for name in COLLECTED),
-                  "--include=**/workspace/skills/*.py", "--include=**/workspace/lib/*.py", "--exclude=*",
-                  "--prune-empty-dirs", f"{self.remote.host}:{root}/", f"{local}/")
-            if score.quota_hit(local):  # infrastructure, not the code: stop without a verdict
+        stopped = self.remote.ssh(f"cat {stop} 2>/dev/null; true").strip()
+        for cid, local, root, identity, todo in pending:
+            for split in todo:
+                done = self.finished(root, split)
+                unscored = {s for s in done if not self.remote.ssh(f"[ -e {root}/{split}/{s}/result.json ] && echo y; true").strip()}
+                self.rescore(root, split, unscored)
+                if (local / split).exists():
+                    shutil.rmtree(local / split)
+                (local / split).mkdir(parents=True)
+                rsync("-a", "--include=*/", *(f"--include={name}" for name in COLLECTED),
+                      "--include=**/workspace/skills/*.py", "--include=**/workspace/lib/*.py", "--exclude=*",
+                      "--prune-empty-dirs", f"{self.remote.host}:{root}/{split}/", f"{local / split}/")
+            if score.quota_hit(local) or "usage limit" in stopped:
                 raise QuotaExhausted(f"the model's usage limit was hit while evaluating {cid}; resume once it resets")
-            for split in splits:
-                (local / split).mkdir(exist_ok=True)
+            infra = {s: summarise(read_split(local / s, self.expected(s), self.targets(s), self.penalty),
+                                  self.cluster)["infra"] for s in todo}
+            if stopped and any(infra.values()):
+                raise BudgetExceeded(f"evaluation stopped ({stopped}); {sum(map(len, infra.values()))} sessions of {cid} "
+                                     f"not run; resume deliberately")
+            if any(infra.values()):
+                raise InfrastructureFailure(f"{cid}: sessions that could not be judged: {infra}; fix the cause and run "
+                                            f"the command again (only these sessions re-run)")
+            for split in todo:
+                (local / split / "identity.json").write_text(json.dumps(identity))
                 (local / split / COMPLETE).write_text("done\n")
-            (local / "identity.json").write_text(json.dumps(identity))
             summaries = results[cid] = self.summaries(cid, splits)
             spent = sum(sum(s["credit_values"].values()) for s in summaries.values() if s.get("credit_values"))
             self.log(f"{cid}: " + ", ".join(f"{s} placed {v['placed']:.3f} value {v['value']:.3f} success "
-                                             f"{v['success_rate']:.2f} by layout {v.get('placed_by_layout', {})}"
-                                             for s, v in summaries.items())
+                                             f"{v['success_rate']:.2f} disturbed {v['disturbed']} by layout "
+                                             f"{v.get('placed_by_layout', {})}" for s, v in summaries.items())
                      + f"; {spent:.1f} session credits ({seconds:.0f} s for {len(pending)} version"
                      + f"{'s' if len(pending) > 1 else ''})")
         return results
@@ -273,7 +495,8 @@ class E2EMixin:
         for split in SPLITS:
             s = summaries.get(split, {})
             self.log(f"{cid} {split}: {s.get('episodes', 0)} sessions of {len(self.expected(split))}, "
-                     f"{s.get('errors', 0)} crashed, {sum((s.get('credit_values') or {}).values()):.1f} credits")
+                     f"{s.get('errors', 0)} crashed, {len(s.get('infra', []))} infrastructure, "
+                     f"{sum((s.get('credit_values') or {}).values()):.1f} credits")
 
     def smoke(self, cid, path):
         """No trial session: it would cost credits, and a crashing candidate is rejected by its crash share."""
@@ -285,26 +508,64 @@ class E2EMixin:
     def remeasure(self, ids):
         raise SystemExit("remeasure is for a skill benchmark")
 
-    def test(self, cid):
+    def test(self, cid, split="test"):
+        """CID on the test (or legacy) tasks, in their own result folders: train and val evidence is untouched."""
         entry = next(e for e in reversed(self.archive()) if e["id"] == cid)
         path = self.loop.worktree(self.cand(cid), entry["commit"])
-        result = self.evaluate(cid, path, splits=("test",))["test"]
-        self.log(f"{cid} on test: placed {result['placed']:.3f}, value {result['value']:.3f}, success "
-                 f"{result['success_rate']:.2f}, by layout {result.get('placed_by_layout')}, {result['credits']} credits "
-                 f"and {result['minutes']} min per session")
+        result = self.evaluate(cid, path, splits=(split,))[split]
+        self.log(f"{cid} on {split}: placed {result['placed']:.3f}, value {result['value']:.3f}, success "
+                 f"{result['success_rate']:.2f}, disturbed {result['disturbed']}, by layout "
+                 f"{result.get('placed_by_layout')}, {result['credits']} credits and {result['minutes']} min per session")
         return result
 
-    # --- what the proposer sees (train only) ---
+    # --- what the proposer sees (train only, from a source export) ---
+    def export(self, path, out):
+        """A plain copy of the checkout PATH for Codex to work in: no git history, none of EXPORT_EXCLUDES, with a
+        throwaway repository of its own so its changes can be listed. Returns the copy's folder."""
+        folder = out.parent / f"{out.stem}.src"
+        if folder.exists():
+            shutil.rmtree(folder)
+        folder.mkdir(parents=True)
+        archive = subprocess.run(["git", "archive", "HEAD"], cwd=path, check=True, capture_output=True).stdout
+        subprocess.run(["tar", "-x", "-C", str(folder)], input=archive, check=True)
+        for pattern in EXPORT_EXCLUDES:
+            for match in folder.glob(pattern):
+                shutil.rmtree(match) if match.is_dir() else match.unlink()
+        for command in (["init", "-q"], ["add", "-A"], ["-c", "user.name=export", "-c", "user.email=export@localhost",
+                                                         "commit", "-q", "-m", "export"]):
+            git(*command, cwd=folder)
+        return folder
+
+    def codex_write(self, prompt, path, out, **model):
+        """The proposer writes in a source export; its changes are copied back into the worktree PATH, where the
+        screens judge them like any patch."""
+        folder = self.export(path, out)
+        note = astra.codex(prompt.replace(str(path), str(folder)), folder, "workspace-write", out, **model)
+        git("add", "-A", cwd=folder)
+        for line in git("diff", "--cached", "--name-status", "--no-renames", cwd=folder).splitlines():
+            status, name = line.split("\t", 1)
+            target = Path(path) / name
+            if status == "D":
+                target.unlink(missing_ok=True)
+            else:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(folder / name, target)
+        return note
+
+    def codex_read(self, prompt, path, out, **model):
+        folder = self.export(path, out)
+        return astra.codex(prompt.replace(str(path), str(folder)), folder, "read-only", out, **model)
+
     def run_table(self, cid):
-        rows = read_split(self.work / "results" / cid / "train", self.expected("train"))
-        lines = ["| session | placed | stage | status | object outcomes | coder calls | credits | min |",
-                 "|---|---|---|---|---|---|---|---|"]
+        rows = read_split(self.work / "results" / cid / "train", self.expected("train"), self.targets("train"), self.penalty)
+        lines = ["| session | placed | stage | status | object outcomes | disturbed | coder calls | credits | min |",
+                 "|---|---|---|---|---|---|---|---|---|"]
         for key, row in sorted(rows.items()):
             objects = "; ".join(f"{n}: {o.get('stage')}{' dropped' if o.get('dropped') else ''}"
                                 f"{' (' + str(o['reason']) + ')' if o.get('reason') else ''}" for n, o in row["objects"].items())
             lines.append(f"| {key} | {row['placed']:.2f} | {row['stage']:.2f} | {row['status']} | "
-                         f"{objects or row.get('error', '-')[:200]} | {row.get('coder_calls', 0)} | {row['credits']:.1f} | "
-                         f"{row['seconds'] / 60:.1f} |")
+                         f"{objects or row.get('error', '-')[:200]} | {', '.join(row['disturbed']) or '-'} | "
+                         f"{row.get('coder_calls', 0)} | {row['credits']:.1f} | {row['seconds'] / 60:.1f} |")
         return lines, rows
 
     def workspace(self, round_dir, best):
@@ -320,7 +581,8 @@ class E2EMixin:
         table, rows = self.run_table(best["id"])
         lines = [f"# Train sessions of version {best['id']}", "",
                  f"Placed share {summary['placed']:.3f}, stage value {summary['value']:.3f}, task success "
-                 f"{summary['success_rate']:.2f}, {summary['credits']} credits and {summary['minutes']} min per session.",
+                 f"{summary['success_rate']:.2f}, {summary['disturbed']} other products disturbed, "
+                 f"{summary['credits']} credits and {summary['minutes']} min per session.",
                  f"Placed objects by layout: {json.dumps(summary.get('placed_by_layout', {}))}",
                  f"Outcomes: {json.dumps(summary['outcomes'])}", "", "## Tasks", ""]
         lines += [f"- **{t['name']}**: {info.get(t['name'], {}).get('instruction', '')}" for t in self.tasks("train")]
@@ -398,8 +660,9 @@ class E2EMixin:
                     if '"mechanism_active"' in line:
                         names.append(str((json.loads(line).get("event") or {}).get("mechanism")))
             return names
-        child = read_split(self.work / "results" / cid / "train", self.expected("train"))
-        before = read_split(self.work / "results" / parent / "train", self.expected("train"))
+        targets = self.targets("train")
+        child = read_split(self.work / "results" / cid / "train", self.expected("train"), targets, self.penalty)
+        before = read_split(self.work / "results" / parent / "train", self.expected("train"), targets, self.penalty)
         new = {}
         for key, row in child.items():
             repeat = key.rsplit("__", 1)[1]
@@ -411,6 +674,13 @@ class E2EMixin:
         self.log(f"{cid}: new code acted in {len(record['activated_in'])} train sessions, placed share changed in "
                  f"{len(changed)}")
         return record
+
+
+def read_json_text(text):
+    try:
+        return json.loads(text)
+    except ValueError:
+        return None
 
 
 class E2ELoop(E2EMixin, SkillLoop):
@@ -432,6 +702,7 @@ def main(argv=None):
     run.add_argument("--rounds", type=int, required=True)
     run.add_argument("--strategy", choices=("greedy", "evolve"), help="the round's search (default: profile strategy)")
     sub.add_parser("test").add_argument("cid")
+    sub.add_parser("legacy").add_argument("cid")
     sub.add_parser("status")
     args = parser.parse_args(argv)
     loop = E2ELoop(args.profile)
@@ -439,8 +710,8 @@ def main(argv=None):
         loop = E2EEvoLoop(args.profile)
     if args.command == "baseline":
         loop.baseline(args.commit, args.id)
-    elif args.command == "test":
-        loop.test(args.cid)
+    elif args.command in ("test", "legacy"):
+        loop.test(args.cid, args.command)
     elif args.command == "run":
         loop.run(args.rounds)
     else:

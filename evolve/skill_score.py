@@ -152,11 +152,12 @@ def pooled(side):
             for key in (*VALUE_KEYS, "seconds", "credit_values")}
 
 
-def judge(parent, child, key="values", weights=None, speed=True, clusters=None):
+def judge(parent, child, key="values", weights=None, speed=True, clusters=None, val_margin=None, val_z=Z_RISE):
     """Accuracy first (KEY: "values", stage / 2, or "held_values", completed holds; WEIGHTS by episode prefix):
     no split may fall by more than Z_DROP standard errors; accepted when train and val pooled (every episode
     paired) rise by more than Z_RISE; with accuracy unchanged, also when the skill's time per call falls by
-    TIME_CUT or more, significantly."""
+    TIME_CUT or more, significantly. With VAL_MARGIN (preregistered), val must also be shown non-inferior: its
+    difference's lower bound (VAL_Z standard errors) above -VAL_MARGIN, not merely no significant drop."""
     child = {split: lost_as_failures(parent[split], child[split]) for split in ("train", "val")}
     out = {"metric": METRICS.get(key, "value")}
     for split in ("train", "val"):
@@ -172,6 +173,8 @@ def judge(parent, child, key="values", weights=None, speed=True, clusters=None):
         return {**out, "ok": False, "basis": f"crashed in {crashed} episodes"}
     if any(d + Z_DROP * se < 0 for d, se in (out["train"], out["val"])):
         return {**out, "ok": False, "basis": "accuracy dropped"}
+    if val_margin is not None and out["val"][0] - val_z * out["val"][1] < -val_margin:
+        return {**out, "ok": False, "basis": f"val not shown non-inferior (lower bound below -{val_margin:g})"}
     heavier = out["time"] > SLOWER or out["cost"] > SLOWER
     needed = Z_RISE_SLOWER if heavier else Z_RISE
     if out["pooled"][0] - needed * out["pooled"][1] > 0:

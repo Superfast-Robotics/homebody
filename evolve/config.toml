@@ -470,9 +470,24 @@ source = "src/homebody/skills/dex1/ and src/homebody/harness/"
 repeats = 2                  # sessions per task and version
 settings = "episode_settings_dex1.toml"
 agent_model = "sol61-litellm"
-parallel = 22                # sessions at once per host
+parallel = 16                # sessions at once per host: the planner load test (evolve/curobo_load.py, 2026-10-20)
+                             # with 16 clients planning nonstop in mixed postures waited at most 199 s plus 56 s
+                             # of service, inside the 300 s planner timeout; 22 waited up to 285 s
 services = ["/lambda/nfs/group-volume/workcell-sim/homebody-baseline/curobo_dex1/curobo_dex1_server.sh start > /dev/null 2>&1 < /dev/null"]
+# must print one "PORT ready MD5" line per server, MD5 = this checkout's tools/curobo_server.py, before sessions start
+service_checks = ["/lambda/nfs/group-volume/workcell-sim/homebody-baseline/curobo_dex1/curobo_dex1_server.sh check"]
 objective = "placed"         # accept on the share of target objects placed (stage value is reported, not decisive)
+disturbance_penalty = 0.25   # a session loses a quarter of one object per other product it disturbed (floored at 0)
+# Preregistered (2026-10-20): validation must be shown non-inferior, its difference's lower bound (val_z standard
+# errors, with layouts as clusters) above -val_margin of the placed share; round winners are exploratory until test.
+val_margin = 0.05
+val_z = 1.0
+# Credit caps: an evaluation stops dispatching once its sessions charged session_credit_cap per session dispatched;
+# a round refuses an evaluation that would take Astra's credits so far plus its sessions (expected_session_credits
+# each) over round_credit_budget. Both stop without a verdict; resume deliberately.
+session_credit_cap = 8.0
+expected_session_credits = 3.0
+round_credit_budget = 900
 clusters = { wh_shelf = "wh_shelf", wh_picking = "wh_picking" }  # variants of one scanned scene: one sample
 speed_acceptance = false     # session time varies with the model and host load: no time-only or cost-only wins
 strategy = "evolve"          # run --strategy greedy for one patch per mechanism from the best version
@@ -508,3 +523,6 @@ server, longer under load. Execute its paths with `env.move_through` (live-check
 train = ["/lambda/nfs/group-volume/dex1-demos/2026-10-20/warehouse_suite/train/wh_*"]
 val = ["/lambda/nfs/group-volume/dex1-demos/2026-10-20/warehouse_suite/val/wh_*"]
 test = ["/lambda/nfs/group-volume/dex1-demos/2026-10-20/warehouse_suite/test/wh_*"]
+# the two original tasks (fixed instances for "a front ..." kinds, a bowl wider than the jaws): reported apart,
+# only by `legacy CID`
+legacy = ["/lambda/nfs/group-volume/dex1-demos/2026-10-20/warehouse_suite/legacy/wh_*"]

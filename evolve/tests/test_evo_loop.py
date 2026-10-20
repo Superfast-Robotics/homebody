@@ -103,13 +103,21 @@ def test_stance_variants_of_one_object_count_as_one_sample():
     assert skill_score.cluster("train/whtrain_jar_1_v1") == "whtrain_jar_1"
 
 
-def test_each_process_picks_one_of_the_hosts_planning_servers():
+def test_each_plan_holds_a_free_planning_server_of_the_host():
     from types import SimpleNamespace
 
-    from homebody.helpers.curobo import endpoint
-    chosen = endpoint(SimpleNamespace(endpoint="tcp://127.0.0.1:5561", servers=3))
-    assert chosen.rsplit(":", 1)[0] == "tcp://127.0.0.1" and 5561 <= int(chosen.rsplit(":", 1)[1]) <= 5563
-    assert endpoint(SimpleNamespace(endpoint="tcp://127.0.0.1:5560", servers=1)) == "tcp://127.0.0.1:5560"
+    from homebody.helpers.curobo import admission, endpoints
+    settings = SimpleNamespace(endpoint="tcp://127.0.0.1:59561", servers=3, timeout=0.3)
+    assert sorted(endpoints(settings)) == [f"tcp://127.0.0.1:{p}" for p in (59561, 59562, 59563)]
+    with admission(settings) as first, admission(settings) as second, admission(settings) as third:
+        assert len({first, second, third}) == 3  # each concurrent plan gets its own server
+        import pytest
+
+        from homebody.helpers.curobo import PlannerUnavailable
+        with pytest.raises(PlannerUnavailable), admission(settings):
+            pass  # all three busy: waits, then gives up at the timeout
+    with admission(settings) as again:
+        assert again in endpoints(settings)
 
 
 def test_an_episode_without_a_result_scores_as_a_crashed_failure(tmp_path):

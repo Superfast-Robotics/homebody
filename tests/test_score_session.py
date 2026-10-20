@@ -51,7 +51,8 @@ def test_a_finished_task_with_settled_objects_in_their_targets_passes(session, c
     code, report = session(rows(), "model_done", capsys=capsys)
     assert code == 0 and report["success"] and report["passed"] and report["task_status"] == "model_done"
     assert report["scoring_policy"] == "settled_placement" and report["task"] == "task-000"
-    assert report["objects"] == {"parcel_a": {"terminal_reason": None}, "carton_b": {"terminal_reason": None}}
+    assert {name: o["terminal_reason"] for name, o in report["objects"].items()} == {"parcel_a": None, "carton_b": None}
+    assert all(o["settled_seconds"] >= 2.0 for o in report["objects"].values())
 
 
 @pytest.mark.parametrize("status", ["cancelled", "step_limit", "error", "provider_error", "interrupted", None])

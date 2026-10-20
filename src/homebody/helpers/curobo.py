@@ -5,8 +5,12 @@ of the current depth image only (no simulator state).
 Poses go to the server in the pelvis frame; the robot's own pixels and the EXCLUDE labels (the
 target, or the carried object) are removed from the depth so the planner may reach them.
 """
+import fcntl
 import json
 import os
+import tempfile
+import time
+from contextlib import contextmanager
 from pathlib import Path
 
 import numpy as np
@@ -19,6 +23,7 @@ ROOT = Path(__file__).resolve().parents[3]
 URDF = ROOT / "assets/robot/g1_29dof_with_hand.urdf"
 WAIST_JOINTS = ("waist_yaw_joint", "waist_roll_joint", "waist_pitch_joint")
 TARGET_MASK_GROWTH_PX = 4
+ADMISSION_POLL = 0.2  # s between tries for a free planning server
 
 
 class PlannerUnavailable(RuntimeError):
@@ -36,7 +41,7 @@ class CuroboPlanner:
         self.hand_open = {side: dict(zip(calibration["hand_joints"][side],
                                          calibration.get("hand_open", {}).get(side, [0.0] * len(calibration["hand_joints"][side]))))
                           for side in ("left", "right")}
-        self.client = PolicyClient(endpoint(self.settings), self.settings.timeout)
+        self.client = None  # the server this planner holds while it plans (admitted)
 
     def locks(self, frame, side):
         """The measured posture the non-planning joints are fixed at: the waist and the other arm where they are,
@@ -58,13 +63,27 @@ class CuroboPlanner:
         return locks
 
     def ensure_configured(self, frame, side):
-        """Build the server's per-arm planners once (a plan whose posture differs rebuilds them, tools/curobo_server.py)."""
+        """Build the admitted server's per-arm planners once (a plan whose posture differs rebuilds them,
+        tools/curobo_server.py)."""
         try:
             status = self.client.call("ping")
             if not status.get("configured"):
                 self.client.call("configure", {"locks": self.locks(frame, side)})
         except PolicyWireError as error:
             raise PlannerUnavailable(str(error)) from error
+
+    @contextmanager
+    def admitted(self):
+        """Hold one of the host's planning servers for one plan: a free one (this process's own first), else wait
+        for whichever frees first, up to the timeout. Each server serves one request at a time (a REP socket), so
+        sessions queue here, each for its own turn, instead of piling onto one server while others idle."""
+        with admission(self.settings) as address:
+            self.client = PolicyClient(address, self.settings.timeout)
+            try:
+                yield self.client
+            finally:
+                self.client.close()
+                self.client = None
 
     def world_pelvis(self, frame):
         return frame.world_torso @ np.linalg.inv(self.kinematics.torso_in_pelvis(frame.joints))
@@ -86,20 +105,48 @@ class CuroboPlanner:
                    "palm": pelvis_world @ np.asarray(pose_world)[:count],
                    "depth": depth, "intrinsics": np.asarray(frame.intrinsics, dtype=np.float64),
                    "camera": pelvis_world @ frame.world_camera, "locks": self.locks(frame, side)}
-        try:
-            return self.client.call("plan_grasp", request)
-        except PolicyWireError as error:
-            raise PlannerUnavailable(str(error)) from error
+        with self.admitted():
+            self.ensure_configured(frame, side)
+            try:
+                return self.client.call("plan_grasp", request)
+            except PolicyWireError as error:
+                raise PlannerUnavailable(str(error)) from error
 
     def close(self):
-        self.client.close()
+        if self.client is not None:
+            self.client.close()
 
 
-def endpoint(settings):
-    """One of the host's SERVERS planning servers (ports endpoint, endpoint + 1, ...), by this process: the
-    episodes running in parallel spread over them instead of queueing on one."""
+def endpoints(settings):
+    """The host's SERVERS planning servers (ports endpoint, endpoint + 1, ...), this process's own first."""
     base, port = settings.endpoint.rsplit(":", 1)
-    return f"{base}:{int(port) + os.getpid() % max(1, settings.servers)}"
+    count = max(1, settings.servers)
+    own = os.getpid() % count
+    return [f"{base}:{int(port) + (own + i) % count}" for i in range(count)]
+
+
+@contextmanager
+def admission(settings):
+    """The address of a planning server this process holds (an exclusive lock file per server port on this
+    host) until the block ends; PlannerUnavailable when none frees within the settings' timeout."""
+    deadline = time.monotonic() + settings.timeout
+    while True:
+        for address in endpoints(settings):
+            lock = open(Path(tempfile.gettempdir()) / f"homebody-curobo-{address.rsplit(':', 1)[1]}.lock", "w")
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                lock.close()
+                continue
+            try:
+                yield address
+            finally:
+                fcntl.flock(lock, fcntl.LOCK_UN)
+                lock.close()
+            return
+        if time.monotonic() > deadline:
+            raise PlannerUnavailable(f"no planning server free within {settings.timeout:.0f} s")
+        time.sleep(ADMISSION_POLL)
 
 
 def thinned(rows, limit):

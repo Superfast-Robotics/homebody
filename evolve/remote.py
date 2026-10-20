@@ -85,8 +85,8 @@ class Remote:
                  for t in tasks for r in range(repeats)]
         jobs = f"{results}/jobs.txt"
         self.ssh(f"rm -rf {results} && mkdir -p {results} && cat > {jobs} << 'EOF'\n" + "\n".join(lines) + "\nEOF")
-        rsync("-a", str(HERE / "run_jobs.sh"), str(HERE / "score_episode.py"), str(HERE / "episode_settings.toml"),
-              *([str(HERE / settings)] if settings else []), f"{self.host}:{self.work}/")
+        rsync("-a", str(HERE / "run_jobs.sh"), str(HERE / "score_episode.py"), str(HERE.parent / "evaluation/evaluate.py"),
+              str(HERE / "episode_settings.toml"), *([str(HERE / settings)] if settings else []), f"{self.host}:{self.work}/")
         waves = -(-len(lines) // self.parallel)
         extra = f" {self.work}/{settings}" if settings else ""
         self.ssh(f"bash {self.work}/run_jobs.sh {self.base} {self.parallel} {jobs} {self.work} {model}{extra}",

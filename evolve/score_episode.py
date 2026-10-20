@@ -1,8 +1,12 @@
 """score_episode.py SESSION TARGETS EVALUATE_PY [MODEL]: score one recorded HomeBody session (or the latest
 session under an --output root) from physics.
+score_episode.py --usage SESSION [MODEL]: only the session's cost (written whether or not it can be scored).
 
 Each targeted object gets a stage: 0 untouched, 1 lifted by the robot, 2 ended inside its target
-region, 3 physics-verified placement (the frozen evaluator's verdict). An object the robot lifted
+region, 3 physics-verified placement: the frozen evaluator finds it placed at the end AND still in place for
+its whole settling window, in a valid recording (no invalid physics, robot fall, warning, gap or reset; those
+are listed under "invalid" and no object gets stage 3). Non-target products the evaluator finds disturbed at the
+end are listed under "disturbed". An object the robot lifted
 that ends on the floor is flagged "dropped" and keeps stage 1 (lifted): the robot cannot bend to pick
 it up again, so a drop is not scored below an object never touched, and every run stays in the score.
 Writes nothing; prints the result JSON, with the session's step and coder-call counts and its cost: the
@@ -78,19 +82,37 @@ def cost(task_dir, model=None):
             "credits": round(metered + unmetered * per_call, 3)}
 
 
-def main(session, targets_path, evaluate_py, model=None):
+def latest(session):
     session = Path(session)
     if not (session / "events.jsonl").exists():  # an --output root: its latest session
         session = max(session.glob("session-*"))
+    return session
+
+
+def usage(session, model=None):
+    """The session's cost alone (zero when it recorded no task)."""
+    tasks = sorted(latest(session).glob("tasks/task-*"))
+    print(json.dumps(cost(tasks[-1], model) if tasks else {"credits": 0.0, "no_task": True}))
+
+
+def main(session, targets_path, evaluate_py, model=None):
+    session = latest(session)
     spec = json.loads(Path(targets_path).read_text())
     goals = {s["fixture_id"]: s["evaluator_target"] for s in spec["steps"]} if "steps" in spec else spec["objects"]
     physics = max(session.glob("tasks/task-*/physics.jsonl"))
     rows = [json.loads(line) for line in physics.read_text().splitlines() if line.strip()]
     verdict = runpy.run_path(evaluate_py)["score_attempt"](rows, {"schema_version": 1, "frame": "ws_map", "objects": goals},
                                                            require_settled=True)
+    settle = verdict.get("criteria", {}).get("settle_seconds", 0.0)
+    invalid = verdict.get("invalid_reasons") or []
     objects = {}
     for name, goal in goals.items():
-        reason = verdict["objects"].get(name, {}).get("terminal_reason", "missing")
+        judged = verdict["objects"].get(name, {})
+        reason = judged.get("terminal_reason", "missing")
+        if reason is None and judged.get("settled_seconds", 0.0) < settle - 1e-9:
+            reason = "not_settled"
+        if reason is None and invalid:
+            reason = "invalid_recording"
         start = rows[0]["objects"][name]["position"]
         lifted = any(r["objects"][name]["position"][2] > start[2] + LIFT_M and r["objects"][name]["hand_contacts"] for r in rows)
         end = np.asarray(rows[-1]["objects"][name]["position"])
@@ -106,10 +128,16 @@ def main(session, targets_path, evaluate_py, model=None):
                       "stage": round(sum(o["stage"] for o in objects.values()) / max(1, len(objects)), 3),
                       "dropped": sum(o["dropped"] for o in objects.values()),
                       "objects": objects, "untargeted": verdict.get("untargeted"), "status": outcome.get("status"),
+                      "invalid": invalid, "targets": sorted(goals),
+                      "disturbed": sorted(n for n, v in (verdict.get("untargeted") or {}).items()
+                                          if (v or {}).get("terminal_reason") == "disturbed"),
                       "steps": len(skills), "customizations": skills.count("call_coder"),
                       "wall_seconds": outcome.get("wall_seconds", 0.0), "cost": cost(physics.parent, model)},
                      indent=1, default=str))
 
 
 if __name__ == "__main__":
-    main(*sys.argv[1:5])
+    if sys.argv[1] == "--usage":
+        usage(*sys.argv[2:4])
+    else:
+        main(*sys.argv[1:5])

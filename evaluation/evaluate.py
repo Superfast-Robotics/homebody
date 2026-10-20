@@ -164,6 +164,7 @@ def score_attempt(samples: Iterable[dict], target: dict, *, require_settled: boo
     invalid: set[str] = set()
     reasons = {name: "no_samples" for name in goals}
     starts, others = None, {}
+    still_since = dict.fromkeys(goals)  # per object: when its current unbroken still placement began
     for sample in samples:
         count += 1
         try:
@@ -203,9 +204,14 @@ def score_attempt(samples: Iterable[dict], target: dict, *, require_settled: boo
             gap = previous is not None and now - previous > MAX_SAMPLE_GAP + 1e-9
             if gap:
                 invalid.add("sample_gap")
-            still = not any(others.values()) and all(
-                object_reason(sample["objects"][name], goal, stacked[name], speeds[name],
-                              require_still=True) is None for name, goal in goals.items())
+            placed_still = {name: object_reason(sample["objects"][name], goal, stacked[name], speeds[name],
+                                                require_still=True) is None for name, goal in goals.items()}
+            for name, settled in placed_still.items():
+                if not settled or gap:
+                    still_since[name] = None
+                elif still_since[name] is None:
+                    still_since[name] = now
+            still = not any(others.values()) and all(placed_still.values())
             if not still or gap:
                 start = None
             if still and start is None:
@@ -214,6 +220,7 @@ def score_attempt(samples: Iterable[dict], target: dict, *, require_settled: boo
         except (KeyError, TypeError, ValueError, AttributeError):
             invalid.add("invalid_sample")
             start = None
+            still_since = dict.fromkeys(goals)
     duration = max(0.0, previous - start) if previous is not None and start is not None else 0.0
     criteria = {"max_sample_gap": MAX_SAMPLE_GAP, "disturbed_horizontal_max": DISTURBED_HORIZONTAL,
                 "disturbed_turn_max": DISTURBED_TURN}
@@ -225,7 +232,9 @@ def score_attempt(samples: Iterable[dict], target: dict, *, require_settled: boo
             "scoring_policy": "settled_placement" if require_settled else "terminal_placement",
             "sample_count": count,
             "settled_seconds": duration, "invalid_reasons": sorted(invalid),
-            "objects": {name: {"terminal_reason": reason} for name, reason in reasons.items()},
+            "objects": {name: {"terminal_reason": reason,
+                               "settled_seconds": 0.0 if previous is None or still_since[name] is None
+                               else max(0.0, previous - still_since[name])} for name, reason in reasons.items()},
             "untargeted": {name: {"terminal_reason": reason} for name, reason in others.items()},
             "criteria": criteria}
 

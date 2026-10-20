@@ -69,12 +69,24 @@ targets), sessions per task, the session settings and agent model, the hosts' se
     python3 -m evolve.e2e_loop [--profile P] baseline COMMIT [--id b000]
     python3 -m evolve.e2e_loop [--profile P] run --rounds N [--strategy greedy|evolve]
     python3 -m evolve.e2e_loop [--profile P] test CID       test tasks: only on this command
+    python3 -m evolve.e2e_loop [--profile P] legacy CID     the original tasks, reported apart from test
     python3 -m evolve.e2e_loop [--profile P] status
 
-An episode is one session of one task (`TASK__rN`), valued by the share of its objects placed (`objective =
-"placed"`; stage value reported); a session that leaves no result is a failure. Sessions of a task, and every task
-whose name starts with one of the profile's `clusters` prefixes (the variants of one scanned scene), are one sample
-in the standard error. Every candidate's sessions run in one queue across the hosts; each evaluation logs its
-session credits. The proposer sees train sessions only (transcripts, skill-call traces, keyframes, coder calls);
-patches outside the editable files or touching frozen files (`tiers.toml`) are rejected unseen. Profile `demo-wh`:
-the Dex1 skills and the agent harness on the warehouse suite in `dex1-demos/2026-10-20/warehouse_suite`.
+An episode is one session of one task (`TASK__rN`), valued by the share of its target objects placed and settled in
+a valid recording, less `disturbance_penalty` of an object per other product disturbed (`objective = "placed"`; stage
+value reported). The loop scores with its own `evaluation/evaluate.py`, never the candidate's. A session its own code
+ended (error status, nonzero exit, timeout) is a crash, charged its credits; one that could not be judged on its
+merits (not run, provider failure, unscorable or invalid result) is an infrastructure failure: the evaluation stops
+without a verdict and the same command resumes it, re-running only those sessions. Sessions of a task, and every task
+whose name starts with one of the profile's `clusters` prefixes (the variants of one scanned scene), are one sample in
+the standard error; val must also be shown non-inferior (`val_margin`, `val_z`, preregistered), and round winners are
+exploratory until test. Each task-repeat runs on the same host for every version, and the planner services must
+check ready, running this checkout's `tools/curobo_server.py`, before sessions start. One experiment id (suite and
+its content, runner and scorer, settings and model, every host's environment and planner, scheduling and statistical
+policy, profile) guards baselines, parents and cached results. Credit caps (`session_credit_cap`,
+`round_credit_budget`) stop an evaluation without a verdict. Rounds are recorded as finished (`rounds.json`), an
+unfinished one resumes, and a first round with no accepted candidate stops the run (`STOP.json`). The proposer works
+in a source export (no git history, no suite generators, no loop code) and sees train sessions only; patches outside
+the editable files, touching frozen files (`tiers.toml`) or adding system, file, network or settings access are
+rejected unseen. Profile `demo-wh`: the Dex1 skills and the agent harness on the warehouse suite in
+`dex1-demos/2026-10-20/warehouse_suite`. `curobo_load.py` is the planner load test that set its sessions per host.

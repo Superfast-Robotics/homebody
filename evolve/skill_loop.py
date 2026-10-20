@@ -235,7 +235,8 @@ class SkillLoop:
             root = f"{self.remote.work}/skill/{self.cfg.get('workdir', self.skill)}/{cid}"
             mine = [f"{self.remote.work}/cands/{cand} {self.remote.work}/{episode} {root}/{split}/{Path(episode).stem}"
                     for split in splits for episode in (only[split] if only else self.episodes(split))]
-            self.remote.ssh(f"rm -rf {root} && mkdir -p {root}")
+            # only the splits run now are replaced: a test run never deletes the train and val evidence
+            self.remote.ssh(" && ".join(f"rm -rf {root}/{s}" for s in splits) + f" && mkdir -p {root}")
             pending.append((cid, local, root, mine, identity))
             lines.append(mine)
         if not pending:
@@ -265,9 +266,10 @@ class SkillLoop:
             list(pool.map(run_share, range(len(hosts))))
         seconds = time.monotonic() - started
         for cid, local, root, mine, identity in pending:
-            if local.exists():
-                shutil.rmtree(local)
-            local.mkdir(parents=True)
+            for split in splits:
+                if (local / split).exists():
+                    shutil.rmtree(local / split)
+            local.mkdir(parents=True, exist_ok=True)
             rsync("-a", "--include=*/", "--include=result.json", "--include=trace.json", "--include=run.log",
                   "--include=arm_track.json", "--include=REQUEST.md", "--include=tools.jsonl", "--include=start_*.py",
                   "--include=last_message.json", "--include=**/coder/call-*/events.jsonl",
@@ -516,7 +518,7 @@ class SkillLoop:
         if diagnosis_path.exists():  # resuming
             diagnosis = diagnosis_path.read_text()
         else:
-            diagnosis = astra.codex(prompt, reader, "read-only", diagnosis_path, **self.diagnoser())
+            diagnosis = self.codex_read(prompt, reader, diagnosis_path, **self.diagnoser())
         indices = range(1, self.proposals + 1)
         paths = {index: self.loop.worktree(self.cand(f"s{number:03d}c{index}"), best["commit"]) for index in indices}
         with ThreadPoolExecutor(len(paths)) as pool:
@@ -549,7 +551,7 @@ class SkillLoop:
                 ruff=astra.settings()["ruff"], python=astra.settings()["python"],
                 editable=", ".join(p.format(skill=self.skill) for p in self.editable))
             try:
-                note = astra.codex(prompt, path, "workspace-write", note_path, **self.proposer())
+                note = self.codex_write(prompt, path, note_path, **self.proposer())
             except Exception as error:  # noqa: BLE001 -- a failed proposal is recorded, not fatal
                 self.record({**entry, "status": "failed", "reason": f"proposer error: {error}"})
                 return None
@@ -569,13 +571,9 @@ class SkillLoop:
         commit = git("rev-parse", "HEAD", cwd=path)
         files = git("diff", "--name-only", best["commit"], commit).splitlines()
         entry.update(commit=commit, files=files, notes=note)
-        outside = self.allowed(files)
-        if outside:
-            self.record({**entry, "status": "rejected", "reason": f"edits outside the skill: {outside}"})
-            return None
-        specific = self.specific(best["commit"], commit)
-        if specific:
-            self.record({**entry, "status": "rejected", "reason": f"not general: the source names {specific}"})
+        reason = self.screen(best["commit"], commit, files)
+        if reason:
+            self.record({**entry, "status": "rejected", "reason": reason})
             return None
         passed, output = self.loop.remote_checks(self.cand(cid), path)
         if not passed:
@@ -608,14 +606,49 @@ class SkillLoop:
                  f"value {result['value']:.3f}, {result['skill_seconds']} s and {result['credits']} credits per episode")
         return result
 
+    def completed_rounds(self):
+        """The rounds that finished (rounds.json); a round started but not finished is resumed, not skipped. An
+        older work folder without the record counts every round in its archive as finished."""
+        path = self.work / "rounds.json"
+        if path.exists():
+            return json.loads(path.read_text())
+        return sorted({int(e["round"]) for e in self.archive() if isinstance(e.get("round"), int) and e["round"] > 0})
+
+    def barren(self, entries):
+        """Whether a round's ENTRIES hold no reasonable candidate (none accepted or more than one standard error up)."""
+        return not skill_score.promising(entries)
+
     def run(self, rounds):
-        done = max((int(e["round"]) for e in self.archive() if isinstance(e.get("round"), int)), default=0)
+        stop = self.work / "STOP.json"
+        if stop.exists():
+            self.log(f"stopped earlier: {json.loads(stop.read_text())['reason']}; delete {stop} to run more rounds")
+            return
+        done = max(self.completed_rounds(), default=0)
         for number in range(done + 1, done + rounds + 1):
             self.round(number)
-            if number == 1 and not skill_score.promising([e for e in self.archive() if e.get("round") == 1]):
-                self.log("round 1 produced no reasonable candidate (none accepted or more than one standard "
-                         "error up); stopping instead of running more rounds")
+            (self.work / "rounds.json").write_text(json.dumps(sorted({*self.completed_rounds(), number})))
+            if number == 1 and self.barren([e for e in self.archive() if e.get("round") == 1]):
+                reason = "round 1 produced no reasonable candidate; not worth more rounds"
+                stop.write_text(json.dumps({"round": number, "reason": reason}))
+                self.log(f"{reason}; stopping (recorded in {stop})")
                 return
+
+    # --- what a profile may redirect ---
+    def codex_write(self, prompt, path, out, **model):
+        """A proposer writing a patch in the worktree PATH."""
+        return astra.codex(prompt, path, "workspace-write", out, **model)
+
+    def codex_read(self, prompt, path, out, **model):
+        """A read-only diagnosis of the checkout PATH."""
+        return astra.codex(prompt, path, "read-only", out, **model)
+
+    def screen(self, base, commit, files):
+        """Why a patch from BASE to COMMIT (changing FILES) is refused before it runs, or None."""
+        outside = self.allowed(files)
+        if outside:
+            return f"edits outside the skill: {outside}"
+        specific = self.specific(base, commit)
+        return f"not general: the source names {specific}" if specific else None
 
 
 def main(argv=None):
