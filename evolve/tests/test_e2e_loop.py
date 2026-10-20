@@ -342,7 +342,8 @@ def test_a_session_reserves_its_worst_case_from_its_settings():
     expected = decisions * profile["decision_credit_ceiling"] + settings["coder"]["calls"] * profile["coder_credit_ceiling"]
     assert E2EMixin.session_worst_case(loop) == expected == 102.0
     assert E2EMixin.cap.fget(loop) == expected  # no fixed session_credit_cap: the worst case
-    assert E2EMixin.budget(loop, 48) == 48 * expected  # a baseline's own allowance, not the round's cap
+    # a baseline's own allowance, not the round's cap: the profile's evaluation_credit_budget, else its sessions' worst case
+    assert E2EMixin.budget(loop, 48) == float(profile.get("evaluation_credit_budget") or 48 * expected)
     loop.round_dir = Path("e001")
     assert E2EMixin.budget(loop, 48) == profile["round_credit_budget"]
 
