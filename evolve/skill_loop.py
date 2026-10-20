@@ -23,6 +23,7 @@ import argparse
 import fnmatch
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import threading
@@ -299,7 +300,7 @@ class SkillLoop:
         path = self.loop.worktree(self.cand(f"{cid}"), commit)
         before = self.manifest(path, commit)
         summaries = self.evaluate(cid, path, videos=videos)
-        after = self.manifest(path, commit)
+        after = self.manifest(path, commit, refresh=True)
         if after != before:
             raise SystemExit(f"{cid}: the experiment changed while it ran: {before} -> {after}; not recorded")
         self.audit(cid, summaries)
@@ -312,13 +313,14 @@ class SkillLoop:
         if head != commit or dirty:
             raise SystemExit(f"{path} is {head[:10]}{' with local changes' if dirty else ''}, not {commit[:10]}")
 
-    def manifest(self, path, commit):
+    def manifest(self, path, commit, refresh=False):
         """What an evaluation depends on: the candidate's tree, the profile (episodes, objective, weights, services,
         prompts), and the setup fingerprint (scenes, robot, episodes, driver and scorer, planner, the seed's Python
         environment). Checked before and after a baseline runs."""
         self.verify_checkout(path, commit)
         profile = hashlib.md5(json.dumps(self.cfg, sort_keys=True).encode()).hexdigest()[:12]
-        return {"tree": git("rev-parse", f"{commit}^{{tree}}"), "profile": profile, "setup": self.setup_fingerprint()}
+        return {"tree": git("rev-parse", f"{commit}^{{tree}}"), "profile": profile,
+                "setup": self.setup_fingerprint(refresh=refresh)}
 
     def audit(self, cid, summaries):
         """Log a baseline's reconciliation: episodes scored, crashed and set up wrongly per split."""
@@ -328,8 +330,9 @@ class SkillLoop:
             self.log(f"{cid} {split}: {s.get('episodes', 0)} scored of {expected} episodes, {s.get('errors', 0)} crashed, "
                      f"{len(s.get('untimed', []))} untimed")
 
-    def setup_fingerprint(self):
-        """A hash of the benchmark's scene packages and robot profiles on the remote seed: what a round assumes fixed."""
+    def setup_fingerprint(self, refresh=False):
+        """A hash of the benchmark's scene packages and robot profiles on the remote seed: what a round assumes fixed
+        (measured every time; REFRESH is for loops that keep it)."""
         episodes = f"{self.remote.work}/{self.cfg['episodes']}"
         local = hashlib.md5(b"".join((HERE / name).read_bytes() for name in  # the episode driver and the scoring
                                      ("skill_bench.py", "skill_score.py", "run_skill_jobs.sh"))).hexdigest()[:6]
@@ -343,7 +346,7 @@ class SkillLoop:
     def check_frozen(self):
         """Stop when the scenes or robot changed since the latest baseline: its results no longer compare."""
         base = [e for e in self.archive() if e.get("status") == "baseline"][-1]
-        if base.get("setup") and base["setup"] != self.setup_fingerprint():
+        if base.get("setup") and base["setup"] != self.setup_fingerprint(refresh=True):
             raise SystemExit(f"the scenes or robot changed since baseline {base['id']}: re-baseline before a round")
 
     def init(self, commit, sample=8):
@@ -606,31 +609,53 @@ class SkillLoop:
                  f"value {result['value']:.3f}, {result['skill_seconds']} s and {result['credits']} credits per episode")
         return result
 
-    def completed_rounds(self):
-        """The rounds that finished (rounds.json); a round started but not finished is resumed, not skipped. An
-        older work folder without the record counts every round in its archive as finished."""
-        path = self.work / "rounds.json"
-        if path.exists():
-            return json.loads(path.read_text())
+    def archived_rounds(self):
+        """The rounds of an older work folder that has no rounds.json: every round in its archive."""
         return sorted({int(e["round"]) for e in self.archive() if isinstance(e.get("round"), int) and e["round"] > 0})
+
+    def round_state(self):
+        """rounds.json: {"finished": rounds that finished, "started": the round under way (resumed, never skipped),
+        "stop": the stop decision}. Written before a round's first proposal and, with the stop decision, after its
+        last verdict; an older list-only record, or none, reads as finished rounds (archived_rounds)."""
+        path = self.work / "rounds.json"
+        state = json.loads(path.read_text()) if path.exists() else {"finished": self.archived_rounds()}
+        if isinstance(state, list):
+            state = {"finished": state}
+        legacy = self.work / "STOP.json"
+        stop = state.get("stop") or (json.loads(legacy.read_text()) if legacy.exists() else None)
+        return {"finished": sorted(state.get("finished", [])), "started": state.get("started"), "stop": stop}
+
+    def save_round_state(self, state):
+        """Replace rounds.json in one step: completion and the stop decision are never written apart."""
+        path = self.work / "rounds.json"
+        path.with_suffix(".tmp").write_text(json.dumps(state))
+        os.replace(path.with_suffix(".tmp"), path)
+
+    def completed_rounds(self):
+        return self.round_state()["finished"]
 
     def barren(self, entries):
         """Whether a round's ENTRIES hold no reasonable candidate (none accepted or more than one standard error up)."""
         return not skill_score.promising(entries)
 
     def run(self, rounds):
-        stop = self.work / "STOP.json"
-        if stop.exists():
-            self.log(f"stopped earlier: {json.loads(stop.read_text())['reason']}; delete {stop} to run more rounds")
+        state = self.round_state()
+        if state["stop"]:
+            self.log(f"stopped earlier: {state['stop']['reason']}; remove \"stop\" from {self.work / 'rounds.json'} "
+                     f"(and {self.work / 'STOP.json'}) to run more rounds")
             return
-        done = max(self.completed_rounds(), default=0)
+        done = max(state["finished"], default=0)
         for number in range(done + 1, done + rounds + 1):
+            self.save_round_state({**state, "started": number})
             self.round(number)
-            (self.work / "rounds.json").write_text(json.dumps(sorted({*self.completed_rounds(), number})))
+            stop = None
             if number == 1 and self.barren([e for e in self.archive() if e.get("round") == 1]):
-                reason = "round 1 produced no reasonable candidate; not worth more rounds"
-                stop.write_text(json.dumps({"round": number, "reason": reason}))
-                self.log(f"{reason}; stopping (recorded in {stop})")
+                stop = {"round": number, "reason": "round 1 produced no reasonable candidate; not worth more rounds"}
+            state = {"finished": sorted({*state["finished"], number}), "started": None, "stop": stop}
+            self.save_round_state(state)
+            if stop:
+                (self.work / "STOP.json").write_text(json.dumps(stop))  # a readable copy of the decision
+                self.log(f"{stop['reason']}; stopping (recorded in {self.work / 'rounds.json'})")
                 return
 
     # --- what a profile may redirect ---

@@ -90,7 +90,6 @@ class CuroboPlanner:
 
     def plan(self, frame, side, pre_world, pose_world, exclude_labels=()):
         """The server's reply for the arm's goal set of (pre, pose) world poses, best first."""
-        self.ensure_configured(frame, side)
         pelvis_world = np.linalg.inv(self.world_pelvis(frame))
         depth = np.array(frame.depth, dtype=np.float32)
         excluded = frame.labels == -1

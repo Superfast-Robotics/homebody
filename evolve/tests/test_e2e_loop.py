@@ -6,8 +6,8 @@ import tomllib
 from pathlib import Path
 
 from evolve import skill_score
-from evolve.e2e_loop import (E2EMixin, host_of, layout_cluster, read_split, session_row, summarise,
-                              unsafe)
+from evolve.e2e_loop import (RESCORABLE, E2EMixin, host_of, layout_cluster, ledger_total, read_split, session_row,
+                              summarise, unsafe)
 from evolve.skill_loop import SkillLoop
 
 HERE = Path(__file__).resolve().parents[1]
@@ -57,7 +57,44 @@ def test_results_that_cannot_be_judged_are_infrastructure(tmp_path):
     assert session_row("s", "r0", tmp_path / "s" / "r0")["infra"]
     (tmp_path / "u" / "r0").mkdir(parents=True)
     (tmp_path / "u" / "r0" / "exit_code").write_text("0\n")  # ran, but the scorer failed
-    assert session_row("u", "r0", tmp_path / "u" / "r0")["status"] == "unscored"
+    (tmp_path / "u" / "r0" / "usage.json").write_text(json.dumps({"credits": 2.0}))
+    row = session_row("u", "r0", tmp_path / "u" / "r0")
+    assert row["infra"] and row["status"] == "unscored" and row["status"] in RESCORABLE
+
+
+def test_a_session_with_unknown_usage_is_charged_the_cap_and_never_judged(tmp_path):
+    for name, usage in (("missing", None), ("unmetered", {"credits": 0.0, "unmetered": True}), ("list", [1]),
+                        ("no_credits", {"main_input": 5})):
+        folder = tmp_path / name / "r0"
+        write_result(folder, [3, 3])
+        if usage is None:
+            (folder / "usage.json").unlink()
+        else:
+            (folder / "usage.json").write_text(json.dumps(usage))
+        row = session_row(name, "r0", folder, ["o0", "o1"], cap=8.0)
+        assert row["infra"] and row["status"] == "unmetered" and row["credits"] == 8.0 and row["placed"] == 0.0
+
+
+def test_a_result_that_is_not_a_record_or_has_no_status_never_gets_credit(tmp_path):
+    folder = tmp_path / "l" / "r0"
+    write_result(folder, [3])
+    (folder / "result.json").write_text("[1, 2]")
+    row = session_row("l", "r0", folder, ["o0"])
+    assert row["infra"] and row["status"] == "invalid result" and row["placed"] == 0.0
+    for name, exit_code in (("ok", "0"), ("failed", "1")):
+        folder = tmp_path / name / "r0"
+        write_result(folder, [3], exit_code=exit_code)
+        record = json.loads((folder / "result.json").read_text())
+        del record["status"]
+        (folder / "result.json").write_text(json.dumps(record))
+        row = session_row(name, "r0", folder, ["o0"])
+        assert row["placed"] == 0.0 and (row["infra"] if exit_code == "0" else row["crashed"] and not row["infra"])
+
+
+def test_the_ledger_counts_the_last_amount_of_every_key():
+    text = ("session:a@1 8.0\nsession:b@2 8.0\nastra 30.5\nsession:a@1 2.75\n"
+            "session:a@3 8.0\nastra 41.0\nbroken line\n")  # a@3: a re-run attempt, still in flight
+    assert ledger_total(text) == 2.75 + 8.0 + 8.0 + 41.0
 
 
 def test_disturbing_other_products_costs_a_share_of_an_object(tmp_path):
@@ -159,20 +196,59 @@ def test_a_preregistered_val_margin_needs_val_shown_non_inferior():
     assert not held["ok"] and held["basis"].startswith("val not shown non-inferior")
 
 
-def test_an_unfinished_round_resumes_and_a_barren_first_round_stays_stopped(tmp_path):
+def round_loop(folder, archive, ran):
     from types import SimpleNamespace
-    ran, archive = [], []
-    loop = SimpleNamespace(work=tmp_path, log=lambda m: None, archive=lambda: archive,
-                           completed_rounds=lambda: SkillLoop.completed_rounds(loop),
+    loop = SimpleNamespace(work=folder, log=lambda m: None, archive=lambda: archive,
+                           archived_rounds=lambda: E2EMixin.archived_rounds(loop),
                            barren=lambda entries: E2EMixin.barren(loop, entries))
-    loop.round = lambda n: (ran.append(n), archive.append({"id": f"e{n:03d}c1", "round": n, "status": "rejected"}))
-    archive.append({"id": "b000", "round": 0, "status": "baseline"})
+    loop.round_state = lambda: SkillLoop.round_state(loop)
+    loop.save_round_state = lambda state: SkillLoop.save_round_state(loop, state)
+    loop.completed_rounds = lambda: SkillLoop.completed_rounds(loop)
+
+    def round_(n):
+        assert json.loads((folder / "rounds.json").read_text())["started"] == n  # recorded before any proposal
+        ran.append(n)
+        archive.append({"id": f"e{n:03d}c1", "round": n, "status": "rejected"})
+    loop.round = round_
+    return loop
+
+
+def test_an_unfinished_round_resumes_and_a_barren_first_round_stays_stopped(tmp_path):
+    ran, archive = [], [{"id": "b000", "round": 0, "status": "baseline"}]
+    loop = round_loop(tmp_path, archive, ran)
     SkillLoop.run(loop, 3)
-    assert ran == [1] and (tmp_path / "STOP.json").exists()  # no accepted candidate in round 1
+    state = json.loads((tmp_path / "rounds.json").read_text())
+    assert ran == [1] and state["finished"] == [1] and state["stop"]["round"] == 1  # written together
     SkillLoop.run(loop, 3)
     assert ran == [1]  # the stop decision persists
     (tmp_path / "STOP.json").unlink()
-    (tmp_path / "rounds.json").write_text("[1]")
+    (tmp_path / "rounds.json").write_text(json.dumps({"finished": [1], "started": 2, "stop": None}))
     archive.append({"id": "e002c1", "round": 2, "status": "rejected"})  # round 2 started, never finished
     SkillLoop.run(loop, 1)
     assert ran == [1, 2]  # round 2 is resumed, not skipped
+
+
+def test_an_archived_rejection_never_marks_an_end_to_end_round_finished(tmp_path):
+    ran = []
+    archive = [{"id": "b000", "round": 0, "status": "baseline"},
+               {"id": "e001c1", "round": 1, "status": "rejected"}]  # round 1 died before rounds.json was written
+    SkillLoop.run(round_loop(tmp_path, archive, ran), 1)
+    assert ran == [1]
+
+
+def test_a_codex_call_killed_at_its_time_limit_still_records_its_charge(tmp_path, monkeypatch):
+    import subprocess
+
+    import pytest
+
+    from evolve import astra
+
+    def killed(*args, **kwargs):
+        raise subprocess.TimeoutExpired("codex", 5, output=b'{"type": "turn.started"}\n', stderr=b"")
+    monkeypatch.setattr(astra, "settings", lambda: {"model": "gpt-6-astra", "effort": "medium", "timeout": 5})
+    monkeypatch.setattr(astra.subprocess, "run", killed)
+    with pytest.raises(RuntimeError, match="timed out"):
+        astra.codex("prompt", tmp_path, "read-only", tmp_path / "note.md")
+    usage = json.loads((tmp_path / "note.usage.json").read_text())
+    assert usage["credits"] == astra.TIMED_OUT_CREDITS and not usage["metered"]
+    assert astra.credits_in(tmp_path) == astra.TIMED_OUT_CREDITS

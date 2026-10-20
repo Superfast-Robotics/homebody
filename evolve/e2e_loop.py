@@ -46,11 +46,16 @@ from .skill_loop import COMPLETE, HERE, SPLITS, SkillLoop, coder_digest, public_
 from .workspace import copy_runs
 
 SESSION_TIMEOUT = 7200  # seconds run_jobs.sh allows a session: a timed-out or crashed session is charged all of it
+# the planner's Python environment, listed without pip (it has none)
+PACKAGES = ("import importlib.metadata as m, sys; print(sys.version.split()[0]); "
+            "[print(d.metadata['Name'], d.version) for d in sorted(m.distributions(), key=lambda d: d.metadata['Name'].lower())]")
+SESSION_CREDIT_CAP = 8.0  # credits a session is charged when its usage is unknown (the profile's session_credit_cap)
 KEYFRAMES = 40           # head and wrist keyframes kept per failed train session in the workspace
 COLLECTED = ("result.json", "usage.json", "score.out", "score.err", "skipped", "run.log", "exit_code", "events.jsonl",
              "outcome.json", "trace.json", "REQUEST.md", "tools.jsonl", "start_*.py", "last_message.json")
 CRASHED = ("error", "physics_invalid", "cancelled", "interrupted")  # session statuses its own code caused
 INFRA_STATUS = ("provider_error",)  # the model provider failed: not the candidate's doing
+RESCORABLE = ("unscored", "invalid result", "unmetered")  # a session ran but its record could not be read
 ASSIGNMENT = "host = (task index + repeat) mod hosts; versions interleaved per host"  # part of the experiment
 # what the proposer's source export leaves out: how held-out tasks are made, the loop itself, the original targets
 EXPORT_EXCLUDES = ("evolve", "tools/warehouse_variants.py", "tools/scenegen.py", "tests/test_warehouse_variants.py",
@@ -87,24 +92,38 @@ def read_json(path):
         return None
 
 
-def session_row(task, repeat, folder, targets=None, penalty=0.0):
+def session_credits(folder, cap):
+    """(credits, known) of one session's usage.json: a missing, unreadable or unmetered record is not free, it is
+    charged CAP (the per-session cap) and marked unknown."""
+    usage = read_json(folder / "usage.json")
+    if not isinstance(usage, dict) or usage.get("unmetered") or not isinstance(usage.get("credits"), (int, float)):
+        return float(cap), False
+    return float(usage["credits"]), True
+
+
+def session_row(task, repeat, folder, targets=None, penalty=0.0, cap=SESSION_CREDIT_CAP):
     """One collected session as an episode row: value (placed share less the disturbance penalty), stage, success,
-    credits and seconds. "infra" marks a session that could not be judged on its merits; "crashed" one its own code
-    ended (an error status, a nonzero exit, a timeout): a failure that counts toward the crash share, charged its
-    credits and, without a measured time, the whole timeout."""
+    credits and seconds. "infra" marks a session that could not be judged on its merits (never full credit); "crashed"
+    one its own code ended (an error status, a nonzero exit, a timeout): a failure that counts toward the crash share,
+    charged its credits and, without a measured time, the whole timeout. A session that ran with unknown usage is
+    charged CAP and is infrastructure: its cost could not be measured."""
     key = episode_key(task, repeat)
-    usage = read_json(folder / "usage.json") or {}
-    credits = float(usage.get("credits", 0.0))
     exit_code = (folder / "exit_code").read_text().strip() if (folder / "exit_code").exists() else None
+    credits, metered = session_credits(folder, cap) if exit_code is not None else (0.0, True)
     log = folder / "run.log"
     tail = " | ".join(log.read_text(errors="replace").strip().splitlines()[-3:])[:300] if log.exists() else "no output"
     base = {"episode": key, "task": task, "stage": 0.0, "placed": 0.0, "success": False, "credits": credits,
             "seconds": float(SESSION_TIMEOUT), "objects": {}, "disturbed": [], "invalid": [], "infra": False,
-            "crashed": False, "status": "?"}
+            "crashed": False, "status": "?", "metered": metered}
     if (folder / "skipped").exists() or exit_code is None:
         why = (folder / "skipped").read_text().strip() if (folder / "skipped").exists() else "never ran"
         return {**base, "infra": True, "status": "not run", "error": f"session not run: {why}"}
+    if not metered:
+        return {**base, "infra": True, "status": "unmetered",
+                "error": f"the session's usage could not be read; charged {cap:g} credits: {tail}"}
     result = read_json(folder / "result.json")
+    if result is not None and not isinstance(result, dict):
+        return {**base, "infra": True, "status": "invalid result", "error": "result.json is not a scoring record"}
     if result is None:
         if exit_code == "0":  # the session ended normally but its scoring failed: the scorer's problem
             err = (folder / "score.err").read_text(errors="replace")[-300:] if (folder / "score.err").exists() else ""
@@ -116,7 +135,12 @@ def session_row(task, repeat, folder, targets=None, penalty=0.0):
             or any(not isinstance(o, dict) or o.get("stage") not in (0, 1, 2, 3) for o in objects.values()):
         return {**base, "infra": True, "status": "invalid result",
                 "error": f"result does not score the task's targets {sorted(targets or [])}: {sorted(objects or {})}"}
-    status = result.get("status") or "?"
+    status = result.get("status")
+    if not status:  # no outcome record: a crash when the session failed, else a result that cannot be judged
+        if exit_code != "0":
+            return {**base, "crashed": True, "status": "crashed" if exit_code != "124" else "timed out",
+                    "error": f"session exited {exit_code} without an outcome: {tail}"}
+        return {**base, "infra": True, "status": "invalid result", "error": "the result records no session status"}
     if status in INFRA_STATUS:
         return {**base, "infra": True, "status": status, "error": f"the model provider failed: {tail}"}
     disturbed = list(result.get("disturbed") or [])
@@ -132,12 +156,12 @@ def session_row(task, repeat, folder, targets=None, penalty=0.0):
             **({"error": f"exit {exit_code}, status {status}: {tail}"} if crashed else {})}
 
 
-def read_split(split_dir, expected=(), targets=None, penalty=0.0):
+def read_split(split_dir, expected=(), targets=None, penalty=0.0, cap=SESSION_CREDIT_CAP):
     """episode key -> row for every EXPECTED (task, repeat) under SPLIT_DIR/<task>/<repeat>/ (a session that left
     nothing is an infrastructure row, never left out); TARGETS: {task: target ids} to validate results against."""
     split_dir = Path(split_dir)
     return {episode_key(task, repeat): session_row(task, repeat, split_dir / task / repeat,
-                                                   (targets or {}).get(task), penalty)
+                                                   (targets or {}).get(task), penalty, cap)
             for task, repeat in expected}
 
 
@@ -219,9 +243,17 @@ class E2EMixin:
     def penalty(self):
         return float(self.cfg.get("disturbance_penalty", 0.25))
 
+    @property
+    def cap(self):
+        return float(self.cfg.get("session_credit_cap", SESSION_CREDIT_CAP))
+
+    def split_rows(self, folder, split):
+        """The rows of SPLIT's expected sessions collected under FOLDER."""
+        return read_split(folder, self.expected(split), self.targets(split), self.penalty, self.cap)
+
     def tasks(self, split):
-        """The split's tasks, listed from the volume once per process (never cached across runs: a changed suite
-        is a changed experiment)."""
+        """The split's tasks, listed from the volume once per process or fingerprint refresh (never cached across
+        runs: a changed suite is a changed experiment)."""
         cache = self.__dict__.setdefault("_tasks", {})
         if split not in cache:
             cache[split] = suite_tasks(self.remote, self.cfg["suite"][split])
@@ -234,10 +266,15 @@ class E2EMixin:
         return [episode_key(task, repeat) for task, repeat in self.expected(split)]
 
     def task_info(self, splits=("train",)):
-        """{task: {"instruction", "names", "targets"}} of SPLITS' tasks, cached per suite listing."""
+        """{task: {"instruction", "names", "targets"}} of SPLITS' tasks, cached by the listing AND the content of
+        every task's task_scene.json and targets (a task replaced at the same path is read afresh)."""
         listing = {t["name"]: (absolute(t["scene"], self.remote.base), absolute(t["targets"], self.remote.base))
                    for split in splits for t in self.tasks(split)}
-        cache = self.work / f"task_info_{hashlib.md5(json.dumps(listing, sort_keys=True).encode()).hexdigest()[:10]}.json"
+        files = " ".join(shlex.quote(f) for scene, targets in sorted(listing.values())
+                         for f in (f"{scene}/task_scene.json", targets))
+        content = self.remote.ssh(f"md5sum {files} | md5sum | cut -c1-12").strip() if files else ""
+        key = hashlib.md5((json.dumps(listing, sort_keys=True) + content).encode()).hexdigest()[:10]
+        cache = self.work / f"task_info_{key}.json"
         if not cache.exists():
             script = ("import json,sys\nout={}\nfor name,(scene,targets) in json.loads(sys.argv[1]).items():\n"
                       " s=json.load(open(scene+'/task_scene.json'));q=json.load(open(targets))\n"
@@ -265,6 +302,11 @@ class E2EMixin:
     def judge(self, parent, child):
         return skill_score.judge(parent, child, self.objective, self.weights, self.speed, self.cluster,
                                  val_margin=self.cfg.get("val_margin"), val_z=float(self.cfg.get("val_z", 1.0)))
+
+    def archived_rounds(self):
+        """No round is taken as finished from the archive: only rounds.json says a round finished (an end-to-end
+        work folder always has it from its first round on)."""
+        return []
 
     def barren(self, entries):
         """The user's rule for end-to-end rounds: a first round with no accepted candidate ends the run."""
@@ -319,10 +361,14 @@ class E2EMixin:
                 "judge": {k: getattr(skill_score, k) for k in ("Z_DROP", "Z_RISE", "Z_RISE_SLOWER", "SLOWER",
                                                                  "CRASH_SHARE")}, "speed": self.speed}
 
-    def setup_fingerprint(self):
-        """The experiment id: every input a verdict assumes fixed. The runner, scorer and evaluator, the settings
-        and model, the suite's membership and content, the robot, every host's Python environment and planner
-        services, the scheduling and statistical policy and the profile. Computed once per process."""
+    def setup_fingerprint(self, refresh=False):
+        """The experiment id: every input a verdict assumes fixed. The runner, scorer, evaluator and acceptance code,
+        the settings and model, the suite's membership and content, the robot, every host's Python environment, the
+        planner's environment and services, the scheduling and statistical policy and the profile. Computed once per
+        process; REFRESH measures everything again (the after-check of a baseline, the frozen check of a round)."""
+        if refresh:
+            self.__dict__.pop("_experiment", None)
+            self.__dict__.pop("_tasks", None)
         if "_experiment" in self.__dict__:
             return self._experiment
         listing = {s: sorted(t["name"] for t in self.tasks(s)) for s in self.cfg["suite"]}
@@ -334,10 +380,13 @@ class E2EMixin:
             timeout=1200).strip()
         environments = {h.host: h.ssh(f"({h.base}/.venv/bin/python -V; {h.base}/.venv/bin/pip freeze 2>/dev/null) "
                                       f"| md5sum | cut -c1-12").strip() for h in self.hosts()}
+        planner = {h.host: h.ssh(f"cd {Path(h.base).parent}/curobo && (.venv/bin/python -c {shlex.quote(PACKAGES)}; "
+                                 f"git rev-parse HEAD 2>/dev/null) | md5sum | cut -c1-12").strip() for h in self.hosts()}
         profile = {k: v for k, v in self.cfg.items() if k not in ("brief_note",)}
         parts = {"local": md5(HERE / "run_jobs.sh", HERE / "score_episode.py", REPO / "evaluation/evaluate.py",
                               HERE / self.cfg["settings"]),
-                 "suite": listing, "content": content, "environments": environments,
+                 "acceptance": md5(HERE / "skill_score.py"), "suite": listing, "content": content,
+                 "environments": environments, "planner_environment": planner,
                  "services": self.services_check(), "policy": self.policy(), "profile": profile}
         self._experiment = hashlib.md5(json.dumps(parts, sort_keys=True, default=str).encode()).hexdigest()[:12]
         (self.work / f"experiment_{self._experiment}.json").write_text(json.dumps(parts, indent=1, default=str))
@@ -355,48 +404,94 @@ class E2EMixin:
         return f"{self.remote.work}/e2e/{self.cfg.get('workdir', self.skill)}/{cid}"
 
     def summaries(self, cid, splits=SPLITS):
-        return {s: summarise(read_split(self.work / "results" / cid / s, self.expected(s), self.targets(s), self.penalty),
-                             self.cluster) for s in splits}
+        return {s: summarise(self.split_rows(self.work / "results" / cid / s, s), self.cluster) for s in splits}
 
     def round(self, number):
         self.round_dir = self.work / "rounds" / f"{'e' if isinstance(self, EvoLoop) else 's'}{number:03d}"
         return super().round(number)
 
-    def check_budget(self, sessions):
-        """Refuse an evaluation the round's credit cap cannot pay for: Astra's credits so far this round plus
-        SESSIONS at the expected credits per session."""
-        cap = self.cfg.get("round_credit_budget")
+    # --- credits: one persistent ledger per round (or per evaluation outside a round) ---
+    def ledger(self, cids, splits):
+        """The remote ledger file this evaluation charges: the round's when in a round, else the commands' own
+        (the splits and versions it measures). It outlives batches and resumes."""
         round_dir = getattr(self, "round_dir", None)
-        if not cap or round_dir is None:
-            return
-        spent = astra.credits_in(round_dir) if round_dir.exists() else 0.0
-        estimate = spent + sessions * float(self.cfg.get("expected_session_credits", 3.0))
-        if estimate > float(cap):
-            raise BudgetExceeded(f"{sessions} sessions would bring this round to about {estimate:.0f} credits, over "
-                                 f"its cap of {cap}; raise round_credit_budget deliberately to go on")
+        scope = round_dir.name if round_dir is not None else f"{'+'.join(splits)}-{'+'.join(sorted(cids))}"
+        return f"{self.remote.work}/e2e/{self.cfg.get('workdir', self.skill)}/ledger-{scope}.txt"
 
-    def finished(self, root, split):
-        """The remote sessions of SPLIT under ROOT that ran to an exit code (skipped ones excluded)."""
-        listing = self.remote.ssh(f"cd {root}/{split} 2>/dev/null && for d in */r*; do [ -e $d/exit_code ] && "
-                                  f"[ ! -e $d/skipped ] && echo $d; done; true")
-        return set(listing.split())
+    def committed(self, ledger):
+        return ledger_total(self.remote.ssh(f"cat {ledger} 2>/dev/null; true"))
+
+    def charge_astra(self, ledger):
+        """Bring the ledger's Astra line up to the round's Codex credits so far (diagnosis, proposals, lessons)."""
+        round_dir = getattr(self, "round_dir", None)
+        if round_dir is not None and round_dir.exists():
+            self.remote.ssh(f"echo 'astra {astra.credits_in(round_dir)}' >> {ledger}")
+
+    def check_budget(self, sessions, ledger):
+        """Refuse an evaluation the cap cannot pay for: the ledger's credits (earlier sessions and attempts, Astra)
+        plus SESSIONS at the expected credits per session."""
+        cap = float(self.cfg.get("round_credit_budget") or 0)
+        if not cap:
+            return
+        estimate = self.committed(ledger) + sessions * float(self.cfg.get("expected_session_credits", 3.0))
+        if estimate > cap:
+            raise BudgetExceeded(f"{sessions} sessions would bring {Path(ledger).name} to about {estimate:.0f} credits, "
+                                 f"over its cap of {cap:g}; raise round_credit_budget deliberately to go on")
+
+    # --- collecting, re-scoring and re-running ---
+    def collect(self, root, split, local):
+        """The remote SPLIT under ROOT, copied afresh to LOCAL (the remote keeps every attempt)."""
+        if local.exists():
+            shutil.rmtree(local)
+        local.mkdir(parents=True)
+        rsync("-a", "--include=*/", *(f"--include={name}" for name in COLLECTED),
+              "--include=**/workspace/skills/*.py", "--include=**/workspace/lib/*.py", "--exclude=*",
+              "--prune-empty-dirs", f"{self.remote.host}:{root}/{split}/", f"{local}/")
 
     def rescore(self, root, split, sessions):
-        """Score again, on the remote, the SESSIONS that ran but have no result (the scorer failed earlier)."""
+        """Measure the usage of, and score again on the remote, SESSIONS ('task/rN') that ran but whose usage or
+        result could not be read; what still fails is re-run."""
         if not sessions:
             return
         model = self.cfg.get("agent_model", self.loop.cfg["agent"]["model"])
         targets = {t["name"]: absolute(t["targets"], self.remote.base) for t in self.tasks(split)}
-        commands = [f"cd {root}/{split}/{s} && {self.remote.base}/.venv/bin/python {self.remote.work}/score_episode.py "
-                    f"session {targets[s.split('/')[0]]} {self.remote.work}/evaluate.py {model} > score.out 2>> score.err "
-                    f"&& cp score.out result.json" for s in sorted(sessions)]
+        python, work = f"{self.remote.base}/.venv/bin/python", self.remote.work
+        commands = [f"(cd {root}/{split}/{s} && {python} {work}/score_episode.py --usage session {model} > usage.new "
+                    f"2>> score.err && mv usage.new usage.json; rm -f result.json; {python} {work}/score_episode.py "
+                    f"session {targets[s.split('/')[0]]} {work}/evaluate.py {model} > score.out 2>> score.err "
+                    f"&& cp score.out result.json)" for s in sorted(sessions)]
         self.remote.ssh("; ".join(commands) + "; true", timeout=1800)
+
+    def retire(self, root, split, sessions):
+        """Keep SESSIONS' earlier attempts beside them (task/rN.attempt-K) before they run again: their evidence and
+        their charges stay."""
+        if sessions:
+            self.remote.ssh(f"cd {root}/{split} && for s in {' '.join(sorted(sessions))}; do n=1; "
+                            f"while [ -e $s.attempt-$n ]; do n=$((n+1)); done; mv $s $s.attempt-$n; done")
+
+    def settle(self, root, split, local):
+        """Collect SPLIT, score again what ran but could not be read, collect again. The rows by state:
+        {"rerun": sessions that ran and still cannot be judged, "run": sessions never run}."""
+        self.collect(root, split, local)
+        rows = self.split_rows(local, split)
+        path = {key: f"{row['task']}/{key.rsplit('__', 1)[1]}" for key, row in rows.items()}
+        rescore = [path[k] for k, r in rows.items() if r["infra"] and r["status"] in RESCORABLE]
+        if rescore:
+            self.rescore(root, split, rescore)
+            self.collect(root, split, local)
+            rows = self.split_rows(local, split)
+        infra = {k: r for k, r in rows.items() if r["infra"]}
+        return {"run": sorted(path[k] for k, r in infra.items() if r["status"] == "not run"),
+                "rerun": sorted(path[k] for k, r in infra.items() if r["status"] != "not run")}
 
     def evaluate_many(self, items, splits=SPLITS, videos=False):
         """Every pending session of every version in ITEMS ((cid, checkout, only, cand)) in one queue per host, each
         task-repeat on its fixed host, versions interleaved; each version's splits are collected, checked (an
         infrastructure failure stops without a verdict) and summarised. A split already complete under the same
-        commit and experiment is reused; an interrupted one resumes. {cid: summaries}."""
+        commit and experiment is reused; an interrupted one resumes: sessions never run are run, sessions whose
+        usage or result could not be read are scored again, and those that still cannot be judged (or whose model
+        provider failed) run again with their earlier attempt kept. Every session reserves its cap in the ledger
+        before it starts. {cid: summaries}."""
         experiment, results, pending = self.setup_fingerprint(), {}, []
         hosts = self.hosts()
         per_host = [[] for _ in hosts]
@@ -420,10 +515,12 @@ class E2EMixin:
                 if stale and read_json_text(stale) != identity:
                     self.remote.ssh(f"rm -rf {root}/{split}")
                 self.remote.ssh(f"mkdir -p {root}/{split} && echo {shlex.quote(json.dumps(identity))} > {marker}")
-                done = self.finished(root, split)
+                state = self.settle(root, split, local / split)
+                self.retire(root, split, state["rerun"])
+                waiting = set(state["run"] + state["rerun"])
                 for index, task in enumerate(self.tasks(split)):
                     for r in range(self.repeats):
-                        if f"{task['name']}/r{r}" in done:
+                        if f"{task['name']}/r{r}" not in waiting:
                             continue
                         per_host[host_of(index, r, len(hosts))].append(
                             (index, r, f"{self.remote.work}/cands/{cand} {absolute(task['scene'], self.remote.base)} "
@@ -432,12 +529,15 @@ class E2EMixin:
         if not pending:
             return results
         sessions = sum(map(len, per_host))
-        self.check_budget(sessions)
+        ledger = self.ledger([cid for cid, *_ in pending], splits)
+        self.remote.ssh(f"mkdir -p {Path(ledger).parent} && touch {ledger}")
+        self.charge_astra(ledger)
+        self.check_budget(sessions, ledger)
         started = time.monotonic()
         batch = f"{self.remote.work}/e2e/{self.cfg.get('workdir', self.skill)}/batch-{pending[0][0]}-{len(pending)}"
         stop = f"{batch}/STOP"
-        self.remote.ssh(f"mkdir -p {batch} && rm -f {stop} {stop}.ledger")
-        budget = round(sessions * float(self.cfg.get("session_credit_cap", 8.0)), 1)
+        self.remote.ssh(f"mkdir -p {batch} && rm -f {stop}")
+        budget = float(self.cfg.get("round_credit_budget") or 1e9)
         parallel, model = int(self.cfg.get("parallel", self.remote.parallel)), self.cfg.get(
             "agent_model", self.loop.cfg["agent"]["model"])
 
@@ -449,36 +549,27 @@ class E2EMixin:
             host.ssh(f"cat > {jobs} << 'EOF'\n" + "\n".join(share) + "\nEOF")
             waves = -(-len(share) // parallel)
             host.ssh(f"bash {host.work}/run_jobs.sh {host.base} {parallel} {jobs} {host.work} {model} "
-                     f"{host.work}/{settings} {stop} {budget}", timeout=waves * (SESSION_TIMEOUT + 300) + 600)
+                     f"{host.work}/{settings} {stop} {budget} {self.cap} {ledger}",
+                     timeout=waves * (SESSION_TIMEOUT + 300) + 600)
 
         if sessions:
             self.log(f"dispatching {sessions} sessions ({', '.join(f'{h.host} {len(q)}' for h, q in zip(hosts, per_host))}), "
-                     f"credit cap {budget}")
+                     f"{self.committed(ledger):.1f} credits committed in {Path(ledger).name}, cap {budget:g}")
             with ThreadPoolExecutor(len(hosts)) as pool:
                 list(pool.map(run_share, range(len(hosts))))
         seconds = time.monotonic() - started
         stopped = self.remote.ssh(f"cat {stop} 2>/dev/null; true").strip()
         for cid, local, root, identity, todo in pending:
-            for split in todo:
-                done = self.finished(root, split)
-                unscored = {s for s in done if not self.remote.ssh(f"[ -e {root}/{split}/{s}/result.json ] && echo y; true").strip()}
-                self.rescore(root, split, unscored)
-                if (local / split).exists():
-                    shutil.rmtree(local / split)
-                (local / split).mkdir(parents=True)
-                rsync("-a", "--include=*/", *(f"--include={name}" for name in COLLECTED),
-                      "--include=**/workspace/skills/*.py", "--include=**/workspace/lib/*.py", "--exclude=*",
-                      "--prune-empty-dirs", f"{self.remote.host}:{root}/{split}/", f"{local / split}/")
+            unjudged = {split: self.settle(root, split, local / split) for split in todo}
             if score.quota_hit(local) or "usage limit" in stopped:
                 raise QuotaExhausted(f"the model's usage limit was hit while evaluating {cid}; resume once it resets")
-            infra = {s: summarise(read_split(local / s, self.expected(s), self.targets(s), self.penalty),
-                                  self.cluster)["infra"] for s in todo}
-            if stopped and any(infra.values()):
-                raise BudgetExceeded(f"evaluation stopped ({stopped}); {sum(map(len, infra.values()))} sessions of {cid} "
-                                     f"not run; resume deliberately")
-            if any(infra.values()):
-                raise InfrastructureFailure(f"{cid}: sessions that could not be judged: {infra}; fix the cause and run "
-                                            f"the command again (only these sessions re-run)")
+            left = {s: state["run"] + state["rerun"] for s, state in unjudged.items() if state["run"] or state["rerun"]}
+            if stopped and any(state["run"] for state in unjudged.values()):
+                raise BudgetExceeded(f"evaluation stopped ({stopped}); sessions of {cid} not run: {left}; resume "
+                                     f"deliberately")
+            if left:
+                raise InfrastructureFailure(f"{cid}: sessions that could not be judged: {left}; fix the cause and run "
+                                            f"the command again (they run again, earlier attempts kept)")
             for split in todo:
                 (local / split / "identity.json").write_text(json.dumps(identity))
                 (local / split / COMPLETE).write_text("done\n")
@@ -489,6 +580,7 @@ class E2EMixin:
                                              f"{v.get('placed_by_layout', {})}" for s, v in summaries.items())
                      + f"; {spent:.1f} session credits ({seconds:.0f} s for {len(pending)} version"
                      + f"{'s' if len(pending) > 1 else ''})")
+        self.log(f"{Path(ledger).name}: {self.committed(ledger):.1f} credits committed (sessions, earlier attempts, Astra)")
         return results
 
     def audit(self, cid, summaries):
@@ -557,7 +649,7 @@ class E2EMixin:
         return astra.codex(prompt.replace(str(path), str(folder)), folder, "read-only", out, **model)
 
     def run_table(self, cid):
-        rows = read_split(self.work / "results" / cid / "train", self.expected("train"), self.targets("train"), self.penalty)
+        rows = self.split_rows(self.work / "results" / cid / "train", "train")
         lines = ["| session | placed | stage | status | object outcomes | disturbed | coder calls | credits | min |",
                  "|---|---|---|---|---|---|---|---|---|"]
         for key, row in sorted(rows.items()):
@@ -660,9 +752,8 @@ class E2EMixin:
                     if '"mechanism_active"' in line:
                         names.append(str((json.loads(line).get("event") or {}).get("mechanism")))
             return names
-        targets = self.targets("train")
-        child = read_split(self.work / "results" / cid / "train", self.expected("train"), targets, self.penalty)
-        before = read_split(self.work / "results" / parent / "train", self.expected("train"), targets, self.penalty)
+        child = self.split_rows(self.work / "results" / cid / "train", "train")
+        before = self.split_rows(self.work / "results" / parent / "train", "train")
         new = {}
         for key, row in child.items():
             repeat = key.rsplit("__", 1)[1]
@@ -674,6 +765,19 @@ class E2EMixin:
         self.log(f"{cid}: new code acted in {len(record['activated_in'])} train sessions, placed share changed in "
                  f"{len(changed)}")
         return record
+
+
+def ledger_total(text):
+    """A ledger's credits: the last amount of every key (a reservation is replaced by its settlement)."""
+    last = {}
+    for line in text.splitlines():
+        key, _, amount = line.strip().rpartition(" ")
+        if key:
+            try:
+                last[key] = float(amount)
+            except ValueError:
+                continue
+    return round(sum(last.values()), 3)
 
 
 def read_json_text(text):

@@ -482,9 +482,11 @@ disturbance_penalty = 0.25   # a session loses a quarter of one object per other
 # errors, with layouts as clusters) above -val_margin of the placed share; round winners are exploratory until test.
 val_margin = 0.05
 val_z = 1.0
-# Credit caps: an evaluation stops dispatching once its sessions charged session_credit_cap per session dispatched;
-# a round refuses an evaluation that would take Astra's credits so far plus its sessions (expected_session_credits
-# each) over round_credit_budget. Both stop without a verdict; resume deliberately.
+# Credit caps: one persistent ledger per round (per command outside rounds; e2e/<profile>/ledger-*.txt on the remote)
+# holds Astra's credits, every session attempt's settled credits and the session_credit_cap each running session
+# reserves when it starts (also what a session of unknown usage is charged). A session whose reservation would take the
+# ledger over round_credit_budget is not started, and an evaluation whose sessions (expected_session_credits each)
+# would is refused. Both stop without a verdict; the ledger survives a resume, so raise the cap deliberately.
 session_credit_cap = 8.0
 expected_session_credits = 3.0
 round_credit_budget = 900

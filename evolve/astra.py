@@ -8,6 +8,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 # Codex credits per 1M tokens (input, cached input, output); unknown models are priced as Astra.
 RATES = {"gpt-6-astra": (250.0, 25.0, 1250.0), "gpt-6.1-sol": (50.0, 2.5, 250.0), "gpt-6-luna": (2.5, 0.25, 12.5)}
+TIMED_OUT_CREDITS = 50.0  # charged for a call killed at its time limit before it reported any finished turn
 
 
 def settings(path=HERE / "config.toml"):
@@ -22,16 +23,25 @@ def codex(prompt, cd, sandbox, out, extra_dirs=(), model=None, effort=None):
                "-c", 'web_search="disabled"', "--output-last-message", str(out), "--color", "never", "--json"]
     for directory in extra_dirs:
         command += ["--add-dir", str(directory)]
-    result = subprocess.run(command + ["-"], check=False, input=prompt.encode(), capture_output=True, timeout=s["timeout"])
+    usage = Path(out).parent / (Path(out).stem + ".usage.json")
+    try:
+        result = subprocess.run(command + ["-"], check=False, input=prompt.encode(), capture_output=True,
+                                timeout=s["timeout"])
+    except subprocess.TimeoutExpired as error:  # the call was paid for: record what it reported, never nothing
+        stdout, stderr = error.stdout or b"", error.stderr or b""
+        (Path(out).parent / (Path(out).stem + ".stderr.txt")).write_bytes(stdout[-20000:] + stderr[-20000:])
+        record_usage(stdout, model or s["model"], usage, unreported=TIMED_OUT_CREDITS)
+        raise RuntimeError(f"codex timed out after {s['timeout']} s; see {out}") from error
     (Path(out).parent / (Path(out).stem + ".stderr.txt")).write_bytes(result.stdout[-20000:] + result.stderr[-20000:])
-    record_usage(result.stdout, model or s["model"], Path(out).parent / (Path(out).stem + ".usage.json"))
+    record_usage(result.stdout, model or s["model"], usage)
     if result.returncode != 0:
         raise RuntimeError(f"codex exited {result.returncode}; see {out}")
     return Path(out).read_text()
 
 
-def record_usage(stdout, model, path):
-    """Write the call's tokens and credits (from Codex's turn.completed events) to PATH."""
+def record_usage(stdout, model, path, unreported=0.0):
+    """Write the call's tokens and credits (from Codex's turn.completed events) to PATH, at least UNREPORTED (what a
+    timed-out call is charged for the turn it never reported)."""
     turns = []
     for line in stdout.decode(errors="replace").splitlines():
         if '"turn.completed"' in line:
@@ -44,6 +54,7 @@ def record_usage(stdout, model, path):
     output = sum(t.get("output_tokens", 0) for t in turns)
     rate_in, rate_cached, rate_out = RATES.get(model, RATES["gpt-6-astra"])
     credits = ((total_in - cached) * rate_in + cached * rate_cached + output * rate_out) / 1e6
+    credits = max(credits, unreported)  # a killed call's last turn never reports
     path.write_text(json.dumps({"model": model, "input": total_in, "cached": cached, "output": output,
                                 "credits": round(credits, 2), "metered": bool(turns)}))
 

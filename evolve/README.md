@@ -83,9 +83,13 @@ the standard error; val must also be shown non-inferior (`val_margin`, `val_z`, 
 exploratory until test. Each task-repeat runs on the same host for every version, and the planner services must
 check ready, running this checkout's `tools/curobo_server.py`, before sessions start. One experiment id (suite and
 its content, runner and scorer, settings and model, every host's environment and planner, scheduling and statistical
-policy, profile) guards baselines, parents and cached results. Credit caps (`session_credit_cap`,
-`round_credit_budget`) stop an evaluation without a verdict. Rounds are recorded as finished (`rounds.json`), an
-unfinished one resumes, and a first round with no accepted candidate stops the run (`STOP.json`). The proposer works
+policy, profile) guards baselines, parents and cached results; a baseline measures it again after its sessions and
+a round before its first proposal. A session with unknown usage, or a result that is not a complete scoring record,
+is never judged: it is re-scored, then run again with its earlier attempt kept (`task/rN.attempt-K`). A persistent
+ledger per round (`session_credit_cap` reserved by every running session, settled at its measured credits, plus
+Astra's) stops dispatch before `round_credit_budget` is passed, across resumes. `rounds.json` records the round under
+way before its first proposal, and its completion together with the stop decision (a first round with no accepted
+candidate stops the run). The proposer works
 in a source export (no git history, no suite generators, no loop code) and sees train sessions only; patches outside
 the editable files, touching frozen files (`tiers.toml`) or adding system, file, network or settings access are
 rejected unseen. Profile `demo-wh`: the Dex1 skills and the agent harness on the warehouse suite in
