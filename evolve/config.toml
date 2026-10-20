@@ -467,15 +467,20 @@ default = "demo-wh"
 name = "dex1-warehouse"
 workdir = "demo-wh"
 source = "src/homebody/skills/dex1/ and src/homebody/harness/"
+proposer_jail = true         # Astra (Codex) runs in a bubblewrap jail: its source export and the round folder only
+session_sandbox = true       # sessions and candidate tests run in bubblewrap on the hosts: all read-only but the
+                             # session's own folder, /tmp and the coder's home (evolve/remote.py SANDBOX)
 repeats = 2                  # sessions per task and version
 settings = "episode_settings_dex1.toml"
 agent_model = "sol61-litellm"
-parallel = 16                # sessions at once per host: the planner load test (evolve/curobo_load.py, 2026-10-20)
-                             # with 16 clients planning nonstop in mixed postures waited at most 199 s plus 56 s
-                             # of service, inside the 300 s planner timeout; 22 waited up to 285 s
+parallel = 12                # sessions at once per host: the planner load test (evolve/curobo_load.py through
+                             # Env.plan_path, 2026-10-20, CUDA graphs off) with 12 clients planning nonstop in mixed
+                             # postures on both hosts planned 72/72, waiting at most 228 s (283 s in all) inside the
+                             # 300 s planner timeout; 16 timed out twice
 services = ["/lambda/nfs/group-volume/workcell-sim/homebody-baseline/curobo_dex1/curobo_dex1_server.sh start > /dev/null 2>&1 < /dev/null"]
-# must print one "PORT ready MD5" line per server, MD5 = this checkout's tools/curobo_server.py, before sessions start
-service_checks = ["/lambda/nfs/group-volume/workcell-sim/homebody-baseline/curobo_dex1/curobo_dex1_server.sh check"]
+# restarts a down or broken server, then must print "PORT ready MD5" (or "busy" while a session holds it) per server,
+# MD5 = this checkout's tools/curobo_server.py; also run every minute while a batch runs (restarts are counted)
+service_checks = ["/lambda/nfs/group-volume/workcell-sim/homebody-baseline/curobo_dex1/curobo_dex1_server.sh watch"]
 objective = "placed"         # accept on the share of target objects placed (stage value is reported, not decisive)
 disturbance_penalty = 0.25   # a session loses a quarter of one object per other product it disturbed (floored at 0)
 # Preregistered (2026-10-20): validation must be shown non-inferior, its difference's lower bound (val_z standard

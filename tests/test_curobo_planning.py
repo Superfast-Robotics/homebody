@@ -1,4 +1,6 @@
 """The cuRobo client helpers."""
+from typing import ClassVar
+
 import numpy as np
 
 from homebody.helpers import curobo
@@ -13,7 +15,7 @@ def test_thinned_keeps_endpoints_and_limit():
 
 class FakeClient:
     """A planning server that records its calls: unconfigured until it is configured."""
-    calls = []
+    calls: ClassVar[list] = []
 
     def __init__(self, address, timeout):
         self.address, self.configured = address, False
@@ -46,3 +48,27 @@ def test_plan_configures_the_admitted_server_then_plans(monkeypatch, tmp_path):
     assert reply["success"]
     assert [method for _, method in FakeClient.calls] == ["ping", "configure", "plan_grasp"]
     assert len({address for address, _ in FakeClient.calls}) == 1 and planner.client is None
+
+
+def test_a_dead_admitted_server_fails_fast_as_unavailable(monkeypatch, tmp_path):
+    import pytest
+
+    from homebody.remote.wire import PolicyWireError
+    from homebody.session.settings import Settings
+
+    class Dead(FakeClient):
+        def call(self, method, payload=None):
+            FakeClient.calls.append((self.address, method))
+            raise PolicyWireError("did not answer")
+
+    monkeypatch.setattr(curobo, "PolicyClient", Dead)
+    monkeypatch.setattr(curobo.tempfile, "gettempdir", lambda: str(tmp_path))
+    FakeClient.calls = []
+    planner = curobo.CuroboPlanner(Settings())
+    monkeypatch.setattr(planner, "locks", lambda frame, side: {})
+    monkeypatch.setattr(planner, "world_pelvis", lambda frame: np.eye(4))
+    frame = type("Frame", (), {"depth": np.ones((4, 4)), "labels": np.zeros((4, 4), int), "intrinsics": np.eye(3),
+                               "world_camera": np.eye(4), "arm_joints": lambda self, side: np.zeros(7)})()
+    with pytest.raises(curobo.PlannerUnavailable):
+        planner.plan(frame, "right", [np.eye(4)], [np.eye(4)])
+    assert [method for _, method in FakeClient.calls] == ["ping"] and planner.client is None

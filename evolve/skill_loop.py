@@ -659,13 +659,17 @@ class SkillLoop:
                 return
 
     # --- what a profile may redirect ---
+    def jail(self):
+        """The folders a jailed proposer may also read (astra.jailed), or None to run Codex without a jail."""
+        return None
+
     def codex_write(self, prompt, path, out, **model):
         """A proposer writing a patch in the worktree PATH."""
-        return astra.codex(prompt, path, "workspace-write", out, **model)
+        return astra.codex(prompt, path, "workspace-write", out, jail=self.jail(), **model)
 
     def codex_read(self, prompt, path, out, **model):
         """A read-only diagnosis of the checkout PATH."""
-        return astra.codex(prompt, path, "read-only", out, **model)
+        return astra.codex(prompt, path, "read-only", out, jail=self.jail(), **model)
 
     def screen(self, base, commit, files):
         """Why a patch from BASE to COMMIT (changing FILES) is refused before it runs, or None."""

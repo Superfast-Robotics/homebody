@@ -28,12 +28,14 @@ or scored) is an infrastructure failure: the evaluation stops without a verdict,
 resumes it, re-running only those sessions (results already written are kept and re-scored if needed).
 """
 import argparse
+import dataclasses
 import hashlib
 import json
 import re
 import shlex
 import shutil
 import subprocess
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -45,6 +47,7 @@ from .remote import rsync, suite_tasks
 from .skill_loop import COMPLETE, HERE, SPLITS, SkillLoop, coder_digest, public_reason
 from .workspace import copy_runs
 
+WATCH_SECONDS = 60  # planner servers are watched (and restarted) this often while a batch runs
 SESSION_TIMEOUT = 7200  # seconds run_jobs.sh allows a session: a timed-out or crashed session is charged all of it
 # the planner's Python environment, listed without pip (it has none)
 PACKAGES = ("import importlib.metadata as m, sys; print(sys.version.split()[0]); "
@@ -234,6 +237,12 @@ class E2EMixin:
     TABLE = "e2e"
     FOLDER = "e2e"
 
+    def __init__(self, profile=None):
+        super().__init__(profile)
+        if self.cfg.get("session_sandbox", True):  # sessions and candidate tests in bubblewrap (remote.SANDBOX)
+            self.loop.remotes = [dataclasses.replace(r, sandbox=True) for r in self.loop.remotes]
+            self.remote = self.loop.remotes[0]
+
     # --- the suite ---
     @property
     def repeats(self):
@@ -335,21 +344,35 @@ class E2EMixin:
                 f"3 placed; mean / 3) is reported but does not decide")
 
     # --- the experiment's identity ---
-    def services_check(self):
-        """Every host's services ready and running this checkout's planner: {host: check output}."""
+    def services_check(self, start=True):
+        """Every host's services started (START) and watched: a server that is down or fails its CUDA check is
+        restarted (counted in self.restarts and logged), then each must be ready, or busy with a session, on this
+        checkout's planner. {host: [(port, planner md5)]}, the same whatever the servers are doing."""
         expected, out = md5(REPO / "tools/curobo_server.py"), {}
         for host in self.hosts():
-            for command in self.cfg.get("services", []):
+            for command in self.cfg.get("services", []) if start else ():
                 host.ssh(command, timeout=900, check=False)
             for command in self.cfg.get("service_checks", []):
-                result = host.ssh(command, timeout=300, check=False)
-                lines = [line for line in result.split("\n") if line.strip()]
-                bad = [line for line in lines if " ready " not in f"{line} " or not line.endswith(expected)]
-                if not lines or bad:
+                lines = [line for line in host.ssh(command, timeout=900, check=False).split("\n") if line.strip()]
+                restarted = [line for line in lines if " restarted" in line]
+                if restarted:
+                    self.restarts = getattr(self, "restarts", 0) + len(restarted)
+                    self.log(f"{host.host}: planner servers restarted: {restarted}")
+                state = [line for line in lines if " restarted" not in line]
+                bad = [line for line in state if line.split()[1:2] not in (["ready"], ["busy"]) or not line.endswith(expected)]
+                if not state or bad:
                     raise InfrastructureFailure(f"{host.host}: services not ready or not running planner {expected}: "
                                                 f"{bad or 'no output'}")
-                out[host.host] = lines
+                out[host.host] = sorted((line.split()[0], expected) for line in state)
         return out
+
+    def watch_services(self, done, every=WATCH_SECONDS):
+        """While a batch runs (until DONE is set), restart dead or broken planner servers every EVERY seconds."""
+        while not done.wait(every):
+            try:
+                self.services_check(start=False)
+            except InfrastructureFailure as error:  # sessions then fail as planner-unavailable; logged, not fatal
+                self.log(f"planner watch: {error}")
 
     def policy(self):
         """The scheduling and statistical policy a verdict depends on."""
@@ -549,14 +572,23 @@ class E2EMixin:
             host.ssh(f"cat > {jobs} << 'EOF'\n" + "\n".join(share) + "\nEOF")
             waves = -(-len(share) // parallel)
             host.ssh(f"bash {host.work}/run_jobs.sh {host.base} {parallel} {jobs} {host.work} {model} "
-                     f"{host.work}/{settings} {stop} {budget} {self.cap} {ledger}",
+                     f"{host.work}/{settings} {stop} {budget} {self.cap} {ledger} {int(host.sandbox)}",
                      timeout=waves * (SESSION_TIMEOUT + 300) + 600)
 
         if sessions:
             self.log(f"dispatching {sessions} sessions ({', '.join(f'{h.host} {len(q)}' for h, q in zip(hosts, per_host))}), "
                      f"{self.committed(ledger):.1f} credits committed in {Path(ledger).name}, cap {budget:g}")
-            with ThreadPoolExecutor(len(hosts)) as pool:
-                list(pool.map(run_share, range(len(hosts))))
+            self.restarts, done = 0, threading.Event()
+            watcher = threading.Thread(target=self.watch_services, args=(done,), daemon=True)
+            watcher.start()
+            try:
+                with ThreadPoolExecutor(len(hosts)) as pool:
+                    list(pool.map(run_share, range(len(hosts))))
+            finally:
+                done.set()
+                watcher.join()
+            self.remote.ssh(f"echo {self.restarts} > {batch}/planner_restarts")
+            self.log(f"planner servers restarted {self.restarts} times during the batch")
         seconds = time.monotonic() - started
         stopped = self.remote.ssh(f"cat {stop} 2>/dev/null; true").strip()
         for cid, local, root, identity, todo in pending:
@@ -570,6 +602,9 @@ class E2EMixin:
             if left:
                 raise InfrastructureFailure(f"{cid}: sessions that could not be judged: {left}; fix the cause and run "
                                             f"the command again (they run again, earlier attempts kept)")
+            local.mkdir(parents=True, exist_ok=True)
+            with (local / "planner_restarts.txt").open("a") as record:  # the batch's planner restarts, all versions
+                record.write(f"{Path(batch).name} {getattr(self, 'restarts', 0)}\n")
             for split in todo:
                 (local / split / "identity.json").write_text(json.dumps(identity))
                 (local / split / COMPLETE).write_text("done\n")
@@ -628,11 +663,18 @@ class E2EMixin:
             git(*command, cwd=folder)
         return folder
 
+    def jail(self):
+        """Codex runs in a bubblewrap jail (astra.jailed) unless the profile sets proposer_jail = false: it sees its
+        source export and the round's folder (the train workspace, its own notes), never other rounds, results, the
+        archive, the repository or its Codex history."""
+        return [] if self.cfg.get("proposer_jail", True) else None
+
     def codex_write(self, prompt, path, out, **model):
         """The proposer writes in a source export; its changes are copied back into the worktree PATH, where the
         screens judge them like any patch."""
         folder = self.export(path, out)
-        note = astra.codex(prompt.replace(str(path), str(folder)), folder, "workspace-write", out, **model)
+        note = astra.codex(prompt.replace(str(path), str(folder)), folder, "workspace-write", out, jail=self.jail(),
+                           **model)
         git("add", "-A", cwd=folder)
         for line in git("diff", "--cached", "--name-status", "--no-renames", cwd=folder).splitlines():
             status, name = line.split("\t", 1)
@@ -646,7 +688,7 @@ class E2EMixin:
 
     def codex_read(self, prompt, path, out, **model):
         folder = self.export(path, out)
-        return astra.codex(prompt.replace(str(path), str(folder)), folder, "read-only", out, **model)
+        return astra.codex(prompt.replace(str(path), str(folder)), folder, "read-only", out, jail=self.jail(), **model)
 
     def run_table(self, cid):
         rows = self.split_rows(self.work / "results" / cid / "train", "train")

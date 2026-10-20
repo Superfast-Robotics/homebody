@@ -4,16 +4,21 @@
 
 ZeroMQ REQ/REP with msgpack + msgpack_numpy (the same wire as homebody.remote.wire). Requests:
   {"endpoint": "ping"}
+  {"endpoint": "check"}  CUDA work on this process's context (and each planner's kinematics once configured)
   {"endpoint": "configure", "data": {"locks": {joint: rad}}}  per-side planners, other joints locked
   {"endpoint": "plan_grasp", "data": {side, start (7), pre (N,4,4), palm (N,4,4), depth (H,W) m with
       NaN where invalid or excluded, intrinsics (3,3), camera (4,4) optical frame in the pelvis}}
   -> {success, index, approach (T,7), descent (T,7), joint_names, status, seconds}
 All poses are in the pelvis frame. The world is an ESDF built from that one depth image only.
+A CUDA error leaves the process's context unusable, so the server replies with the error and exits (status 3): a
+broken server reads as down, and the launcher (tools/curobo/curobo_dex1_server.sh watch) restarts it.
 """
 import argparse
 import copy
+import gc
 import io
 import json
+import os
 import tempfile
 import time
 from pathlib import Path
@@ -50,6 +55,7 @@ MAX_GOALSET = 48
 POSTURE_TOLERANCE = 0.05  # rad: a requester's locked joint further than this from the configured one
 SLIDE_TOLERANCE = 0.005  # m: the same for a gripper's slide joints (their whole travel is 0.0445 m)
 MAX_CANDIDATE_TRIES = 6  # candidates tried (approach then descent) before giving up
+CUDA_GRAPHS = False  # captured CUDA graphs and in-process rebuilds (a posture change) hit illegal memory accesses
 IK_SEEDS = 128  # random restarts per IK solve; obstacle-dense scenes (a basket) need many  # grasp candidates planned per request (the client sends its best-ranked)
 
 
@@ -153,12 +159,13 @@ class Planners:
         if self.planners and self.locks is not None and not self.posture_mismatch(locks):
             return {"joint_names": {side: list(p.joint_names) for side, p in self.planners.items()}, "locks": self.locks}
         self.locks = dict(locks)
-        self.planners = {}
+        self.release()
         for side in SIDES:
             config = MotionPlannerCfg.create(robot=robot_config(self.root, side, self.locks, self.hand),
                                              scene_model=self.world(None),
                                              collision_cache={"voxel": 1}, max_goalset=MAX_GOALSET, num_ik_seeds=IK_SEEDS,
-                                             optimizer_collision_activation_distance=ACTIVATION_M)
+                                             optimizer_collision_activation_distance=ACTIVATION_M,
+                                             use_cuda_graph=CUDA_GRAPHS)
             planner = MotionPlanner(config)
             # The legs are locked straight here but bent on the robot (which is controlled by its
             # walking policy); their spheres would sit in the floor, so they take no collisions.
@@ -166,6 +173,23 @@ class Planners:
             planner.warmup(enable_graph=True, num_warmup_iterations=2)
             self.planners[side] = planner
         return {"joint_names": {side: list(p.joint_names) for side, p in self.planners.items()}}
+
+    def release(self):
+        """Drop the built planners and their CUDA memory before building others (their captured CUDA graphs must
+        not outlive the buffers they point at)."""
+        self.planners = {}
+        gc.collect()
+        torch.cuda.synchronize()
+        torch.cuda.empty_cache()
+
+    def check(self):
+        """Run CUDA work on this context, and each planner's kinematics at its locked posture once configured: a
+        broken context raises here instead of answering ping as if healthy."""
+        value = float((torch.ones(64, device="cuda") * 2).sum().item())
+        for side, planner in self.planners.items():
+            planner.compute_kinematics(self.state(planner, np.zeros(len(ARM_JOINTS)), side))
+        torch.cuda.synchronize()
+        return {"ok": value == 128.0, "configured": bool(self.planners)}
 
     def world(self, request, planner=None):
         """The request's depth as a signed distance grid in the pelvis frame: voxels from each seen
@@ -307,6 +331,13 @@ class Planners:
         return reply
 
 
+def cuda_failure(error):
+    """ERROR left the CUDA context unusable (an illegal access, a launch failure): every later call would fail."""
+    text = f"{type(error).__name__}: {error}"
+    return isinstance(error, getattr(torch, "AcceleratorError", ())) or "CUDA error" in text or "CUBLAS_STATUS" in text \
+        or "cudaError" in text
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--endpoint", default="tcp://127.0.0.1:5560")
@@ -326,6 +357,8 @@ def main():
             name = request["endpoint"]
             if name == "ping":
                 reply = {"ok": True, "configured": bool(planners.planners)}
+            elif name == "check":
+                reply = planners.check()
             elif name == "configure":
                 print(f"configure locks {request['data']['locks']}", flush=True)
                 reply = planners.configure(request["data"]["locks"])
@@ -339,6 +372,10 @@ def main():
             import traceback
             traceback.print_exc()
             reply = {"error": f"{type(error).__name__}: {error}"}
+            if cuda_failure(error):
+                socket.send(pack(reply))
+                print("CUDA context unusable: exiting", flush=True)
+                os._exit(3)
         socket.send(pack(reply))
 
 

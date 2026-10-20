@@ -30,6 +30,12 @@ def rsync(*args):
         raise subprocess.CalledProcessError(result.returncode, ["rsync", *args], result.stdout, result.stderr)
 
 
+# Candidate code on a host runs with the whole filesystem read-only (the seed, the scorer, settings, scenes, other
+# candidates and results), /dev and /tmp as they are (GPU devices; the planners' admission locks), and the network
+# shared (the proxy, relay and planner tunnels on localhost); run_jobs.sh adds the session's own folder writable.
+SANDBOX = "bwrap --die-with-parent --ro-bind / / --dev-bind /dev /dev --proc /proc --bind /tmp /tmp --"
+
+
 @dataclass(frozen=True)
 class Remote:
     host: str
@@ -37,6 +43,7 @@ class Remote:
     base: str
     work: str
     parallel: int
+    sandbox: bool = False  # sessions and candidate tests run in bubblewrap (SANDBOX): a read-only root
 
     @classmethod
     def from_config(cls, path=HERE / "config.toml", host=None):
@@ -67,8 +74,9 @@ class Remote:
     def static_checks(self, cid):
         """Lint and the unit tests with the candidate's code. Returns (passed, output tail)."""
         cand = f"{self.work}/cands/{cid}"
-        command = (f"cd {cand} && PYTHONPATH={cand}/src:{cand}/vendor MUJOCO_GL=egl timeout 900 "
-                   f"{self.base}/.venv/bin/python -m pytest -q -x -p no:cacheprovider tests 2>&1 | tail -n 15; "
+        jail = f"{SANDBOX} " if self.sandbox else ""
+        command = (f"cd {cand} && PYTHONPATH={cand}/src:{cand}/vendor PYTHONDONTWRITEBYTECODE=1 MUJOCO_GL=egl timeout 900 "
+                   f"{jail}{self.base}/.venv/bin/python -m pytest -q -x -p no:cacheprovider tests 2>&1 | tail -n 15; "
                    f"echo PYTEST=${{PIPESTATUS[0]}}; {self.base}/.venv/bin/ruff check --no-cache src tests 2>&1 | tail -n 15; "
                    f"echo RUFF=${{PIPESTATUS[0]}}")
         out = self.ssh(command, timeout=1200, check=False)

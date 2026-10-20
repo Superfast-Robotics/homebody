@@ -24,6 +24,7 @@ URDF = ROOT / "assets/robot/g1_29dof_with_hand.urdf"
 WAIST_JOINTS = ("waist_yaw_joint", "waist_roll_joint", "waist_pitch_joint")
 TARGET_MASK_GROWTH_PX = 4
 ADMISSION_POLL = 0.2  # s between tries for a free planning server
+PING_SECONDS = 15.0  # an admitted server is idle, so it answers a ping at once; silence means it is dead
 
 
 class PlannerUnavailable(RuntimeError):
@@ -41,7 +42,7 @@ class CuroboPlanner:
         self.hand_open = {side: dict(zip(calibration["hand_joints"][side],
                                          calibration.get("hand_open", {}).get(side, [0.0] * len(calibration["hand_joints"][side]))))
                           for side in ("left", "right")}
-        self.client = None  # the server this planner holds while it plans (admitted)
+        self.client = self.address = None  # the server this planner holds while it plans (admitted)
 
     def locks(self, frame, side):
         """The measured posture the non-planning joints are fixed at: the waist and the other arm where they are,
@@ -64,13 +65,17 @@ class CuroboPlanner:
 
     def ensure_configured(self, frame, side):
         """Build the admitted server's per-arm planners once (a plan whose posture differs rebuilds them,
-        tools/curobo_server.py)."""
+        tools/curobo_server.py). A server that does not answer a short ping is dead (it exits on a CUDA error and
+        its launcher restarts it): PlannerUnavailable at once, not after the whole timeout."""
+        probe = PolicyClient(self.address, PING_SECONDS)
         try:
-            status = self.client.call("ping")
+            status = probe.call("ping")
             if not status.get("configured"):
                 self.client.call("configure", {"locks": self.locks(frame, side)})
         except PolicyWireError as error:
             raise PlannerUnavailable(str(error)) from error
+        finally:
+            probe.close()
 
     @contextmanager
     def admitted(self):
@@ -78,12 +83,12 @@ class CuroboPlanner:
         for whichever frees first, up to the timeout. Each server serves one request at a time (a REP socket), so
         sessions queue here, each for its own turn, instead of piling onto one server while others idle."""
         with admission(self.settings) as address:
-            self.client = PolicyClient(address, self.settings.timeout)
+            self.client, self.address = PolicyClient(address, self.settings.timeout), address
             try:
                 yield self.client
             finally:
                 self.client.close()
-                self.client = None
+                self.client = self.address = None
 
     def world_pelvis(self, frame):
         return frame.world_torso @ np.linalg.inv(self.kinematics.torso_in_pelvis(frame.joints))
@@ -131,17 +136,15 @@ def admission(settings):
     deadline = time.monotonic() + settings.timeout
     while True:
         for address in endpoints(settings):
-            lock = open(Path(tempfile.gettempdir()) / f"homebody-curobo-{address.rsplit(':', 1)[1]}.lock", "w")
-            try:
-                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
-                lock.close()
-                continue
-            try:
-                yield address
-            finally:
-                fcntl.flock(lock, fcntl.LOCK_UN)
-                lock.close()
+            with open(Path(tempfile.gettempdir()) / f"homebody-curobo-{address.rsplit(':', 1)[1]}.lock", "w") as lock:
+                try:
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    continue
+                try:
+                    yield address
+                finally:
+                    fcntl.flock(lock, fcntl.LOCK_UN)
             return
         if time.monotonic() > deadline:
             raise PlannerUnavailable(f"no planning server free within {settings.timeout:.0f} s")

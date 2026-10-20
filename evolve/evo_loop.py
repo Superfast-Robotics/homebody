@@ -440,7 +440,7 @@ class EvoLoop(SkillLoop):
         scratch.mkdir(exist_ok=True)
         try:
             text = astra.codex(prompt, scratch, "read-only", round_dir / "lessons.md", model=self.lesson_model,
-                               effort=self.cfg["effort"])
+                               effort=self.cfg["effort"], jail=self.jail())
             shutil.copy(round_dir / "lessons.md", current)
             self.log(f"lessons updated ({len(text.splitlines())} lines)")
         except Exception as error:  # noqa: BLE001 -- lessons are advice; the round's verdicts stand without them

@@ -92,5 +92,18 @@ way before its first proposal, and its completion together with the stop decisio
 candidate stops the run). The proposer works
 in a source export (no git history, no suite generators, no loop code) and sees train sessions only; patches outside
 the editable files, touching frozen files (`tiers.toml`) or adding system, file, network or settings access are
-rejected unseen. Profile `demo-wh`: the Dex1 skills and the agent harness on the warehouse suite in
+rejected unseen.
+
+Isolation (`proposer_jail`, `session_sandbox`, both on): Astra's Codex calls run in a bubblewrap jail
+(`astra.jailed`) that shows the system read-only, its source export and the round's folder (the train workspace and
+its own notes), its tools, and a fresh Codex home holding only the credentials: no other round, result, archive,
+checkout or Codex history. On the hosts each session and the candidate's tests run in bubblewrap (`remote.SANDBOX`,
+`run_jobs.sh jailed`): the whole filesystem read-only except the session's own folder, the candidate's walking-policy
+cache, /tmp (the planners' admission locks) and the coding sub-agent's home; the scorer runs outside from the loop's
+copy. What remains: candidate code runs in the same process that records the session, so it can still alter its own
+recording (physics.jsonl and outcome.json in the session folder) before the scorer reads it, and it can read files it
+cannot write (the proxy key it is given anyway, other candidates). Closing that needs recording in a separate process
+or user. The planner servers exit on a CUDA error (`tools/curobo_server.py`), and the loop watches them before and
+every minute during a batch (`curobo_dex1_server.sh watch`), restarting any that is down or fails its CUDA check and
+counting restarts in each version's `planner_restarts.txt`. Profile `demo-wh`: the Dex1 skills and the agent harness on the warehouse suite in
 `dex1-demos/2026-10-20/warehouse_suite`. `curobo_load.py` is the planner load test that set its sessions per host.
