@@ -1,0 +1,143 @@
+{
+ "schema_version": 1,
+ "steps": [
+  {
+   "fixture_id": "basil_03",
+   "label": "basil_03",
+   "hand": "right",
+   "goal": [
+    0.229,
+    -0.397,
+    1.5708
+   ],
+   "facing": [
+    0.229,
+    0.083
+   ],
+   "carry_goal": [
+    1.278,
+    -0.397,
+    1.5708
+   ],
+   "carry_facing": [
+    1.278,
+    0.171
+   ],
+   "destination_label": "product_section1_bay2_shelf1",
+   "release_map_xy_m": [
+    1.278,
+    0.171
+   ],
+   "release_delta_z_m": 0.0,
+   "evaluator_target": {
+    "bounds": [
+     [
+      1.168,
+      0.061,
+      0.72
+     ],
+     [
+      1.388,
+      0.281,
+      1.04
+     ]
+    ],
+    "support_contacts": [
+     "product_section1_bay2_shelf1"
+    ]
+   }
+  },
+  {
+   "fixture_id": "jam_07",
+   "label": "jam_07",
+   "hand": "right",
+   "goal": [
+    0.46,
+    -0.446,
+    1.5708
+   ],
+   "facing": [
+    0.46,
+    0.034
+   ],
+   "carry_goal": [
+    1.278,
+    -0.446,
+    1.5708
+   ],
+   "carry_facing": [
+    1.278,
+    0.171
+   ],
+   "destination_label": "product_section1_bay2_shelf1",
+   "release_map_xy_m": [
+    1.278,
+    0.171
+   ],
+   "release_delta_z_m": 0.0,
+   "evaluator_target": {
+    "bounds": [
+     [
+      1.168,
+      0.061,
+      0.72
+     ],
+     [
+      1.388,
+      0.281,
+      1.04
+     ]
+    ],
+    "support_contacts": [
+     "product_section1_bay2_shelf1"
+    ]
+   }
+  },
+  {
+   "fixture_id": "allulose_03",
+   "label": "allulose_03",
+   "hand": "right",
+   "goal": [
+    0.972,
+    -0.417,
+    1.5708
+   ],
+   "facing": [
+    0.972,
+    0.063
+   ],
+   "carry_goal": [
+    1.278,
+    -0.417,
+    1.5708
+   ],
+   "carry_facing": [
+    1.278,
+    0.171
+   ],
+   "destination_label": "product_section1_bay2_shelf1",
+   "release_map_xy_m": [
+    1.278,
+    0.171
+   ],
+   "release_delta_z_m": 0.0,
+   "evaluator_target": {
+    "bounds": [
+     [
+      1.168,
+      0.061,
+      0.72
+     ],
+     [
+      1.388,
+      0.281,
+      1.04
+     ]
+    ],
+    "support_contacts": [
+     "product_section1_bay2_shelf1"
+    ]
+   }
+  }
+ ]
+}
