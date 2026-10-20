@@ -334,6 +334,59 @@ class EvoLoop(SkillLoop):
         self.log(f"evolve round {number}: done; best is now {self.best()['id']}; "
                  f"optimisation credits this round {astra.credits_in(round_dir)}")
 
+    def extend(self, number, extra):
+        """EXTRA more candidates for finished round NUMBER, from the same parent pool and diagnosis, judged against the
+        round's own starting best; then one winner across all of the round's candidates (a beaten earlier winner gets
+        a later "rejected" verdict, the archive's correction rule)."""
+        round_dir = self.work / "rounds" / f"e{number:03d}"
+        self.round_dir = round_dir  # the round's ledger (end-to-end loops)
+        plan_path, diagnosis_path = round_dir / "plan.json", round_dir / "diagnosis.md"
+        if not (plan_path.exists() and diagnosis_path.exists()):
+            raise SystemExit(f"round {number} has no plan and diagnosis to extend")
+        self.check_frozen()
+        prefix = f"e{number:03d}c"
+        slots = json.loads(plan_path.read_text())
+        population = {i: e for i, e in self.population().items() if not i.startswith(prefix)}
+        best = population[slots[0]["parents"][0]]  # the round's starting best: its first diff's parent
+        summaries = self.scored(population)
+        diagnosis = diagnosis_path.read_text()
+        mechanisms = max(1, diagnosis.count("## Mechanism "))
+        width, self.candidates = self.candidates, extra
+        added = self.plan(best, population, summaries, mechanisms)
+        self.candidates = width
+        diffs = sum(s["operator"] == "diff" for s in slots)
+        for slot in added:  # the next mechanisms in turn, after the ones the round already tried
+            if slot["operator"] == "diff":
+                slot["mechanism"] = diffs % mechanisms + 1
+                diffs += 1
+        start = len(slots) + 1
+        plan_path.write_text(json.dumps(slots + added, indent=1))
+        self.log(f"evolve round {number}: extend with " + "; ".join(
+            f"c{i} {s['operator']} {'+'.join(s['parents'])} m{s['mechanism'] or '-'} {s['model']}"
+            for i, s in enumerate(added, start)))
+        ws = self.evo_workspace(round_dir, best, population, summaries)
+        with ThreadPoolExecutor(len(added)) as pool:
+            ready = [e for e in pool.map(lambda item: self.write(number, item[0], item[1], population, summaries, ws,
+                                                                  diagnosis, round_dir), enumerate(added, start)) if e]
+        judged = self.judge_candidates(ready, best)
+        latest = {e["id"]: e for e in self.archive()}
+        earlier = [e for i, e in latest.items() if i.startswith(prefix) and e["status"] == "accepted"]
+        accepted = earlier + [e for e in judged if e["status"] == "accepted"]
+        winner = max(accepted, key=lambda e: e["verdict"]["pooled"][0]) if accepted else None
+        for entry in judged:
+            if entry is not winner:
+                self.record(entry if entry["status"] != "accepted" else {**entry, "status": "rejected",
+                            "reason": entry["reason"] + "; passed, but another candidate of the round scored higher"})
+        for entry in earlier:
+            if entry is not winner:
+                self.record({**entry, "status": "rejected",
+                             "reason": entry["reason"] + "; passed, but a later candidate of the round scored higher"})
+        if winner is not None and winner not in earlier:
+            self.record(winner)
+        self.lessons(round_dir)
+        self.log(f"evolve round {number}: extended; best is now {self.best()['id']}; "
+                 f"optimisation credits this round {astra.credits_in(round_dir)}")
+
     def write(self, number, index, slot, population, summaries, ws, diagnosis, round_dir):
         """Write candidate INDEX from SLOT and screen it like a greedy candidate; its entry, or None."""
         cid = f"e{number:03d}c{index}"

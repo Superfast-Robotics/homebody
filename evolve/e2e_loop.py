@@ -969,17 +969,23 @@ def main(argv=None):
     run.add_argument("--strategy", choices=("greedy", "evolve"), help="the round's search (default: profile strategy)")
     run.add_argument("--no-stop", action="store_true", help="run every round even if round 1 is barren")
     run.add_argument("--candidates", type=int, help="versions a round proposes, this run only (default: evo_candidates)")
+    ext = sub.add_parser("extend", help="more candidates for a finished round (evolutionary strategy)")
+    ext.add_argument("round", type=int)
+    ext.add_argument("--candidates", type=int, required=True)
     sub.add_parser("test").add_argument("cid")
     sub.add_parser("legacy").add_argument("cid")
     sub.add_parser("status")
     args = parser.parse_args(argv)
     loop = E2ELoop(args.profile)
-    if args.command == "run" and (args.strategy or loop.cfg.get("strategy", "greedy")) == "evolve":
+    if (args.command == "run" and (args.strategy or loop.cfg.get("strategy", "greedy")) == "evolve"
+            or args.command == "extend"):
         loop = E2EEvoLoop(args.profile)
     if args.command == "baseline":
         loop.baseline(args.commit, args.id)
     elif args.command in ("test", "legacy"):
         loop.test(args.cid, args.command)
+    elif args.command == "extend":
+        loop.extend(args.round, args.candidates)
     elif args.command == "run":
         if args.candidates:  # the run's search width, outside the profile and so outside the experiment identity
             loop.candidates = args.candidates
