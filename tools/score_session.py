@@ -40,12 +40,12 @@ SAMPLE_REFUSALS = {"invalid_physics": "physics_valid", "robot_fall": "robot_upri
 
 
 def exchanged(targets):
-    """TARGETS with its two destinations exchanged between the two groups of objects."""
+    """TARGETS with its two destinations exchanged between the two groups of objects, or None without two."""
     groups = {}
     for name, target in targets.items():
         groups.setdefault(json.dumps(target, sort_keys=True), []).append(name)
     if len(groups) != 2:
-        raise SystemExit(f"error: --swap needs exactly two destinations, the sequence has {len(groups)}")
+        return None
     first, second = groups.values()
     return {**{name: targets[second[0]] for name in first}, **{name: targets[first[0]] for name in second}}
 
@@ -144,6 +144,8 @@ def main(argv=None):
     sequence = json.loads(args.sequence.read_text())
     targets = {step["fixture_id"]: step["evaluator_target"] for step in sequence["steps"]}
     swapped = exchanged(targets)
+    if args.swap and swapped is None:
+        parser.error(f"--swap needs exactly two destinations in {args.sequence}")
     if args.swap:
         targets, swapped = swapped, targets
     if args.only:
@@ -151,7 +153,7 @@ def main(argv=None):
         if unknown:
             parser.error(f"--only names objects {args.sequence} has no target for: {unknown}")
         targets = {name: targets[name] for name in args.only}
-        swapped = {name: swapped[name] for name in args.only}
+        swapped = swapped and {name: swapped[name] for name in args.only}
     if args.target:
         if args.swap or args.only:
             parser.error("--target names its own destinations; it takes no --swap or --only")
