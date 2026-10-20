@@ -488,4 +488,4 @@ def complete_return(plan, ctx):
 
 def return_arm(plan, ctx):
     """Return the empty arm against live depth, including the released object."""
-    return_checked(ctx, plan.epoch, plan.side)
+    return_checked(ctx, plan.epoch, plan.side, plan.released)
