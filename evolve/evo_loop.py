@@ -19,9 +19,7 @@ Each round:
    hosts) and judged against the current best with the greedy loop's rule (skill_score.judge); the largest
    accepted gain becomes the best. Where its new code reported acting (mechanism_active events its parent's
    runs lack) and where outcomes changed are recorded from those results for the diagnosis, not judged.
-6. (Formerly separate probe episodes before the full evaluation; dropped: they only rejected crashes, which the
-   full evaluation scores as failures, and the pooled run makes the full results as quick to get.)
-7. Lessons: a cheap model rewrites lessons.md from the whole history, for the next round's prompts.
+6. A cheap model rewrites lessons.md from the whole history, each version's activation record included.
 """
 import json
 import math
@@ -40,7 +38,6 @@ TOP_PARENTS = 3          # the top versions by train value are always in the par
 SIGMOID_SHARPNESS = 10.0  # weighted parent sampling: sigmoid of (value - median) * this
 INSPIRATIONS = 3          # top other versions shown to every proposal, plus one random
 STALLED_ROUNDS = 2        # consecutive rounds without an accepted candidate before a rewrite slot
-PROBE_EPISODES = 8
 PARTNER_MARGIN = 0.05   # a crossover partner's train value is at most this far below its parent's
 UCB_EXPLORATION = math.sqrt(2.0)
 CREDIT_UNIT = 10.0       # the bandit's reward is per this many credits a candidate cost to write
@@ -387,46 +384,6 @@ class EvoLoop(SkillLoop):
             return None
         return entry
 
-    def probe_episodes(self, parent, note=""):
-        """The train episodes NOTE names (where the candidate expects its change to act), then one train episode
-        per outcome of PARENT (its stage and result code), up to PROBE_EPISODES more; the benchmark's priority
-        episodes (profile `evo_probe_prefix`, e.g. the warehouse's) first."""
-        rows = skill_score.read(self.work / "results" / parent / "train")
-        expected = note.split("Expected effect", 1)[-1].split("Risks", 1)[0] if "Expected effect" in note else ""
-        named = [e for e in sorted(rows) if e in expected][:PROBE_EPISODES]
-        prefix = self.cfg.get("evo_probe_prefix", "")
-        chosen = {}
-        for episode, row in sorted(rows.items(), key=lambda item: (not item[0].startswith(prefix), item[0])):
-            chosen.setdefault((row["stage"], skill_score.call(row).get("code")), episode)
-        episodes = {Path(e).stem: e for e in self.episodes("train")}
-        picked = list(dict.fromkeys(named + list(chosen.values())[:PROBE_EPISODES]))
-        return [episodes[e] for e in picked if e in episodes]
-
-    def probe(self, entry):
-        """Run ENTRY on its probe episodes: a crash or behaviour identical to its parent there rejects it."""
-        cid, parent = entry["id"], entry["parent"]
-        episodes = self.probe_episodes(parent, entry.get("notes", ""))
-        self.evaluate(f"{cid}-probe", Path(entry["path"]), splits=("train",), only={"train": episodes}, cand=self.cand(cid))
-        child = skill_score.read(self.work / "results" / f"{cid}-probe" / "train")
-        before = skill_score.read(self.work / "results" / parent / "train")
-        crashed = [e for e, r in child.items() if r.get("error")]
-        if crashed or not child:
-            self.record({**entry, "status": "rejected", "reason": "crashed on probe episodes: "
-                         + (str(child[crashed[0]].get("error"))[:300] if crashed else "no results")})
-            return None
-        def mechanisms(version, episode):
-            path = self.work / "results" / version / "train" / episode / "trace.json"
-            events = json.loads(path.read_text()) if path.exists() else []
-            return [str(e.get("mechanism")) for e in events if e.get("type") == ACTIVATION_EVENT]
-        new = {e: [m for m in mechanisms(f"{cid}-probe", e) if m not in set(mechanisms(parent, e))] for e in child}
-        activations = sum(len(found) for found in new.values())
-        unchanged = all(fingerprint(r) == fingerprint(before.get(e, {})) for e, r in child.items())
-        entry = {**entry, "probe": {"episodes": len(child), "new_activations": activations, "unchanged": unchanged,
-                                    "activated_in": sorted(e for e, found in new.items() if found)}}
-        self.log(f"{cid}: probe {activations} new activations, outcomes {'unchanged' if unchanged else 'changed'} "
-                 f"on {len(child)} episodes (evaluated in full either way)")
-        return entry
-
     def judge_candidates(self, entries, best):
         """Evaluate ENTRIES together (one episode queue across the hosts), each with its manifest checked before and
         after, its activation record read from its own full results, and judge each against BEST."""
@@ -469,16 +426,6 @@ class EvoLoop(SkillLoop):
         self.log(f"{cid}: new code acted in {len(record['activated_in'])} train episodes ({len(record['named_activated'])} "
                  f"of the {len(named)} its note named), outcomes changed in {len(changed)}")
         return record
-
-    def judge_candidate(self, entry, best):
-        before = self.manifest(Path(entry["path"]), entry["commit"])
-        summaries = self.evaluate(entry["id"], Path(entry["path"]))
-        after = self.manifest(Path(entry["path"]), entry["commit"])
-        verdict = skill_score.judge(self.summaries(best["id"]), summaries, self.objective, self.weights, self.speed)
-        if after != before:
-            verdict = {**verdict, "ok": False, "basis": f"the experiment changed while it ran ({before} -> {after})"}
-        return {**entry, **summaries, "status": "accepted" if verdict["ok"] else "rejected", "manifest": before,
-                "reason": skill_score.describe(verdict), "verdict": verdict}
 
     def lessons(self, round_dir):
         """A cheap model rewrites lessons.md from the whole history (the meta-scratchpad)."""

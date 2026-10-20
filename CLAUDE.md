@@ -8,7 +8,7 @@ README has the install and run commands; the real-robot backend comes with the R
 
 | Path | What it is |
 | --- | --- |
-| `src/homebody/skills/` | The skills, each one module: prompt line, arguments, `prepare` / `execute` / `abort`, declared failure codes. `contract.py` is the protocol and Runner; `registry.py` lists the SIM skills (`navigate.py`, `pick.py`, `place.py`). |
+| `src/homebody/skills/` | The skills, each one module: prompt line, arguments, `prepare` / `execute` / `abort`, declared failure codes. `contract.py` is the protocol and Runner; `registry.py` lists the SIM skills (`navigate.py`, `pick.py`, `place.py`); `skills/dex1/` holds the Dex1-1 gripper's own pick and place, used with `configs/dex1.toml` (`guides/dex1-warehouse.md`). |
 | `src/homebody/motion/` | Shared robot motions: `arm.py` (servos, joint streams, the one arm reset `reset_arm`), `carry.py` (holding, tucking, recovery); `exploration/` is the G1 gait, drive math and localization checks. |
 | `src/homebody/helpers/` | Pure math shared by both releases: geometry, kinematics, collision, grasp, navigation, trajectories, `raster.py` (pixels, clicks, map transforms), `floor.py` (walkable-floor networks), `region.py` (task-region polygons). |
 | `src/homebody/primitives/` | The robot interface (`robot.py` `Robot`), observation records, action limits, `NotReleased`, and the live localization, camera and navigation primitives. |

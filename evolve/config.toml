@@ -284,14 +284,14 @@ effort = "medium"
 proposals = 3
 parallel = 24
 
-[skills.dex1-pick]
+[skills.demo-pick]
 # the G1 with Dex1-1 parallel grippers (configs/dex1.toml): its own pick (skills/dex1/pick.py), on the round-trip
 # pickcarry episodes run with the Dex1 settings; the Dex3 skills and the shared code stay untouched
 name = "pick"
 source = "src/homebody/skills/dex1/{skill}.py"
 episodes = "skillbench/dex1_pickcarry_episodes"
 coder = false
-workdir = "dex1-pick"
+workdir = "demo-pick"
 prompts = "skill"
 editable = ["src/homebody/skills/dex1/*", "tests/*"]
 model = "gpt-6-astra"
@@ -318,14 +318,14 @@ jaw 2; `grip` closure 0 opens and 1 closes most of the way, with the squeeze (up
 hold.
 """
 
-[skills.dex1-pick-wh]
+[skills.demo-pick-wh]
 # dex1-pick on the warehouse-weighted episodes (evolve/warehouse_episodes.py): front-row picks in
 # warehouse_picking and warehouse_shelf, plus a sample of the generated pickcarry episodes
 name = "pick"
 source = "src/homebody/skills/dex1/{skill}.py"
 episodes = "skillbench/dex1_warehouse_pick_episodes"
 coder = false
-workdir = "dex1-pick-wh"
+workdir = "demo-pick-wh"
 prompts = "skill"
 strategy = "evolve"
 objective = "held"           # accept on completed holds (stage value is reported, not decisive)
@@ -334,7 +334,6 @@ speed_acceptance = false     # timings vary with host load and planner queues: n
 evo_candidates = 5           # per round: focused diffs, plus a crossover and (after barren rounds) a rewrite
 evo_models = ["gpt-6-astra", "gpt-6.1-sol"]
 evo_lesson_model = "gpt-6.1-sol"
-evo_probe_prefix = "wh"      # probe warehouse episodes first
 services = ["/lambda/nfs/group-volume/workcell-sim/homebody-baseline/curobo_dex1/curobo_dex1_server.sh start > /dev/null 2>&1 < /dev/null"]
 editable = ["src/homebody/skills/dex1/*", "tests/*"]
 model = "gpt-6-astra"
@@ -388,14 +387,14 @@ Both the train and the held-out episodes of this benchmark are development data 
 on them many times); claims about unseen layouts need episodes no round has used.
 """
 
-[skills.dex1-place-wh]
+[skills.demo-place-wh]
 # the G1 with Dex1-1 grippers (configs/dex1.toml): its own place (skills/dex1/place.py) on warehouse-weighted place
 # episodes (evolve/warehouse_episodes.py ... place): the Dex1 pick (e006c5) picks and carries as setup
 name = "place"
 source = "src/homebody/skills/dex1/{skill}.py"
 episodes = "skillbench/dex1_warehouse_place_episodes"
 coder = false
-workdir = "dex1-place-wh"
+workdir = "demo-place-wh"
 prompts = "skill"
 strategy = "evolve"
 objective = "held"           # stage 2: placed (the evaluator's placement test); the same completed-outcome rule
