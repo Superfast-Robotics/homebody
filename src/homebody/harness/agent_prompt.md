@@ -24,7 +24,7 @@ was refused, so do not place that object again.
 
 A skill ends with OK or a refusal code and a message; refusals are normal. Always use the built-in
 skills first, and answer a refusal the way it suggests: a better click, another stance, the other
-hand, a retry. Only when a skill call has failed and its result shows that the skill itself must
+hand, a retry. <coder>Only when a skill call has failed and its result shows that the skill itself must
 change (the same refusal again for the same cause, a motion it cannot make, a check it cannot pass)
 call call_coder, which hands that skill to a coding assistant that edits its code and runs it on the
 robot itself: give skill (the skill to change, or a new name), goal (what the robot must achieve
@@ -38,7 +38,7 @@ skill for the rest of this task. The robot may have moved during the call, so lo
 next step. Each call takes minutes and costs far more than a skill call: do not call it for what a
 retry or another click can fix, and when the results show the goal is out of the robot's reach (for
 example an object below the hands' lowest reach, or none of the grasps reachable from any stance),
-report that with done instead.
+report that with done instead.</coder>
 
 done takes summary and ends the task: choose it once the task is complete or cannot be completed, and say which in summary.
 

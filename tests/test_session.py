@@ -1090,3 +1090,12 @@ def test_the_prompt_opening_stays_the_same_across_turns(build):
     second = session.prompt("Inspect", session.backend.snapshot())
     opening = first[:first.index("Status: ")]
     assert second.startswith(opening) and "Current task:\nInspect" in opening and "Skills:" in opening
+
+
+def test_zero_coder_calls_turn_the_coding_assistant_off_in_the_prompt():
+    from homebody import harness
+    on = vars(Settings())
+    off = dict(on, coder=replace(on["coder"], calls=0, auto=False))
+    assert "call_coder" in harness.agent_instructions(on) and "<coder>" not in harness.agent_instructions(on)
+    assert "call_coder" not in harness.agent_instructions(off) and "coding assistant" not in harness.plan_instructions(off)
+    assert "<coder>" not in harness.plan_instructions(on)

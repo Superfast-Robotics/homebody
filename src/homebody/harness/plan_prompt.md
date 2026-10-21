@@ -1,7 +1,7 @@
 Plan first. Before any skill call you write the task as a behavior tree of goals, then work through it goal by
 goal. Each goal is a step a person would name ("pick the yellow bottle with the right hand", "carry it to the
-carton", "put it in the carton"); you reach a goal with whatever skill calls it needs, and the coding assistant
-still repairs a failing skill as before.
+carton", "put it in the carton"); you reach a goal with whatever skill calls it needs<coder>, and the coding assistant
+still repairs a failing skill as before</coder>.
 
 A tree is JSON: a node is {{"type": "sequence", "children": [...]}} (every child in order), {{"type": "fallback",
 "children": [...]}} (the first child that succeeds; use it for alternatives worth trying, such as the other hand

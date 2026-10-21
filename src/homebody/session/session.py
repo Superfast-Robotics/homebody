@@ -160,6 +160,9 @@ class Session:
                                cancelled=controls.cancel.is_set, emit=self.skill_event)
         self.runner = Runner(self.context)
         self.coder = Coder(settings.coder, registry(settings.robot.hands))
+        # [coder] calls = 0 turns the coding assistant off: not offered, never automatic
+        self.coder_on = settings.coder.calls > 0
+        self.auto = self.coder_on and settings.coder.auto
         self.recovery = Recovery(settings.coder.tries, settings.coder.rescues)
         self.planner = None
         self.trace = Trace(backend, lambda: self.context.carried)
@@ -245,9 +248,10 @@ class Session:
         def line(skill):
             return f"{prompt_line(skill.PROMPT, settings)} Refusals: {', '.join(dict.fromkeys(skill.FAILURES))}."
         skills = "\n".join(line(skill) for skill in self.coder.registry.values())
-        skills += (f"\n{CALL}: skill, goal, tried, success, constraints. A coding assistant changes the skill and "
-                   f"runs it on the robot (see above); the calls left this task are under Status below.")
-        if self.settings.coder.auto:
+        if self.coder_on:
+            skills += (f"\n{CALL}: skill, goal, tried, success, constraints. A coding assistant changes the skill and "
+                       f"runs it on the robot (see above); the calls left this task are under Status below.")
+        if self.auto:
             tries, rescues = self.settings.coder.tries, self.settings.coder.rescues
             skills += (f" In this session a failed skill call goes to the coding assistant automatically, at most "
                        f"{rescues} time{'s' if rescues != 1 else ''} while that skill keeps failing on a target; its "
@@ -269,7 +273,8 @@ class Session:
             "Current task:\n" + task,
             harness.plan_instructions(settings) if self.planner is not None else "",
             "Skills the coding assistant wrote this task:\n" + coded if coded else "",
-            f"Status: hands now: {hands}. {CALL}: {left} call{'s' if left != 1 else ''} left this task.",
+            f"Status: hands now: {hands}." + (f" {CALL}: {left} call{'s' if left != 1 else ''} left this task."
+                                              if self.coder_on else ""),
             "Recent steps, oldest first:\n" + (steps or "none"),
             "Current observation:\n" + json.dumps(model_observation(frame))) if part)
 
@@ -322,7 +327,8 @@ class Session:
                 raise PhysicsInvalid(self._physics_fault[1])
             self.backend.set_evaluation_sink(self.recorder.physics)
             for step in range(self.settings.agent.max_steps):
-                names = tuple(dict.fromkeys((*Prompts(self.coder.registry), *self.coder.names(), CALL, "done")))
+                names = tuple(dict.fromkeys((*Prompts(self.coder.registry), *self.coder.names(),
+                                             *((CALL,) if self.coder_on else ()), "done")))
                 # the response schema lists every decision of the task, the same each turn (a stable prompt the
                 # model's cache can serve); the plan phase's choices are checked here instead
                 offered = names + (PLAN_DECISIONS if self.planner is not None else ())
@@ -372,7 +378,7 @@ class Session:
                 result = self.act(decision, frame, step)
                 if result["code"] == "PHYSICS_INVALID":
                     raise PhysicsInvalid(result["message"])
-                if self.settings.coder.auto and self.recovery.wants_coder(stuck_key(decision.skill, decision.arguments),
+                if self.auto and self.recovery.wants_coder(stuck_key(decision.skill, decision.arguments),
                                                                           result):
                     result = self.rescue(task, decision, result, step)
                     if result["code"] == "PHYSICS_INVALID":
@@ -423,12 +429,12 @@ class Session:
         is the stuck point an automatic coder call is for."""
         carried_before = {side: dict(carry) for side, carry in self.context.carried.items()}
         key = stuck_key(decision.skill, decision.arguments)
-        refused = self.recovery.admit(key) if self.settings.coder.auto and decision.skill != CALL else None
+        refused = self.recovery.admit(key) if self.auto and decision.skill != CALL else None
         if refused is not None:
             result = refused
         elif decision.skill == CALL:
             result = self.coder.call(decision.arguments, self)
-            if self.settings.coder.auto and result["code"] not in ("INVALID_ARGUMENT", "CODER_LIMIT", "CODER_NOT_YET"):
+            if self.auto and result["code"] not in ("INVALID_ARGUMENT", "CODER_LIMIT", "CODER_NOT_YET"):
                 self.recovery.coder_done(decision.arguments.get("skill"), result["code"], rescued)
         elif decision.skill in self.coder.skills:
             result = self.runner.run(decision.skill, decision.arguments, frame,

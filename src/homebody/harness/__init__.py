@@ -4,6 +4,7 @@ and the higher-level primitives a skill may build on (env.py, documented in API.
 
 The session (frozen) calls exactly these functions; the outer evolve loop improves this package.
 """
+import re
 from pathlib import Path
 
 from .change_report import change_report
@@ -25,14 +26,26 @@ def api_doc():
     return (HERE / "API.md").read_text()
 
 
+def coder_text(text, settings):
+    """TEXT with its <coder>...</coder> parts kept (markers removed) when the session has coder calls, else removed."""
+    if coder_on(settings):
+        return text.replace("<coder>", "").replace("</coder>", "")
+    return re.sub(r"<coder>.*?</coder>", "", text, flags=re.S)
+
+
+def coder_on(settings):
+    """Whether the coding assistant is part of this session: [coder] calls above 0."""
+    return getattr(settings.get("coder"), "calls", 1) > 0
+
+
 def plan_instructions(settings):
     """How the agent writes and works through a plan (plan mode); SETTINGS fills its {group.value} fields."""
-    return (HERE / "plan_prompt.md").read_text().format_map(settings).strip()
+    return coder_text((HERE / "plan_prompt.md").read_text(), settings).format_map(settings).strip()
 
 
 def agent_instructions(settings):
     """The instructions that open every turn's prompt; SETTINGS fills its {group.value} fields."""
-    return (HERE / "agent_prompt.md").read_text().format_map(settings).strip()
+    return coder_text((HERE / "agent_prompt.md").read_text(), settings).format_map(settings).strip()
 
 
 __all__ = [

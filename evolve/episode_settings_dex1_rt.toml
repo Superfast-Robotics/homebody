@@ -8,19 +8,19 @@ max_steps = 60
 pause_while_thinking = false
 
 [coder]
-# Auto mode: every failed skill call goes to the coder without the agent asking; at a stuck point (a skill
-# failing until a call of it succeeds) one coder call and at most 3 more tries by the agent; 3 coder calls a task.
-auto = true
+# Off (2026-10-21): on the pick-and-place scenarios 26 coder calls took ~80 min for about 5-7 real recoveries, 2 of
+# them objects the HomeBody baseline missed. calls = 0 removes it from the prompt, the schema and auto mode.
+auto = false
 tries = 3
 rescues = 1
-calls = 3
+calls = 0
 
 [plan]
 enabled = true  # the agent writes a behavior-tree plan and works through it goal by goal (session/planned.py)
 replans = 2
 
 [recording]
-keyframes = true  # per-stage head and wrist keyframes for the coder (session/trace.py)
+keyframes = false  # per-stage keyframes only feed the coder (session/trace.py), which is off
 
 # The G1 with Dex1-1 grippers (configs/dex1.toml): its hands and its planning servers
 [robot]
