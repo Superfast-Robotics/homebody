@@ -18,7 +18,7 @@ from homebody.session.trace import Trace
 from homebody.skills.contract import COMMON_FAILURES, Context, Runner
 from homebody.skills.registry import Prompts, registry
 from homebody.vlm.observations import annotations, model_observation, rounded
-from homebody.vlm.provider import Cancelled, ProviderBusy, ProviderError
+from homebody.vlm.provider import Cancelled, InvalidDecision, ProviderBusy, ProviderError
 
 
 def prompted(result: dict) -> dict:
@@ -349,7 +349,18 @@ class Session:
                 self.update("Thinking")
                 if hasattr(self.provider, "turn"):  # a multi-model agent routes by phase (vlm/composite.py)
                     self.provider.turn(names)
-                decision = self.decide(prompt, images, offered, task_dir / "decisions" / f"step-{step:03d}")
+                try:
+                    decision = self.decide(prompt, images, offered, task_dir / "decisions" / f"step-{step:03d}")
+                except InvalidDecision as invalid:  # an unreadable reply costs its step; the model reads why next
+                    result = {"skill": "", "code": "INVALID_ARGUMENT",
+                              "message": f"{invalid}. Answer with one decision object as the schema gives it."}
+                    outcome["steps"] = step + 1
+                    self.history.append({"base_pose": frame.base_pose.tolist(),
+                                         "decision": {"text": "(unreadable reply)", "skill": "", "arguments": {}},
+                                         "epoch": frame.epoch, "frame_sequence": frame.sequence, "result": result})
+                    self.recorder.event("result", step=step, simulation_time=self.backend.time, result=result)
+                    self.show_result(result)
+                    continue
                 if self.controls.cancel.is_set() or frame.epoch != self.backend.epoch:
                     raise Cancelled("Decision invalidated before execution")
                 if decision.skill not in offered:

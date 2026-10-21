@@ -1,6 +1,7 @@
 """One structured decision per turn from the Anthropic or OpenAI API. The key comes from the environment."""
 import json
 import os
+import re
 from collections.abc import Callable
 from pathlib import Path
 
@@ -88,11 +89,22 @@ class OpenAiApi:
 
 class LocalVlm(OpenAiApi):
     """An open-weight model served by vLLM's OpenAI-compatible Chat Completions API at `agent.local_url` (the key
-    in VLLM_API_KEY): free (LOCAL). The text goes before the images, so the server's prefix cache serves the opening
-    every turn repeats. Points are the model's own normalised-1000 coordinates (the Qwen3-VL convention), unchanged."""
+    in VLLM_API_KEY): free (LOCAL). Points are the model's own normalised-1000 coordinates (the Qwen3-VL
+    convention), unchanged.
+
+    The reply's arguments are a JSON object in the response schema, not a JSON-encoded string, so guided decoding
+    guarantees they parse (a small model drops braces in a long escaped plan tree); they are encoded back into
+    arguments_json for Decision.parse. Only the turn's allowed decisions are offered (the schema is not part of the
+    cached text). agent.local_layout puts the text before the images (the server's prefix cache serves the opening
+    every turn repeats) or after them; agent.local_image_labels names each image ("Image 1:") for models that see
+    them only by position. Sampling is agent.local_temperature, not the checkpoint's defaults. A MODELS row with
+    effort "think" lets the model reason before its answer (a reasoning parser on the server keeps it out of the
+    content; any <think> block left in the content is dropped)."""
     LABEL, KEY = "vLLM", "VLLM_API_KEY"
     LOCAL = True
-    MAX_TOKENS = 2048
+    MAX_TOKENS, THINK_TOKENS = 2048, 4096
+    THINK_NOTE = ("Reason briefly inside <think></think> about the images and the last results first; then give "
+                  "the decision as the JSON object alone.")
 
     @property
     def URL(self) -> str:  # noqa: N802 -- the parent's class constant, from settings here
@@ -102,14 +114,58 @@ class LocalVlm(OpenAiApi):
 
     def turn(self, allowed: tuple[str, ...]):
         """The turn's allowed decisions (the session says them each turn): the response schema offers only these,
-        so a small model cannot answer with another plan phase's skill. The schema is not part of the cached text."""
+        so a small model cannot answer with another plan phase's skill."""
         self.allowed = tuple(allowed)
 
+    @property
+    def thinking(self) -> bool:
+        return self.settings.effort == "think"
+
     def request(self, prompt: str, images: tuple[Path, ...], names: tuple[str, ...]) -> dict:
-        body = super().request(prompt, images, tuple(n for n in names if n in self.allowed) or names)
-        content = body["messages"][0]["content"]
-        body["messages"][0]["content"] = content[-1:] + content[:-1]  # text, then the images
-        return {**body, "max_tokens": self.MAX_TOKENS}
+        offered = tuple(n for n in names if n in self.allowed) or names
+        pictures = []
+        for number, image in enumerate(images, 1):
+            if self.settings.local_image_labels:
+                pictures.append({"type": "text", "text": f"Image {number}:"})
+            pictures.append({"type": "image_url",
+                             "image_url": {"url": f"data:{MEDIA[image.suffix.lower()]};base64,{image_data(image)}"}})
+        text = {"type": "text", "text": prompt}
+        content = [text, *pictures] if self.settings.local_layout == "text-first" else [*pictures, text]
+        messages = [{"role": "user", "content": content}]
+        if self.thinking:
+            messages.insert(0, {"role": "system", "content": self.THINK_NOTE})
+        decision = schema(offered)
+        decision["properties"] = {**{k: v for k, v in decision["properties"].items() if k != "arguments_json"},
+                                  "arguments_json": {"type": "object"}}
+        return {"model": self.settings.model_id, "messages": messages,
+                "response_format": {"type": "json_schema", "json_schema": {"name": "decision", "schema": decision}},
+                "max_tokens": self.THINK_TOKENS if self.thinking else self.MAX_TOKENS,
+                "temperature": self.settings.local_temperature,
+                "chat_template_kwargs": {"enable_thinking": self.thinking}}
+
+    @staticmethod
+    def content(raw: str) -> str:
+        """The reply as Decision.parse reads it: any <think> block dropped, the arguments object encoded."""
+        raw = re.sub(r"^.*?</think>", "", raw, flags=re.DOTALL).strip()
+        try:
+            value = json.loads(raw)
+        except ValueError:
+            return raw  # Decision.parse names the fault
+        if isinstance(value, dict) and isinstance(value.get("arguments_json"), dict):
+            value = {**value, "arguments_json": json.dumps(value["arguments_json"])}
+        return json.dumps(value)
+
+    def generate(self, prompt: str, *, images: tuple[Path, ...], names: tuple[str, ...],
+                 attempt: Path, tick: Callable[[], None], cancelled: Callable[[], bool]) -> Decision:
+        headers = {"Authorization": f"Bearer {key(self.KEY)}", "content-type": "application/json"}
+        body = self.request(prompt, images, names)
+        reply = run_request("vLLM", self.URL, headers, body, prompt=prompt, attempt=attempt,
+                            timeout=self.settings.timeout, tick=tick, cancelled=cancelled, redacted=redact(body, images))
+        try:
+            raw = reply["choices"][0]["message"]["content"] or ""
+        except (KeyError, IndexError, TypeError) as exc:
+            raise ProviderError(f"vLLM returned no decision: {json.dumps(reply)[:500]}") from exc
+        return Decision.parse(self.content(raw), names)
 
 
 class LiteLlm:

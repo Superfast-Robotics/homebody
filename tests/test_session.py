@@ -18,7 +18,7 @@ from homebody.session.settings import Settings
 from homebody.skills.registry import SKILLS
 from homebody.ui.console import Controls
 from homebody.vlm.observations import describe, map_preview
-from homebody.vlm.provider import Decision, ProviderBusy, ProviderError
+from homebody.vlm.provider import Decision, InvalidDecision, ProviderBusy, ProviderError
 
 
 def test_terminal_file_failure_does_not_mask_error_during_close(tmp_path):
@@ -1127,3 +1127,13 @@ def test_a_multi_model_agent_sees_each_turns_phase_and_result(build, monkeypatch
     routed = sorted(tmp_path.rglob("routing.json"))
     roles = [json.loads(path.read_text())["calls"][0]["role"] for path in routed]
     assert roles[0] == "planner" and set(roles[1:]) == {"executor"}
+
+
+def test_an_unreadable_reply_is_refused_as_one_step_and_the_task_goes_on(build):
+    """A reply Decision.parse rejects costs its step; the model reads the refusal in the next prompt."""
+    unreadable = InvalidDecision("Invalid structured decision: Expecting ',' delimiter")
+    provider = BusyThenAnswers([Decision("Finished", "done", {"summary": "ok"})], busy=1, error=unreadable)
+    session = build(provider, settings=Settings(agent=Agent(done_settle_seconds=0.)))
+    result = session.run_task("Inspect")
+    assert result["status"] == "model_done" and result["steps"] == 2 and provider.calls == 2
+    assert "Expecting ',' delimiter" in provider.prompts[-1] and "INVALID_ARGUMENT" in provider.prompts[-1]

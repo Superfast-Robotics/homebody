@@ -245,8 +245,11 @@ def test_a_local_vllm_model_sends_text_before_images_to_its_configured_server(tm
     assert url == "http://10.0.0.5:8000/v1/chat/completions" and headers["Authorization"] == "Bearer k-local"
     assert body["model"] == "robobrain2.5-8b" and body["max_tokens"] == LocalVlm.MAX_TOKENS
     content = body["messages"][0]["content"]
-    assert content[0] == {"type": "text", "text": "prompt text"} and [c["type"] for c in content[1:]] == ["image_url"] * 2
-    assert body["response_format"]["json_schema"]["strict"] is True and LocalVlm.LOCAL
+    assert content[0] == {"type": "text", "text": "prompt text"}
+    assert [c.get("text") or c["type"] for c in content[1:]] == ["Image 1:", "image_url", "Image 2:", "image_url"]
+    assert body["temperature"] == 0.0 and body["chat_template_kwargs"] == {"enable_thinking": False}
+    assert body["response_format"]["json_schema"]["schema"]["properties"]["arguments_json"] == {"type": "object"}
+    assert LocalVlm.LOCAL and len(body["messages"]) == 1
 
 
 def test_a_local_model_may_answer_only_the_turns_allowed_decisions():
@@ -258,3 +261,27 @@ def test_a_local_model_may_answer_only_the_turns_allowed_decisions():
     assert enum() == ["plan"]
     provider.turn(("navigate", "pick", "done"))
     assert enum() == ["navigate", "pick", "done"]
+
+
+def test_a_local_models_arguments_are_an_object_the_grammar_keeps_valid(tmp_path, monkeypatch):
+    monkeypatch.setenv("VLLM_API_KEY", "k-local")
+    tree = {"tree": {"type": "sequence", "children": [{"type": "goal", "id": "g1", "goal": "pick", "budget": 2}]}}
+    reply = {"choices": [{"message": {"content": json.dumps({"text": "t", "skill": "plan", "arguments_json": tree})}}]}
+    fake_transport(monkeypatch, reply)
+    decision = LocalVlm(Agent(model="qwen3vl-8b-vllm")).generate(
+        "p", images=(), names=("plan", "done"), attempt=tmp_path / "a", tick=lambda: None, cancelled=lambda: False)
+    assert (decision.skill, decision.arguments) == ("plan", tree)
+    assert LocalVlm.content('{"text": "t", "skill": "done", "arguments_json": "{}"}') == (
+        '{"text": "t", "skill": "done", "arguments_json": "{}"}')  # an encoded string still passes through
+
+
+def test_a_thinking_local_model_reasons_first_and_its_think_block_is_dropped():
+    provider = LocalVlm(Agent(model="cosmos-r2-8b-think-vllm", local_layout="images-first", local_temperature=0.6))
+    body = provider.request("p", (), ("done",))
+    assert body["messages"][0] == {"role": "system", "content": LocalVlm.THINK_NOTE}
+    assert body["max_tokens"] == LocalVlm.THINK_TOKENS and body["chat_template_kwargs"] == {"enable_thinking": True}
+    assert body["temperature"] == 0.6 and body["messages"][1]["content"][-1] == {"type": "text", "text": "p"}
+    raw = '<think>the can is left</think>\n{"text": "t", "skill": "done", "arguments_json": {}}'
+    assert json.loads(LocalVlm.content(raw)) == {"text": "t", "skill": "done", "arguments_json": "{}"}
+    with pytest.raises(ValueError, match="local_layout"):
+        Agent(model="qwen3vl-8b-vllm", local_layout="sideways")

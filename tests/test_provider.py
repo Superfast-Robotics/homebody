@@ -170,7 +170,8 @@ def test_every_named_model_has_a_provider_and_a_way_to_check_it():
         assert provider in PROVIDERS and PROVIDERS[provider].LABEL, name
         executable, key = requirement(provider)
         assert (executable is None) != (key is None), name
-        assert (effort is not None) == (executable is not None or provider == "litellm"), name  # CLIs and LiteLLM take one
+        # CLIs and LiteLLM take one; a vllm model's "think" lets it reason first
+        assert (effort is not None) == (executable is not None or provider == "litellm" or effort == "think"), name
 
 
 def test_claude_code_runs_at_its_model_effort_high_by_default():

@@ -115,6 +115,10 @@ MODELS = {
     "cosmos-r2-32b-vllm": ("vllm", "cosmos-reason2-32b", None),
     "qwen3vl-30b-vllm": ("vllm", "qwen3-vl-30b-a3b", None),
     "hy-embodied-vllm": ("vllm", "hy-embodied", None),
+    # the reasoning models allowed to think before the decision (effort "think": vlm/api.py LocalVlm)
+    "cosmos-r2-8b-think-vllm": ("vllm", "cosmos-reason2-8b", "think"),
+    "cosmos-r2-32b-think-vllm": ("vllm", "cosmos-reason2-32b", "think"),
+    "hy-embodied-think-vllm": ("vllm", "hy-embodied", "think"),
 }
 
 # Multi-model agents (vlm/composite.py), each a MODELS row ("composite", its name, None). A role is a MODELS member
@@ -174,12 +178,21 @@ class Agent:
     second_url: str = "http://10.19.89.218:8001/v1"
     best_small: str = "robobrain25-8b-vllm"
     best_base: str = "robobrain25-8b-vllm"
+    # the vllm models' sampling temperature, their prompt text before ("text-first") or after ("images-first") the
+    # images, and an "Image N:" label before each image
+    local_temperature: float = 0.0
+    local_layout: str = "text-first"
+    local_image_labels: bool = True
 
     def __post_init__(self):
         if self.service_tier not in ("default", "fast", "flex"):
             raise ValueError("agent.service_tier must be default, fast or flex")
         if self.model not in MODELS:
             raise ValueError(f"agent.model must be one of {', '.join(MODELS)}")
+        if self.local_layout not in ("text-first", "images-first"):
+            raise ValueError("agent.local_layout must be text-first or images-first")
+        if not 0 <= self.local_temperature <= 2:
+            raise ValueError("agent.local_temperature must be within [0, 2]")
         if self.reasoning_effort not in ("model", "low", "medium", "high", "xhigh", "max"):
             raise ValueError("agent.reasoning_effort must be model, low, medium, high, xhigh or max")
 

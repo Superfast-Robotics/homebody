@@ -28,6 +28,10 @@ class Cancelled(ProviderError):
     pass
 
 
+class InvalidDecision(ProviderError):
+    """The reply was not a decision Decision.parse accepts: the session refuses it as one step, the model sees why."""
+
+
 class ProviderBusy(ProviderError):
     """The service said it is busy, rate-limited or briefly failing: the same request may succeed later."""
 
@@ -84,7 +88,7 @@ class Decision:
             _finite_numbers(arguments)
             return cls(value["text"], value["skill"], arguments)
         except (ValueError, TypeError, KeyError, RecursionError) as exc:
-            raise ProviderError(f"Invalid structured decision: {exc}") from exc
+            raise InvalidDecision(f"Invalid structured decision: {exc}") from exc
 
 
 def _finite_numbers(arguments):
