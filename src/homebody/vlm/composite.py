@@ -96,7 +96,8 @@ def qwen_size(width: int, height: int) -> tuple[int, int]:
 
 
 def numbers(text: str) -> list[float]:
-    return [float(n) for n in re.findall(r"-?\d+(?:\.\d+)?", text)]
+    """The numbers in TEXT, not digits inside a name (x1="677" gives 677, not 1)."""
+    return [float(n) for n in re.findall(r"(?<![A-Za-z_\d.])-?\d+(?:\.\d+)?", text)]
 
 
 def answer_part(answer: str) -> str:

@@ -110,6 +110,8 @@ def test_point_formats(image):
     assert to_1000(f"<point>[[{width // 2}, {height // 4}]]</point>", "pixels", image) == [500, 250]
     assert to_1000('<points coords="1 1 523 412 2 600 300">red jars</points>', "molmo", image) == [523, 412]
     assert to_1000("[(612, 340)]", "robobrain", image) == [612, 340]
+    assert to_1000('<points x1="677" y1="447" alt="jar">jar</points>', "qwen1000", image) == [677, 447]
+    assert to_1000("<answer>\\point{498, 462}</answer>", "qwen1000", image) == [498, 462]
     reply = (f"<think>the jar at [10, 20] is behind</think><answer><point>[[{width // 2}, {height // 2}], "
              "[5, 5]]</point></answer>")
     assert to_1000(reply, "embodied_r1", image) == [500, 500]  # the answer's first point, not the reasoning's

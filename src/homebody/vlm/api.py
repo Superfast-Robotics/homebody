@@ -98,13 +98,17 @@ class LocalVlm(OpenAiApi):
     cached text). agent.local_layout puts the text before the images (the server's prefix cache serves the opening
     every turn repeats) or after them; agent.local_image_labels names each image ("Image 1:") for models that see
     them only by position. Sampling is agent.local_temperature, not the checkpoint's defaults. A MODELS row with
-    effort "think" lets the model reason before its answer (a reasoning parser on the server keeps it out of the
-    content; any <think> block left in the content is dropped)."""
+    effort "think" lets the model reason before its answer: the server runs its reasoning parser (deepseek_r1 for
+    Cosmos-Reason2, prompted and prefilled with its card's format; hunyuan_v3 for Hy-Embodied, whose template opens the
+    reasoning), so the grammar applies after the reasoning; any <think> block left in the content is dropped."""
     LABEL, KEY = "vLLM", "VLLM_API_KEY"
     LOCAL = True
     MAX_TOKENS, THINK_TOKENS = 2048, 4096
-    THINK_NOTE = ("Reason briefly inside <think></think> about the images and the last results first; then give "
-                  "the decision as the JSON object alone.")
+    # Cosmos-Reason2's card format (it thinks only when asked, and its reply opens with the prefilled <think>, so the
+    # server's reasoning parser starts the grammar after the generated </think>); Hy-Embodied's template opens it
+    THINK_NOTE = ("Answer the question in the following format: <think>\nyour reasoning\n</think>\n\n<answer>\n"
+                  "your answer\n</answer>. Your answer is the decision as the JSON object alone.")
+    THINK_PREFILL = "<think>\n"
 
     @property
     def URL(self) -> str:  # noqa: N802 -- the parent's class constant, from settings here
@@ -132,8 +136,11 @@ class LocalVlm(OpenAiApi):
         text = {"type": "text", "text": prompt}
         content = [text, *pictures] if self.settings.local_layout == "text-first" else [*pictures, text]
         messages = [{"role": "user", "content": content}]
-        if self.thinking:
-            messages.insert(0, {"role": "system", "content": self.THINK_NOTE})
+        prefill = {}
+        if self.thinking and self.settings.model_id.startswith("cosmos"):
+            messages = [{"role": "system", "content": self.THINK_NOTE}, *messages,
+                        {"role": "assistant", "content": self.THINK_PREFILL}]
+            prefill = {"continue_final_message": True, "add_generation_prompt": False}
         decision = schema(offered)
         decision["properties"] = {**{k: v for k, v in decision["properties"].items() if k != "arguments_json"},
                                   "arguments_json": {"type": "object"}}
@@ -141,7 +148,7 @@ class LocalVlm(OpenAiApi):
                 "response_format": {"type": "json_schema", "json_schema": {"name": "decision", "schema": decision}},
                 "max_tokens": self.THINK_TOKENS if self.thinking else self.MAX_TOKENS,
                 "temperature": self.settings.local_temperature,
-                "chat_template_kwargs": {"enable_thinking": self.thinking}}
+                "chat_template_kwargs": {"enable_thinking": self.thinking}, **prefill}
 
     @staticmethod
     def content(raw: str) -> str:

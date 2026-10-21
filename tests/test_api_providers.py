@@ -279,6 +279,10 @@ def test_a_thinking_local_model_reasons_first_and_its_think_block_is_dropped():
     provider = LocalVlm(Agent(model="cosmos-r2-8b-think-vllm", local_layout="images-first", local_temperature=0.6))
     body = provider.request("p", (), ("done",))
     assert body["messages"][0] == {"role": "system", "content": LocalVlm.THINK_NOTE}
+    assert body["messages"][-1] == {"role": "assistant", "content": "<think>\n"}
+    assert body["continue_final_message"] is True and body["add_generation_prompt"] is False
+    hy = LocalVlm(Agent(model="hy-embodied-think-vllm")).request("p", (), ("done",))
+    assert len(hy["messages"]) == 1 and hy["chat_template_kwargs"] == {"enable_thinking": True}
     assert body["max_tokens"] == LocalVlm.THINK_TOKENS and body["chat_template_kwargs"] == {"enable_thinking": True}
     assert body["temperature"] == 0.6 and body["messages"][1]["content"][-1] == {"type": "text", "text": "p"}
     raw = '<think>the can is left</think>\n{"text": "t", "skill": "done", "arguments_json": {}}'
