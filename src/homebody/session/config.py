@@ -115,6 +115,17 @@ MODELS = {
     "cosmos-r2-32b-vllm": ("vllm", "cosmos-reason2-32b", None),
     "qwen3vl-30b-vllm": ("vllm", "qwen3-vl-30b-a3b", None),
     "hy-embodied-vllm": ("vllm", "hy-embodied", None),
+    # newer candidates (2026): Embodied-R1.5, RynnBrain-8B and MiMo-Embodied (Qwen3-VL / Qwen2.5-VL fine-tunes), and
+    # on vLLM >= 0.21 Qwen3.8-27B, Qwen3.6-35B-A3B, RynnBrain1.1-9B, Cosmos3 and Gemma 4
+    "embodied-r15-vllm": ("vllm", "embodied-r1.5", None),
+    "rynnbrain-8b-vllm": ("vllm", "rynnbrain-8b", None),
+    "mimo-embodied-7b-vllm": ("vllm", "mimo-embodied-7b", None),
+    "qwen38-27b-vllm": ("vllm", "qwen3.8-27b", None),
+    "qwen36-35b-vllm": ("vllm", "qwen3.6-35b-a3b", None),
+    "rynnbrain11-9b-vllm": ("vllm", "rynnbrain1.1-9b", None),
+    "cosmos3-nano-vllm": ("vllm", "cosmos3-nano", None),
+    "cosmos3-super-vllm": ("vllm", "cosmos3-super", None),
+    "gemma4-31b-vllm": ("vllm", "gemma-4-31b", None),
     # the reasoning models allowed to think before the decision (effort "think": vlm/api.py LocalVlm)
     "cosmos-r2-8b-think-vllm": ("vllm", "cosmos-reason2-8b", "think"),
     "cosmos-r2-32b-think-vllm": ("vllm", "cosmos-reason2-32b", "think"),
