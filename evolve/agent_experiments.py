@@ -220,9 +220,15 @@ def api_key():
 
 
 def served(server, port):
-    """(model, vLLM arguments) of the vLLM server on PORT of the GPU host, or None."""
-    lines = subprocess.run(on_host(server, ["pgrep", "-af", f"vllm serve .*--port {port}( |$)"]),
-                           capture_output=True, text=True).stdout.splitlines()
+    """(model, vLLM arguments) of the vLLM server on PORT of the GPU host, or None. An ssh that fails to connect
+    (exit 255) is asked again: a dropped connection is no answer."""
+    for _ in range(5):
+        found = subprocess.run(on_host(server, ["pgrep", "-af", f"vllm serve .*--port {port}( |$)"]),
+                               capture_output=True, text=True)
+        if found.returncode != 255:
+            break
+        time.sleep(5)
+    lines = found.stdout.splitlines()
     for line in lines:
         words = line.split()
         if "--served-model-name" in words:
@@ -297,8 +303,10 @@ def serve(cfg, server, wanted):
         log(f"starting {item.model} on {port} ({item.share:.2f} of the GPU)")
         logfile = start(cfg, server, item, port)
         until = time.monotonic() + agents["ready_seconds"]
+        missing = 0
         while not ready(server["ip"], outside[port], item.model):
-            if served(server, port) is None:
+            missing = 0 if served(server, port) else missing + 1
+            if missing >= 3:  # gone on three checks in a row
                 raise RuntimeError(f"{item.model} exited while starting: see {logfile}")
             if time.monotonic() > until:
                 raise RuntimeError(f"{item.model} not ready after {agents['ready_seconds']} s: see {logfile}")
