@@ -1,5 +1,5 @@
 """The pick skill: walk in when needed, plan a grasp from visible depth, approach, close, lift,
-verify the hold and stow the carry."""
+verify the hold and defer transport tucking until navigation."""
 import json
 from collections import Counter
 from dataclasses import asdict, dataclass
@@ -12,18 +12,21 @@ from homebody.helpers.geometry import inverse, points_in, rotation_error, transf
 from homebody.helpers.grasp import Shape, closing_angles, visible_shape
 from homebody.helpers.target import TargetTrack, arm_occlusion_evidence
 from homebody.helpers.trajectory import approach_path, servo_step
-from homebody.motion.arm import close_or_open, move_path, reset_arm, servo, servo_best_effort
+from homebody.motion.arm import close_or_open, move_path, reset_arm, servo
 from homebody.motion.carry import (
     RECOVERY_FAILURES,
     RecoveryPlan,
-    begin_pending,
     recover,
     recovery_result,
+)
+from homebody.motion.carry import (
+    begin_pending as register_pending,
 )
 from homebody.primitives.observations import Frame, FreshEvidence, ObservationError
 from homebody.skills import navigate
 from homebody.skills.contract import Result, SkillFailure, click_argument, side_argument
-from homebody.skills.dex1.transport import compact_carry
+from homebody.skills.dex1.clearance import servo_best_effort
+from homebody.skills.dex1.transport import defer_compaction
 
 NEEDS = ("base_velocity", "arm_target", "grip", "advance", "stop")
 
@@ -81,7 +84,7 @@ def execute(plan, ctx):
 
 
 def grasp(plan, ctx):
-    """The pick from a planned grasp: open, approach, close, lift, verify, compact the carry."""
+    """The pick from a planned grasp: open, approach, close, lift, verify the carry."""
     ctx.stage("Opening hand")
     close_or_open(ctx, plan.epoch, plan.side, 0.0, ctx.settings.grasp.open_seconds)
     plan, target, frame = approach_or_replan(plan, ctx)
@@ -104,7 +107,7 @@ def grasp(plan, ctx):
         return Result(result.skill, result.code, f"{result.message}; the arm did not return near its rest pose")
     if status != "verified":
         raise SkillFailure("LIFT_NOT_VERIFIED", "Repeated current evidence did not verify lift; grasp remains uncertain")
-    frame = compact_carry(ctx, plan.epoch, plan.side)
+    defer_compaction(ctx, plan.side)
     shape = visible_shape(frame.target_points(plan.label), ctx.settings.grasp.shape_quantiles)
     palm = frame.palm(ctx.arms[plan.side], plan.side)
     record = ctx.carried[plan.side]
@@ -112,6 +115,14 @@ def grasp(plan, ctx):
                   {"side": plan.side,
                    "observed_top_rise": float(shape.upper[2] - record["baseline_upper"]),
                    "palm_rise": float(palm[2, 3] - record["baseline_palm_height"])})
+
+
+def begin_pending(ctx, frame, side, label, lift_target, *, points=None):
+    """Use the same robust top statistic as recovery's post-lift measurement."""
+    register_pending(ctx, frame, side, label, lift_target, points=points)
+    points = frame.target_points(label) if points is None else points
+    ctx.carried[side]["baseline_upper"] = float(visible_shape(
+        points, ctx.settings.grasp.shape_quantiles).upper[2])
 
 
 def recheck(plan, ctx):
@@ -127,7 +138,7 @@ def recheck(plan, ctx):
         status, _ = recover(ctx, plan.epoch, plan.side)
     if status == "verified":
         if ctx.carried[plan.side]["label"] == plan.label:
-            compact_carry(ctx, plan.epoch, plan.side)
+            defer_compaction(ctx, plan.side)
             return Result("pick", "OK", "Current repeated hand and visual evidence verifies the original grasp")
         return Result("pick", "HAND_OCCUPIED", "The original carried object is still verified; the hand was not opened")
     return recovery_result("pick", status)
@@ -403,11 +414,23 @@ class GraspSearch:
         return None
 
     def best(self, reachable):
-        """Prefer clearance, opposing patch overlap, then tier, width and travel, trying
-        each start lift in turn. None when none routes."""
-        ranked = sorted(reachable, key=lambda grasp: (-grasp.clearance, -grasp.candidate.contact_overlap,
-                                                      grasp.candidate.tier, grasp.candidate.width,
-                                                      np.linalg.norm(grasp.pre_joints - self.seed)))
+        """Prefer clearance and seating, trying each start lift in turn.
+
+        For short targets prefer the insertion tier before overlap: a steep pose's
+        larger projected patch can stall on contact before the pads enclose a squat
+        jar. The target is exempt from descent clearance, so that gate cannot prove
+        seating. Keep overlap first for taller targets and within each short-target
+        tier; retain steep tiers as fallbacks when shallower insertions cannot route.
+        """
+        def rank(grasp):
+            candidate = grasp.candidate
+            short = candidate.shape.upper[2] - candidate.shape.lower[2] <= .06
+            seating = ((candidate.tier, -candidate.contact_overlap) if short else
+                       (-candidate.contact_overlap, candidate.tier))
+            return (-grasp.clearance, *seating, candidate.width,
+                    np.linalg.norm(grasp.pre_joints - self.seed))
+
+        ranked = sorted(reachable, key=rank)
         checked = {}
         for lift in (0., *self.settings.approach_start_lifts_m):
             for grasp in ranked:
@@ -502,7 +525,10 @@ def require_jaw_enclosure(plan, ctx, target, frame):
     local = points_in(inverse(jaw), target.track.last_supported_points)
     lower, upper = np.quantile(local, ctx.settings.grasp.shape_quantiles, axis=0)
     half = opened["aperture"] / 2
-    if not (np.all(lower < 0) and np.all(upper > 0) and
+    # The pad has area: a target can be seated off its centre in the
+    # non-closing direction. Still require depth insertion and jaw clearance.
+    band = ctx.settings.grasp.pad_band
+    if not (lower[2] < 0 < upper[2] and lower[1] < band and upper[1] > -band and
             local[:, 0].min() >= -half and local[:, 0].max() <= half):
         raise SkillFailure("NO_GRASP", "Recovered insertion did not enclose the supported target")
 

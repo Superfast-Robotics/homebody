@@ -5,13 +5,11 @@ from itertools import product
 
 import numpy as np
 
-from homebody.helpers.collision import Clearance, under_box
+from homebody.helpers.collision import under_box
 from homebody.helpers.geometry import inverse, points_in
 from homebody.helpers.grasp import payload_offset, visible_shape
 from homebody.motion.arm import (
     close_or_open,
-    move_joints,
-    servo,
 )
 from homebody.motion.carry import (
     RECOVERY_FAILURES,
@@ -24,6 +22,7 @@ from homebody.motion.carry import (
 from homebody.primitives.observations import FreshEvidence
 from homebody.skills import navigate
 from homebody.skills.contract import Result, SkillFailure, click_argument, side_argument
+from homebody.skills.dex1.clearance import Clearance, move_joints, servo
 from homebody.skills.dex1.place_geometry import (
     extract,
     hand_extent,
@@ -189,9 +188,21 @@ def execute(plan, ctx):
     open_jaw = jaw_frame(ctx.planning().jaw_samples.get(side), current.hands[side].closure)
     target = withdrawal(target, open_jaw, ctx.carried[side], settings.placement.withdraw_clearance,
                         hand_extent(current, ctx.arms[side], side))
-    extract(ctx, epoch, side, target)
+    withdrawal_error = None
+    try:
+        extract(ctx, epoch, side, target)
+    except SkillFailure as error:
+        if error.code != "ARM_NOT_REACHED":
+            raise
+        ctx.actions.stop(epoch)
+        withdrawal_error = withdrawal_failure(error)
 
-    return verify_settled(plan, ctx, center_in_palm)
+    return verify_settled(plan, ctx, center_in_palm, withdrawal_error)
+
+
+def withdrawal_failure(error):
+    """A stalled jaw withdrawal (a SkillFailure) as the result verify_settled reports beside a verified landing."""
+    return Result("place", error.code, str(error), dict(error.details))
 
 
 def abort(plan, ctx):
@@ -382,7 +393,7 @@ def attached_center(plan, ctx):
     return center_in_palm
 
 
-def verify_settled(plan, ctx, center_in_palm):
+def verify_settled(plan, ctx, center_in_palm, withdrawal_error=None):
     """Watch the release for settle_count ticks. A verified landing returns the arm and reports."""
     ctx.stage("Verifying placement")
     settling = Settling(plan, ctx, center_in_palm)
@@ -390,10 +401,10 @@ def verify_settled(plan, ctx, center_in_palm):
         ctx.advance(plan.epoch, ctx.settings.placement.tick)
         if settling.update(ctx.observe(plan.epoch)) and plan.side not in ctx.carried:
             # the landing is verified: a blocked arm return is reported with it, not in its place
-            returned = complete_return(plan, ctx)
+            returned = withdrawal_error or complete_return(plan, ctx)
             where = "it settled on the support" if plan.support else "it settled below the release point"
-            return placed(plan, where, settling.previous, returned)
-    if not settling.seen:
+            return placed(plan, where, settling.previous, returned, withdrawal_error)
+    if not settling.seen and withdrawal_error is None:
         return unseen_release(plan, ctx, settling.open_hand.count)
     raise SkillFailure("PLACEMENT_NOT_VERIFIED",
                        f"The {plan.side} hand's fingers opened; separation from the hand and visible settling "
@@ -464,14 +475,20 @@ def unseen_release(plan, ctx, open_count):
     raise SkillFailure("PLACEMENT_NOT_VERIFIED", "Both jaws opened, but the landing is not visible")
 
 
-def placed(plan, message, landing=None, returned=None):
+def placed(plan, message, landing=None, returned=None, withdrawal_error=None):
     """An OK result saying what was verified; RETURNED is the arm return's refusal (None when the arm returned)."""
     short = f", {plan.short_m:.2f} m XY displacement from the requested point" if plan.short_m else ""
     arm = "" if returned is None else (f" The object is placed; only the {plan.side} arm's return to rest was "
                                        f"refused ({returned.code}: {returned.message}).")
+    if withdrawal_error is not None:
+        arm = (f" Jaw withdrawal stalled ({withdrawal_error.code}: {withdrawal_error.message}); "
+               "landing was verified and arm return was not attempted.")
     return Result("place", "OK", f"Released from the {plan.side} hand; {message}{short}.{arm}",
                   {"hand": plan.side, "short_of_point_m": round(plan.short_m, 3), "arm_returned": returned is None,
-                   "arm_return_error": None if returned is None else f"{returned.code}: {returned.message}",
+                   "arm_return_error": (None if returned is None or withdrawal_error is not None
+                                        else f"{returned.code}: {returned.message}"),
+                   "withdrawal_error": (None if withdrawal_error is None else
+                                        f"{withdrawal_error.code}: {withdrawal_error.message}"),
                    "target_world": plan.point.tolist(),
                    "selected_payload_world": None if plan.selected_point is None else plan.selected_point.tolist(),
                    "observed_landing_world": None if landing is None else landing.tolist(),

@@ -111,7 +111,8 @@ def test_overlap_ranking_keeps_clearance_gates_and_original_fallbacks(monkeypatc
     subject.blocked = []
     subject.blockers = Counter()
     subject.counts = {'approach_clear': 0}
-    original = pick.GraspCandidate(0, .02, np.eye(4), np.eye(4), None, .0001)
+    shape = pick.visible_shape(cloud(), subject.settings.shape_quantiles)
+    original = pick.GraspCandidate(0, .02, np.eye(4), np.eye(4), shape, .0001)
     seated = replace(original, tier=1, width=.03, palm=np.eye(4), contact_overlap=.0004)
     if case == 'tie':
         seated = replace(seated, contact_overlap=original.contact_overlap)
@@ -124,6 +125,35 @@ def test_overlap_ranking_keeps_clearance_gates_and_original_fallbacks(monkeypatc
                         None if case == 'route_blocked' and joints is second.pre_joints else (joints,))
     selected, _ = subject.best([first, second])
     assert selected is (seated if case == 'overlap' else original)
+
+
+@pytest.mark.parametrize('height', [.046, .059, .061, .12])
+@pytest.mark.parametrize('case', ['pitch', 'same_tier', 'clearance', 'descent_blocked', 'route_blocked'])
+def test_short_target_prefers_reachable_insertion_before_overlap(monkeypatch, height, case):
+    subject = pick.GraspSearch.__new__(pick.GraspSearch)
+    subject.settings = Settings().grasp
+    subject.seed = np.zeros(2)
+    subject.arm = subject.approach = object()
+    subject.cancelled = lambda: False
+    subject.blocked = []
+    subject.blockers = Counter()
+    subject.counts = {'approach_clear': 0}
+    # Real generated poses: 30-degree full-depth insertion versus the 60-degree
+    # tier selected in the jar recordings. Translate to shelf height as in use.
+    options = candidates(cloud((.048, .048, height)) + [1., -.2, .76])
+    shallow = replace(next(o for o in options if o.tier == 1), contact_overlap=.0001)
+    steep = replace(next(o for o in options if o.tier == 2), contact_overlap=.0004)
+    if case == 'same_tier':
+        steep = replace(steep, tier=shallow.tier)
+    first = pick.ReachableGrasp(shallow, np.zeros(2))
+    second = pick.ReachableGrasp(steep, np.ones(2), .01 if case == 'clearance' else 0.)
+    monkeypatch.setattr(subject, 'servo_descent',
+                        lambda joints, palm: None if case == 'descent_blocked' and palm is shallow.palm else 0.)
+    monkeypatch.setattr(pick, 'approach_path',
+                        lambda arm, seed, joints, *args, **kwargs:
+                        None if case == 'route_blocked' and joints is first.pre_joints else (joints,))
+    selected, _ = subject.best([second, first])
+    assert selected is (shallow if height < .06 and case == 'pitch' else steep)
 
 
 def hand(efforts):
@@ -312,3 +342,73 @@ def test_failed_insertion_is_excluded_before_ik():
     search.arm = SimpleNamespace(solve=lambda *args: pytest.fail('Failed insertion reached IK'))
     assert list(search.reachable([failed])) == []
     assert search.blockers['equivalent blocked grasp'] == 1
+
+
+def test_lift_baseline_uses_same_quantile_as_recovery():
+    # Raw max at 1.2 m used to hide a real 17 cm lift of this 4 cm jar.
+    from homebody.motion.carry import evidence
+
+    settings = Settings()
+    points = cloud((.04, .04, .04)) + [0., 0., .75]
+    points = np.vstack((points, [0., 0., 1.2]))
+    palm = np.eye(4)
+    hand = HandState(np.ones(2) * -.02, .5, np.ones(3) * .5, np.ones(3) * .5)
+    frame = SimpleNamespace(epoch=1, palm=lambda *args: palm, target_points=lambda _: points,
+                            visible=lambda _: True, hands={'right': hand})
+    ctx = SimpleNamespace(settings=settings, arms={'right': object()}, carried={})
+    pick.begin_pending(ctx, frame, 'right', 7, np.eye(4))
+    record = ctx.carried['right']
+    assert record['baseline_upper'] < .8
+    points = points + [0., 0., .17]
+    palm[2, 3] = .17
+    assert evidence(frame, ctx.arms['right'], 'right', record, settings.grasp) == 'held'
+    palm[2, 3] = 0.
+    assert evidence(frame, ctx.arms['right'], 'right', record, settings.grasp) != 'held'
+
+
+@pytest.mark.parametrize('across, passes', [(.045, True), (.1, False)])
+def test_enclosure_allows_pad_overlap_but_not_a_missed_target(across, passes):
+    points = cloud() + [.117, 0., across]
+    frame = SimpleNamespace(palm=lambda *args: np.eye(4), hands={'right': SimpleNamespace(closure=0.)})
+    ctx = SimpleNamespace(settings=Settings(), arms={'right': object()},
+                          planning=lambda: SimpleNamespace(jaw_samples={'right': calibration()}))
+    target = SimpleNamespace(update=lambda _: None, track=SimpleNamespace(last_supported_points=points))
+    if passes:
+        pick.require_jaw_enclosure(SimpleNamespace(side='right'), ctx, target, frame)
+    else:
+        with pytest.raises(SkillFailure, match='did not enclose'):
+            pick.require_jaw_enclosure(SimpleNamespace(side='right'), ctx, target, frame)
+
+
+def test_recheck_defers_compaction_and_keeps_verified_ownership(monkeypatch):
+    from homebody.skills.dex1.transport import CarryState
+
+    ctx = SimpleNamespace(carried={'right': {'label': 7, 'state': CarryState.VERIFIED}}, stage=lambda _: None)
+    monkeypatch.setattr(pick, 'recover', lambda *args: ('verified', None))
+    result = pick.recheck(pick.RecoveryPlan(1, 'right', 7), ctx)
+    assert result.code == 'OK'
+    assert ctx.carried['right']['compact_pending']
+    assert ctx.carried['right']['state'] == CarryState.VERIFIED
+
+
+@pytest.mark.parametrize('status', ['verified', 'uncertain'])
+def test_pick_defers_only_after_verified_lift(monkeypatch, status):
+    frame = SimpleNamespace(target_points=lambda _: cloud(), palm=lambda *args: np.eye(4))
+    plan = SimpleNamespace(epoch=1, side='right', label=7)
+    target = SimpleNamespace(track=SimpleNamespace(last_supported_points=cloud()))
+    ctx = SimpleNamespace(stage=lambda _: None, settings=Settings(), arms={'right': object()},
+                          carried={'right': {'baseline_upper': 0., 'baseline_palm_height': 0.}})
+    monkeypatch.setattr(pick, 'close_or_open', lambda *args: frame)
+    monkeypatch.setattr(pick, 'approach_or_replan', lambda *args: (plan, target, frame))
+    monkeypatch.setattr(pick, 'begin_pending', lambda *args, **kwargs: None)
+    monkeypatch.setattr(pick, 'squeeze', lambda *args: frame)
+    monkeypatch.setattr(pick, 'require_contact', lambda *args: None)
+    monkeypatch.setattr(pick, 'lift_pending', lambda *args: frame)
+    monkeypatch.setattr(pick, 'recover', lambda *args: (status, frame))
+    if status == 'verified':
+        assert pick.grasp(plan, ctx).code == 'OK'
+        assert ctx.carried['right']['compact_pending']
+    else:
+        with pytest.raises(SkillFailure, match='did not verify lift'):
+            pick.grasp(plan, ctx)
+        assert 'compact_pending' not in ctx.carried['right']

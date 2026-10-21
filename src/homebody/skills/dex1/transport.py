@@ -155,3 +155,12 @@ def compact_carry(ctx, epoch, side):
                                       ctx.settings.grasp.carry_compact_min_delta):
         record.pop('compact_pending', None)
     return frame
+
+
+def defer_compaction(ctx, side):
+    """Pick knows no next destination. Leave transport tucking to navigation.
+
+    Keep its pending flag so backing out before a loaded turn still compacts.
+    Short arm-only transfers need no additional wrist rotation or hold recheck.
+    """
+    ctx.carried[side]['compact_pending'] = True

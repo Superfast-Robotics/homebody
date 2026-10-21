@@ -268,3 +268,32 @@ def test_a_verified_landing_stays_placed_when_only_the_arm_return_fails(monkeypa
     monkeypatch.setattr(place, 'complete_return', lambda *args: None)
     result = place.verify_settled(plan, ctx, np.zeros(3))
     assert result.code == 'OK' and result.details['arm_returned'] is True and 'return to rest' not in result.message
+
+
+@pytest.mark.parametrize('landed', [True, False])
+def test_withdrawal_stall_requires_verified_landing_and_never_returns_arm(monkeypatch, landed):
+    from homebody.skills.contract import Result
+
+    ctx = SimpleNamespace(settings=Settings(), carried={}, stage=lambda _: None,
+                          advance=lambda *args: None, observe=lambda _: object())
+    plan = place.Plan(1, 'right', 3, np.zeros(3), None, np.eye(4), np.eye(4))
+    settling = SimpleNamespace(update=lambda _: landed, previous=np.zeros(3), seen=landed)
+    monkeypatch.setattr(place, 'Settling', lambda *args: settling)
+    monkeypatch.setattr(place, 'complete_return', lambda *args: pytest.fail('Must not return after stalled withdrawal'))
+    error = Result('place', 'ARM_NOT_REACHED', 'Open jaws did not finish calibrated axial withdrawal')
+    if landed:
+        result = place.verify_settled(plan, ctx, np.zeros(3), error)
+        assert result.code == 'OK'
+        assert result.details['arm_returned'] is False
+        assert 'ARM_NOT_REACHED' in result.details['withdrawal_error']
+        assert result.details['observed_landing_world'] == [0., 0., 0.]
+    else:
+        with pytest.raises(SkillFailure, match='were not both verified'):
+            place.verify_settled(plan, ctx, np.zeros(3), error)
+
+
+def test_a_stalled_withdrawal_becomes_a_result_from_the_real_failure():
+    error = SkillFailure('ARM_NOT_REACHED', 'Open jaws did not finish calibrated axial withdrawal', {'hand': 'right'})
+    result = place.withdrawal_failure(error)
+    assert result.code == 'ARM_NOT_REACHED' and 'axial withdrawal' in result.message
+    assert result.details == {'hand': 'right'}
