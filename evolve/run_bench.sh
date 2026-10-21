@@ -31,6 +31,7 @@ stop_server() {  # the server's whole process group (setsid made it the leader),
 }
 for _ in $(seq 360); do
   curl -sf -H "Authorization: Bearer $VLLM_API_KEY" "$URL/models" | grep -q "$SERVED" && break
+  kill -0 "$SERVER" 2>/dev/null || break  # the server exited: no use waiting
   sleep 10
 done
 curl -sf -H "Authorization: Bearer $VLLM_API_KEY" "$URL/models" | grep -q "$SERVED" || {
