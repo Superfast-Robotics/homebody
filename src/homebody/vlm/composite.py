@@ -168,6 +168,9 @@ def to_1000(answer: str, form: str, image: Path) -> list[int]:
         values = numbers(answer)
         if len(values) < 2:
             raise ProviderError(f"no point in the pointer's answer: {answer[:200]}")
+        group = re.search(r"\[([^\[\]]*)\]", answer)
+        if group and len(box := numbers(group[1])) == 4:  # a box where a point was asked (Cosmos3-Nano): its centre
+            values = [(box[0] + box[2]) / 2, (box[1] + box[3]) / 2]  # gemma's y-first box gives y-first
         x, y = values[:2]
         if form == "gemma":
             y, x = values[:2]

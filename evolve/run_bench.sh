@@ -4,7 +4,8 @@
 # (a session/config.py MODELS name, "-" for a pointer that is no agent), pointing in POINT_FORMAT, yes/no checks.
 # Cases are ~/bench/cases-all (every recorded turn); results go to ~/bench/runs/NAME-*. The server stops at the end.
 # SUITES (default "turns point verify") picks the benches, TURN_ARGS adds turns flags, LAUNCH replaces the vLLM
-# command with another server's (it must serve SERVED on 127.0.0.1:$PORT); a run resumes where it stopped.
+# command with another server's (it must serve SERVED on 127.0.0.1:$PORT), STRUCTURED replaces the JSON grammar
+# config (Cosmos3 needs its whitespace); a run resumes where it stopped.
 set -u
 NAME=$1 REPO=$2 SERVED=$3 FORMAT=$4 AGENT=$5 VENV=$6
 shift 6
@@ -20,7 +21,7 @@ if [ -n "${LAUNCH:-}" ]; then  # another OpenAI-compatible server (SGLang, the H
 else
   setsid nohup "$VENV/bin/vllm" serve "$REPO" --served-model-name "$SERVED" --host 127.0.0.1 --port "$PORT" \
     --max-model-len 16384 --limit-mm-per-prompt '{"image": 4}' --enable-prefix-caching \
-    --structured-outputs-config '{"backend": "xgrammar", "disable_any_whitespace": true}' "$@" \
+    --structured-outputs-config "${STRUCTURED:-{\"backend\": \"xgrammar\", \"disable_any_whitespace\": true\}}" "$@" \
     > "$RUNS/$NAME-server.log" 2>&1 < /dev/null &
 fi
 SERVER=$!

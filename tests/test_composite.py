@@ -122,6 +122,8 @@ def test_point_formats(image):
     assert to_1000('[{"point": [300, 700], "label": "point_1"}]', "gemma", image) == [700, 300]
     assert to_1000(f'[{{"points": [[{width // 4}, {height // 2}]], "label": "can 2"}}]', "mimo", image) == [250, 500]
     assert to_1000("<answer>\n<point>(388,330)</point>\n</answer>", "hy05", image) == [388, 330]
+    assert to_1000("<ref>jar</ref>:<box>[600, 360, 734, 686]</box>", "cosmos3", image) == [667, 523]
+    assert to_1000("The jar is located at `[620, 380, 740, 690]`.", "rynnbrain", image) == [680, 535]
     assert to_1000("[512, 300]", "molmo", image) == [512, 300]  # a Molmo-trained model in plain numbers
     for form in composite.POINTER_PROMPTS:
         assert composite.POINTER_PROMPTS[form].format(target="the can")  # every template formats
