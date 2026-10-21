@@ -129,6 +129,13 @@ def cases_of(args):
     return sorted(p.parent for p in Path(args.cases).glob("*/case.json"))[:args.limit]
 
 
+def attempt_dir(out: Path, case: Path) -> Path:
+    """A fresh folder for the case's request and reply (a rerun replaces an unfinished one)."""
+    folder = out / case.name / "request"
+    shutil.rmtree(folder, ignore_errors=True)
+    return folder
+
+
 def save(out: Path, case: Path, record: dict, started: float) -> dict:
     record = {"case": case.name, **record, "seconds": round(time.monotonic() - started, 2)}
     (out / case.name).mkdir(parents=True, exist_ok=True)
@@ -143,7 +150,7 @@ def ask_turn(settings: Agent, case: Path, out: Path) -> dict:
         provider.turn(tuple(meta["allowed"]))
     try:
         decision = provider.generate((case / "prompt.txt").read_text(), images=tuple(case / n for n in IMAGES),
-                                     names=tuple(meta["offered"]), attempt=out / case.name, tick=lambda: None,
+                                     names=tuple(meta["offered"]), attempt=attempt_dir(out, case), tick=lambda: None,
                                      cancelled=lambda: False)
         record = {"skill": decision.skill, "arguments": decision.arguments, "text": decision.text}
     except ProviderError as error:
@@ -165,7 +172,7 @@ def ask_point(endpoint: Endpoint, case: Path, out: Path) -> dict | None:
     started = time.monotonic()
     prompt = POINTER_PROMPTS[endpoint.format].format(target=f"the object in this robot step: {wanted}")
     try:
-        answer = endpoint.ask(prompt, (case / "rgb.png",), attempt=out / case.name, tick=lambda: None,
+        answer = endpoint.ask(prompt, (case / "rgb.png",), attempt=attempt_dir(out, case), tick=lambda: None,
                               cancelled=lambda: False)
     except ProviderError as error:
         return save(out, case, {"error": str(error)[:300]}, started)
@@ -193,7 +200,7 @@ def ask_verify(endpoint: Endpoint, case: Path, out: Path) -> dict | None:
     started = time.monotonic()
     prompt = VERIFY_PROMPT.format(goal=meta["goal"], claim="The goal is done.")
     try:
-        answer = endpoint.ask(prompt, (case / "rgb.png",), attempt=out / case.name, tick=lambda: None,
+        answer = endpoint.ask(prompt, (case / "rgb.png",), attempt=attempt_dir(out, case), tick=lambda: None,
                               cancelled=lambda: False)
     except ProviderError as error:
         return save(out, case, {"error": str(error)[:300], "truth": truth}, started)
@@ -204,7 +211,7 @@ def run(args, kind: str, ask):
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     (out / "run.json").write_text(json.dumps({"kind": kind, "model": args.label, "cases": str(Path(args.cases))}))
-    cases = cases_of(args)
+    cases = [c for c in cases_of(args) if not (out / c.name / "bench.json").is_file()]  # resumable
     with ThreadPoolExecutor(args.jobs) as pool:
         for n, record in enumerate(pool.map(lambda c: ask(c, out), cases), 1):
             if record is not None:
