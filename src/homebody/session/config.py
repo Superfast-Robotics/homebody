@@ -186,6 +186,8 @@ COMPOSITES = {
     "c-q38-molmo-v": {"kind": "verifier", "base": {"model": "c-q38-molmo"}, "vetoes": 2,
                       "verifier": {**MOLMO_ER, "format": "yesno"}},
     "c-q38-molmo": {"kind": "pointer", "planner": {"model": "qwen38-27b-vllm"}, "pointer": MOLMO_ER},
+    # Gemma 4 judges progress best on the bench but cannot click: Molmo2-ER points for it
+    "c-g4-molmo": {"kind": "pointer", "planner": {"model": "gemma4-31b-vllm"}, "pointer": MOLMO_ER},
 }
 MODELS.update({name: ("composite", name, None) for name in COMPOSITES})
 

@@ -78,7 +78,7 @@ MODELS = {
                           args=("--mm-encoder-tp-mode", "data"), big=True, blocked="needs vLLM >= 0.23 (loki-gh200)"),
     "cosmos3-super": Model("cosmos3-super-vllm", "nvidia/Cosmos3-Super", 66.7, "BF16", point="cosmos3", whitespace=True,
                            args=("--mm-encoder-tp-mode", "data"), big=True, blocked="66.7 GB; vLLM >= 0.23"),
-    "gemma-4-31b": Model("gemma4-31b-vllm", "google/gemma-4-31B-it", 62.0, "BF16", point="gemma", big=True,
+    "gemma-4-31b": Model("gemma4-31b-vllm", "google/gemma-4-31B-it", 62.0, "BF16", point="gemma", big=True, whitespace=True,
                          blocked="62 GB; vLLM >= 0.19"),
 }
 # built and not chosen: Qwen/Qwen3-VL-30B-A3B-Instruct-FP8 (31 GB weight-only on Ampere: alone only),
@@ -166,6 +166,7 @@ def experiments(best_small="robobrain2.5-8b", best_base="robobrain2.5-8b", gpu_g
         "Q38M": Experiment("c-q38-mimo", Serve("qwen3.8-27b", 0.55, 16384), Serve("mimo-embodied-7b", 0.33, 8192)),
         "Q38L": Experiment("c-q38-molmo-v", Serve("qwen3.8-27b", 0.55, 16384), Serve("molmo2-er", 0.33, 8192)),
         "Q38O": Experiment("c-q38-molmo", Serve("qwen3.8-27b", 0.55, 16384), Serve("molmo2-er", 0.33, 8192)),
+        "G4O": Experiment("c-g4-molmo", Serve("gemma-4-31b", 0.72, 16384), Serve("molmo2-er", 0.20, 8192)),
     }
 
 
