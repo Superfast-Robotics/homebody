@@ -24,7 +24,7 @@ import numpy as np
 
 LIFT_M = 0.05
 RATES = {"input": 50.0, "cached": 2.5, "output": 250.0}  # credits per 1M tokens (GPT-6.1 Sol)
-AGENT_RATES = {"astra": (250.0, 25.0, 1250.0), "sol": (50.0, 2.5, 250.0), "luna": (2.5, 0.25, 12.5)}  # by MODEL key
+AGENT_RATES = {"vllm": (0.0, 0.0, 0.0), "astra": (250.0, 25.0, 1250.0), "sol": (50.0, 2.5, 250.0), "luna": (2.5, 0.25, 12.5)}  # by MODEL key
 CODER_FALLBACK = (120_000, 480_000, 4_000)  # (uncached, cached, output) tokens of a typical coder call
 FALL_M = 0.5  # ending this far below its start means it fell to the floor (scenes differ in floor height)
 

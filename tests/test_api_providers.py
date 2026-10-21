@@ -10,7 +10,7 @@ import pytest
 
 from homebody.session.settings import Agent
 from homebody.vlm import api, provider
-from homebody.vlm.api import ClaudeApi, OpenAiApi
+from homebody.vlm.api import ClaudeApi, LocalVlm, OpenAiApi
 from homebody.vlm.provider import Cancelled, ProviderError
 
 PNG = (b"\x89PNG\r\n\x1a\n" + bytes(16))
@@ -231,3 +231,19 @@ def test_the_litellm_request_carries_the_sessions_own_cache_key():
     assert provider.request("p", (), ("pick", "done"))["prompt_cache_key"] == "homebody-agent"
     provider.cache_key = "homebody-session-20261021T000000Z-abcd1234"
     assert provider.request("p", (), ("pick", "done"))["prompt_cache_key"] == provider.cache_key
+
+
+def test_a_local_vllm_model_sends_text_before_images_to_its_configured_server(tmp_path, monkeypatch):
+    monkeypatch.setenv("VLLM_API_KEY", "k-local")
+    calls = fake_transport(monkeypatch, REPLIES[OpenAiApi])
+    settings = Agent(model="robobrain25-8b-vllm", local_url="http://10.0.0.5:8000/v1/")
+    decision = LocalVlm(settings).generate(
+        "prompt text", images=images(tmp_path, 2), names=("pick", "done"), attempt=tmp_path / "attempt",
+        tick=lambda: None, cancelled=lambda: False)
+    assert (decision.skill, decision.arguments) == ("done", {})
+    url, headers, body, _ = calls[0]
+    assert url == "http://10.0.0.5:8000/v1/chat/completions" and headers["Authorization"] == "Bearer k-local"
+    assert body["model"] == "robobrain2.5-8b" and body["max_tokens"] == LocalVlm.MAX_TOKENS
+    content = body["messages"][0]["content"]
+    assert content[0] == {"type": "text", "text": "prompt text"} and [c["type"] for c in content[1:]] == ["image_url"] * 2
+    assert body["response_format"]["json_schema"]["strict"] is True and LocalVlm.LOCAL

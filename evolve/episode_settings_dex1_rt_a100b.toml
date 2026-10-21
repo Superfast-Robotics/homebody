@@ -1,0 +1,33 @@
+# episode_settings_dex1_rt.toml with the open-weight agent served from loki-a100-2.
+# Frozen settings for every evaluation episode (train, held-out and the final test), from the
+# 2026-10-21 suite on: episode_settings_dex1.toml with physics in real time while the model thinks.
+[agent]
+reasoning_effort = "medium"
+max_steps = 60
+# Physics runs in real time while the model thinks (2026-10-21, feature analysis): a pause hides slip and holding
+# costs during inference and differs from the HomeBody baseline branch, which always runs in real time.
+pause_while_thinking = false
+local_url = "http://10.19.86.207:8000/v1"  # the "vllm" models' server: loki-a100-2
+
+[coder]
+# Off (2026-10-21): on the pick-and-place scenarios 26 coder calls took ~80 min for about 5-7 real recoveries, 2 of
+# them objects the HomeBody baseline missed. calls = 0 removes it from the prompt, the schema and auto mode.
+auto = false
+tries = 3
+rescues = 1
+calls = 0
+
+[plan]
+enabled = true  # the agent writes a behavior-tree plan and works through it goal by goal (session/planned.py)
+replans = 2
+
+[recording]
+keyframes = false  # per-stage keyframes only feed the coder (session/trace.py), which is off
+
+# The G1 with Dex1-1 grippers (configs/dex1.toml): its hands and its planning servers
+[robot]
+hands = "dex1"
+
+[curobo]
+endpoint = "tcp://127.0.0.1:5561"
+servers = 3

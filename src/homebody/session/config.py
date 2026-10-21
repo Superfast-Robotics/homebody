@@ -108,6 +108,13 @@ MODELS = {
     "sonnet-api": ("claude-api", "claude-sonnet-5-5", None),
     "haiku": ("claude-code", "claude-haiku-4-5-20251001", "high"),
     "haiku-api": ("claude-api", "claude-haiku-4-5-20251001", None),
+    # open-weight models on the vLLM server at agent.local_url, by its --served-model-name
+    "robobrain25-8b-vllm": ("vllm", "robobrain2.5-8b", None),
+    "cosmos-r2-8b-vllm": ("vllm", "cosmos-reason2-8b", None),
+    "qwen3vl-8b-vllm": ("vllm", "qwen3-vl-8b", None),
+    "cosmos-r2-32b-vllm": ("vllm", "cosmos-reason2-32b", None),
+    "qwen3vl-30b-vllm": ("vllm", "qwen3-vl-30b-a3b", None),
+    "hy-embodied-vllm": ("vllm", "hy-embodied", None),
 }
 
 
@@ -126,6 +133,8 @@ class Agent:
     done_settle_seconds: float = 3.0
     # the world holds still while a decision is outstanding, as for the coder; false: physics runs on, as on a robot
     pause_while_thinking: bool = True
+    # the vLLM server of the "vllm" models (OpenAI-compatible, /v1)
+    local_url: str = "http://10.19.89.218:8000/v1"
 
     def __post_init__(self):
         if self.service_tier not in ("default", "fast", "flex"):

@@ -86,6 +86,25 @@ class OpenAiApi:
         return Decision.parse(content, names)
 
 
+class LocalVlm(OpenAiApi):
+    """An open-weight model served by vLLM's OpenAI-compatible Chat Completions API at `agent.local_url` (the key
+    in VLLM_API_KEY): free (LOCAL). The text goes before the images, so the server's prefix cache serves the opening
+    every turn repeats. Points are the model's own normalised-1000 coordinates (the Qwen3-VL convention), unchanged."""
+    LABEL, KEY = "vLLM", "VLLM_API_KEY"
+    LOCAL = True
+    MAX_TOKENS = 2048
+
+    @property
+    def URL(self) -> str:  # noqa: N802 -- the parent's class constant, from settings here
+        return self.settings.local_url.rstrip("/") + "/chat/completions"
+
+    def request(self, prompt: str, images: tuple[Path, ...], names: tuple[str, ...]) -> dict:
+        body = super().request(prompt, images, names)
+        content = body["messages"][0]["content"]
+        body["messages"][0]["content"] = content[-1:] + content[:-1]  # text, then the images
+        return {**body, "max_tokens": self.MAX_TOKENS}
+
+
 class LiteLlm:
     """OpenAI Responses API through a LiteLLM proxy (LITELLM_BASE_URL, default 127.0.0.1:4000) holding a
     ChatGPT sign-in: only this request reaches the model. The text goes before the images, and the cache key is
