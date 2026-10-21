@@ -1099,3 +1099,9 @@ def test_zero_coder_calls_turn_the_coding_assistant_off_in_the_prompt():
     assert "call_coder" in harness.agent_instructions(on) and "<coder>" not in harness.agent_instructions(on)
     assert "call_coder" not in harness.agent_instructions(off) and "coding assistant" not in harness.plan_instructions(off)
     assert "<coder>" not in harness.plan_instructions(on)
+
+
+def test_the_settings_accept_zero_coder_calls():
+    assert Settings(coder=Coder(calls=0, auto=False)).coder.calls == 0
+    with pytest.raises(ValueError, match="coder.calls"):
+        Settings(coder=Coder(calls=-1))

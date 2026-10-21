@@ -35,7 +35,7 @@ SIGNED = frozenset({"topdown.ahead", "topdown.left", "topdown.height", "placemen
 NONNEGATIVE = frozenset({"physics.noslip_iterations", "motion.route_clearance_margin",
                          "motion.left_hand_offset", "motion.right_hand_offset", "motion.close_slack",
                          "motion.close_min_gain", "grasp.spline_out", "placement.release_drops",
-                         "agent.done_settle_seconds"})
+                         "agent.done_settle_seconds", "coder.calls"})  # coder.calls = 0 turns the coder off
 
 
 def in_range(label, number):
