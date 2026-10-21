@@ -48,11 +48,41 @@ POINTER_PROMPTS = {
                     "enclosed within <think> </think> and <answer> </answer> tags. The answer consists only of "
                     "several coordinate points, with the overall format being: <think> reasoning process here "
                     "</think><answer><point>[[x1, y1], [x2, y2], ...]</point></answer>"),
+    # 2026 models (pickxiguapi/Embodied-R1.5 inference/vllm_online_example.py; RynnBrain cookbooks
+    # 6_affordance_location; MiMo-Embodied lmms_eval where2place_point with " /no_think"; NVIDIA's RefSpatial eval
+    # suffix for Cosmos3; the Qwen3-VL cookbook's JSON points for Qwen3.6/3.8; Gemma 4's y-first point_2d as
+    # NVIDIA's eval asks it)
+    "embodied_r15": ("Provide one or more points coordinate of objects region this sentence describes: {target}. The "
+                     "answer should be presented in JSON format as follows: [{{\"point_2d\": [x, y]}}].\nPlease answer "
+                     "this question based on the visual content.You FIRST think about the reasoning process as an "
+                     "internal monologue and then provide the final answer.At the end, you must output the final "
+                     "answer in the format:\n<answer><your_answer_here></answer>\n"),
+    "rynnbrain": ("{target}\nIdentify one affordance point and provide its normalized pixel coordinates. The x and y "
+                  "values must be between 0 and 1000. Output format: <affordance> (x, y) </affordance>."),
+    "mimo": ("Based on the description: \"{target}\", locate points matching the description. Output a JSON in the "
+             "format [{{\"points\": [...], \"label\": \"{target}\"}}, ...]. /no_think"),
+    "cosmos3": ("Point to {target}.\nOutput the point coordinates in JSON format.\nFor example:\n[\n  "
+                "{{\"point_2d\": [x, y], \"label\": \"point_1\"}}\n]"),
+    "qwen_json": "Locate {target} in this image. Output the point coordinates in JSON format.",
+    "gemma": ("Point to {target}. Output the point coordinates in JSON format: [{{\"point\": [y, x], \"label\": "
+              "\"point_1\"}}], with y and x normalized to 0-1000."),
 }
-VERIFY_PROMPT = ("A robot reports that it finished this goal.\nGoal: {goal}\nRobot's report: {claim}\nLook at the "
-                 "image (the robot's head camera, now). Is the goal really achieved? Answer yes or no first, then "
-                 "one sentence why.")
-ENDPOINT_TOKENS = {"embodied_r1": 2048, "molmo": 1024}  # room for Embodied-R1's <think>; others 256
+# the answers in 0-1000 [x, y] after any reasoning; gemma's are [y, x]; pixels are the Qwen2.5-VL resized image's
+THOUSANDS = ("qwen1000", "robobrain", "embodied_r15", "rynnbrain", "cosmos3", "qwen_json")
+PIXELS = ("pixels", "embodied_r1", "mimo")
+NO_THINK = {"mimo-embodied-7b": " /no_think"}  # a verifier question to a model that thinks unless told not to
+# the yes/no check of a done claim: "plain" shows the goal and the claim; "evidence" adds the robot's last skill
+# result, which a head-camera image alone often cannot confirm (a held object, a placement out of view)
+VERIFY_PROMPTS = {
+    "plain": ("A robot reports that it finished this goal.\nGoal: {goal}\nRobot's report: {claim}\nLook at the image "
+              "(the robot's head camera, now). Is the goal really achieved? Answer yes or no first, then one sentence "
+              "why."),
+    "evidence": ("A robot reports that it finished this goal.\nGoal: {goal}\nRobot's report: {claim}\nIts last skill "
+                 "result: {result}\nLook at the image (the robot's head camera, now) and weigh the result. Is the goal "
+                 "really achieved? Answer yes or no first, then one sentence why."),
+}
+VERIFY_PROMPT = VERIFY_PROMPTS["plain"]
+ENDPOINT_TOKENS = {"embodied_r1": 2048, "embodied_r15": 2048, "molmo": 1024}  # room for Embodied-R1's <think>; others 256
 SAMPLING = {"embodied_r1": {"repetition_penalty": 1.05}}  # its reference decoding: greedy, 1.05
 QWEN_FACTOR, QWEN_MIN_PIXELS, QWEN_MAX_PIXELS = 28, 56 * 56, 28 * 28 * 1280  # Qwen2.5-VL image resizing
 
@@ -69,7 +99,7 @@ class Endpoint:
             cancelled: Callable[[], bool]) -> str:
         content = [{"type": "image_url", "image_url": {"url": f"data:{MEDIA[image.suffix.lower()]};base64,{image_data(image)}"}}
                    for image in images]  # images first, as each pointer's own examples give them
-        content.append({"type": "text", "text": prompt})
+        content.append({"type": "text", "text": prompt + (NO_THINK.get(self.served, "") if self.format == "yesno" else "")})
         body = {"model": self.served, "messages": [{"role": "user", "content": content}],
                 "max_tokens": ENDPOINT_TOKENS.get(self.format, 256), "temperature": 0.0,
                 # a model whose template thinks by default (Hy-Embodied) answers directly, as the pointers do
@@ -112,9 +142,9 @@ def answer_part(answer: str) -> str:
 
 def to_1000(answer: str, form: str, image: Path) -> list[int]:
     """The pointer's ANSWER as point_normalized_1000 on IMAGE, its first point. molmo: Molmo2's
-    <points coords="IMAGE ID X Y [ID X Y ...]"> in 0-1000 (or Molmo 1's x="%" y="%"); qwen1000 and robobrain: the
-    first two numbers, 0-1000; embodied_r1 (and pixels): the first two numbers in the image's Qwen2.5-VL resized
-    pixels. Any <think> block is ignored. ProviderError when no point is found or it is off the image."""
+    <points coords="IMAGE ID X Y [ID X Y ...]"> in 0-1000 (or Molmo 1's x="%" y="%"); THOUSANDS: the first two
+    numbers, 0-1000; gemma: the same as [y, x]; PIXELS: the first two numbers in the image's Qwen2.5-VL resized
+    pixels. Any reasoning is ignored. ProviderError when no point is found or it is off the image."""
     answer = answer_part(answer)
     if form == "molmo":
         tag = re.search(r'x\d*="([\d.]+)"\s+y\d*="([\d.]+)"', answer)
@@ -132,13 +162,15 @@ def to_1000(answer: str, form: str, image: Path) -> list[int]:
         if len(values) < 2:
             raise ProviderError(f"no point in the pointer's answer: {answer[:200]}")
         x, y = values[:2]
-        if form in ("pixels", "embodied_r1"):
+        if form == "gemma":
+            y, x = values[:2]
+        elif form in PIXELS:
             from PIL import Image  # noqa: PLC0415 -- only the pixel format reads the image size
 
             with Image.open(image) as picture:
                 width, height = qwen_size(*picture.size)
             x, y = x / width * 1000, y / height * 1000
-        elif form not in ("qwen1000", "robobrain"):
+        elif form not in THOUSANDS:
             raise ProviderError(f"unknown point format {form}")
     if not (0 <= x <= 1000 and 0 <= y <= 1000):
         raise ProviderError(f"the pointer's point {[x, y]} is off the image")
@@ -352,7 +384,10 @@ class Verifier(Composite):
                 return decision
             claim = str(decision.arguments.get("summary") or decision.arguments.get("reason") or decision.text)
             try:
-                answer, folder = self.query("verifier", VERIFY_PROMPT.format(goal=goal, claim=claim), images[:1],
+                form = self.spec.get("prompt", "plain")
+                result = json.dumps(self.last)[:400] if self.last else "none yet"
+                asked_verifier = VERIFY_PROMPTS[form].format(goal=goal, claim=claim, result=result)
+                answer, folder = self.query("verifier", asked_verifier, images[:1],
                                             attempt=attempt, tick=tick, cancelled=cancelled)
             except ProviderError:
                 return decision  # an unavailable verifier never blocks a claim

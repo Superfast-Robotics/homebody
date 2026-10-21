@@ -32,7 +32,7 @@ import numpy as np
 from homebody.session.config import Agent
 from homebody.session.planned import GOAL_DONE, GOAL_FAILED, PLAN
 from homebody.vlm.catalog import make
-from homebody.vlm.composite import POINTER_PROMPTS, VERIFY_PROMPT, Endpoint, to_1000, verdict
+from homebody.vlm.composite import POINTER_PROMPTS, VERIFY_PROMPTS, Endpoint, to_1000, verdict
 from homebody.vlm.provider import ProviderError
 
 from .agent_capabilities import pixel, score_run
@@ -195,12 +195,16 @@ def verify_label(meta) -> bool | None:
     return False if meta["reference"]["skill"] in ("navigate", "pick", "place") else None
 
 
-def ask_verify(endpoint: Endpoint, case: Path, out: Path) -> dict | None:
+def ask_verify(endpoint: Endpoint, case: Path, out: Path, form: str = "plain") -> dict | None:
     meta = json.loads((case / "case.json").read_text())
     if (truth := verify_label(meta)) is None:
         return None
     started = time.monotonic()
-    prompt = VERIFY_PROMPT.format(goal=meta["goal"], claim="The goal is done.")
+    previous = meta.get("previous") or {}
+    last = {"skill": (previous.get("decision") or {}).get("skill"), "code": previous.get("code"),
+            "message": previous.get("message")} if previous else None
+    prompt = VERIFY_PROMPTS[form].format(goal=meta["goal"], claim="The goal is done.",
+                                         result=json.dumps(last) if last else "none yet")
     try:
         answer = endpoint.ask(prompt, (case / "rgb.png",), attempt=attempt_dir(out, case), tick=lambda: None,
                               cancelled=lambda: False)
@@ -318,6 +322,8 @@ def main(argv=None):
             r.add_argument("--url", required=True)
             if name == "point":
                 r.add_argument("--format", required=True, choices=sorted(POINTER_PROMPTS))
+            if name == "verify":
+                r.add_argument("--prompt", default="plain", choices=sorted(VERIFY_PROMPTS))
     for name in ("score", "report"):
         sub.add_parser(name).add_argument("outs", nargs="+")
     t = sub.add_parser("template")
@@ -327,7 +333,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     commands = {"collect": collect, "score": score, "report": report, "template": template, "turns": run_turns,
                 "point": lambda a: run_endpoint(a, "point", ask_point),
-                "verify": lambda a: run_endpoint(a, "verify", ask_verify)}
+                "verify": lambda a: run_endpoint(a, "verify", lambda e, c, o: ask_verify(e, c, o, a.prompt))}
     commands[args.command](args)
 
 

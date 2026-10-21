@@ -8,6 +8,7 @@ from homebody.session.config import COMPOSITES, MODELS, Agent
 from homebody.vlm.catalog import PROVIDERS, model_label
 from homebody.vlm.composite import (Cascade, Composite, PlannerPointer, PlanRouter, Verifier, goal_of, qwen_size,
                                     resolve, to_1000, verdict)
+from homebody.vlm import composite
 from homebody.vlm.provider import Decision, ProviderError
 
 
@@ -115,6 +116,13 @@ def test_point_formats(image):
     reply = (f"<think>the jar at [10, 20] is behind</think><answer><point>[[{width // 2}, {height // 2}], "
              "[5, 5]]</point></answer>")
     assert to_1000(reply, "embodied_r1", image) == [500, 500]  # the answer's first point, not the reasoning's
+    assert to_1000('The mug is left.<answer>[{"point_2d": [750, 748]}]</answer>', "embodied_r15", image) == [750, 748]
+    assert to_1000("<affordance> (572, 309) </affordance>", "rynnbrain", image) == [572, 309]
+    assert to_1000('[{"point_2d": [925, 618], "label": "point_1"}]', "cosmos3", image) == [925, 618]
+    assert to_1000('[{"point": [300, 700], "label": "point_1"}]', "gemma", image) == [700, 300]
+    assert to_1000(f'[{{"points": [[{width // 4}, {height // 2}]], "label": "can 2"}}]', "mimo", image) == [250, 500]
+    for form in composite.POINTER_PROMPTS:
+        assert composite.POINTER_PROMPTS[form].format(target="the can")  # every template formats
     for answer, form in (("none", "qwen1000"), ("[1200, 5]", "qwen1000"), ("no", "molmo")):
         with pytest.raises(ProviderError):
             to_1000(answer, form, image)
