@@ -391,7 +391,7 @@ class Verifier(Composite):
                 return decision
             claim = str(decision.arguments.get("summary") or decision.arguments.get("reason") or decision.text)
             try:
-                form = self.spec.get("prompt", "plain")
+                form = self.spec.get("prompt", "evidence")  # the bench: RoboBrain 43% -> 72% accurate with it
                 result = json.dumps(self.last)[:400] if self.last else "none yet"
                 asked_verifier = VERIFY_PROMPTS[form].format(goal=goal, claim=claim, result=result)
                 answer, folder = self.query("verifier", asked_verifier, images[:1],
