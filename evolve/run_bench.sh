@@ -19,7 +19,8 @@ if [ -n "${LAUNCH:-}" ]; then  # another OpenAI-compatible server (SGLang, the H
   setsid nohup bash -c "$LAUNCH" > "$RUNS/$NAME-server.log" 2>&1 < /dev/null &
 else
   setsid nohup "$VENV/bin/vllm" serve "$REPO" --served-model-name "$SERVED" --host 127.0.0.1 --port "$PORT" \
-    --max-model-len 16384 --limit-mm-per-prompt '{"image": 4}' --enable-prefix-caching "$@" \
+    --max-model-len 16384 --limit-mm-per-prompt '{"image": 4}' --enable-prefix-caching \
+    --structured-outputs-config '{"backend": "xgrammar", "disable_any_whitespace": true}' "$@" \
     > "$RUNS/$NAME-server.log" 2>&1 < /dev/null &
 fi
 SERVER=$!

@@ -209,7 +209,9 @@ def command(serve: Serve, ip, port):
     model = MODELS[serve.model]
     args = [model.repo, "--served-model-name", serve.model, "--host", ip, "--port", str(port),
             "--max-model-len", str(serve.max_len), "--enable-prefix-caching", "--limit-mm-per-prompt",
-            '{"image": 4}', "--gpu-memory-utilization", f"{serve.share:.2f}", "--max-num-seqs", "16", *model.args,
+            '{"image": 4}', "--gpu-memory-utilization", f"{serve.share:.2f}", "--max-num-seqs", "16",
+            # no free whitespace in a JSON grammar: Cosmos-Reason2-32B looped on it until max_tokens
+            "--structured-outputs-config", '{"backend": "xgrammar", "disable_any_whitespace": true}', *model.args,
             *(("--quantization", "fp8") if serve.online_fp8 else ())]
     return args
 
