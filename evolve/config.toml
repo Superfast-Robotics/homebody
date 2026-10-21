@@ -555,3 +555,95 @@ test = ["/lambda/nfs/group-volume/dex1-demos/2026-10-21/warehouse_suite/test/wh_
 # the two original tasks (fixed instances for "a front ..." kinds, a bowl wider than the jaws): reported apart,
 # only by `legacy CID`
 legacy = ["/lambda/nfs/group-volume/dex1-demos/2026-10-21/warehouse_suite/legacy/wh_*"]
+
+[e2e.demo-pp]
+# The 2026-10-21 pick-and-place scenarios (pickplace_scenarios/: short or no loaded walks), measured once per
+# scenario per branch; train = pick_place_only + pipeline_advantage (tote unload dropped), val = harder.
+# The G1 with Dex1-1 grippers on the warehouse suite. From 2026-10-21: dex1-demos/2026-10-21/warehouse_suite, the
+# feasible suite (targets the Dex1 never placed in any version dropped: sweetener boxes, trays and the picking scene;
+# evolve/suite_feasible.py, see that date's README), 10 train and 6 val tasks at 3 repeats (48 sessions a version),
+# test 6 tasks run only by `test`, legacy the two original tasks. Before: dex1-demos/2026-10-20/warehouse_suite at 2
+# repeats (b000, b001, rounds e001-e002).
+# Astra improves the Dex1 skills and the agent harness; Sol plays the agent and the coding sub-agent.
+name = "dex1-pickplace"
+workdir = "demo-pp"
+source = "src/homebody/skills/dex1/ and src/homebody/harness/"
+proposer_jail = true         # Astra (Codex) runs in a bubblewrap jail: its source export and the round folder only
+session_sandbox = true       # sessions and candidate tests run in bubblewrap on the hosts: all read-only but the
+                             # session's own folder, /tmp and the coder's home (evolve/remote.py SANDBOX)
+repeats = 1                  # sessions per task and version
+settings = "episode_settings_dex1_rt.toml"   # physics in real time while the model thinks (from 2026-10-21)
+reference_settings = "episode_settings_homebody.toml"  # `reference`: what the HomeBody baseline branch accepts
+concurrent_parent = true     # every candidate batch runs the parent again; candidates are judged against that run
+agent_model = "sol61-litellm"
+parallel = 12                # sessions at once per host: the planner load test (evolve/curobo_load.py through
+                             # Env.plan_path, 2026-10-20, CUDA graphs off) with 12 clients planning nonstop in mixed
+                             # postures on both hosts planned 72/72, waiting at most 228 s (283 s in all) inside the
+                             # 300 s planner timeout; 16 timed out twice
+services = ["/lambda/nfs/group-volume/workcell-sim/homebody-baseline/curobo_dex1/curobo_dex1_server.sh start > /dev/null 2>&1 < /dev/null"]
+# restarts a down or broken server, then must print "PORT ready MD5" (or "busy" while a session holds it) per server,
+# MD5 = this checkout's tools/curobo_server.py; also run every minute while a batch runs (restarts are counted)
+service_checks = ["/lambda/nfs/group-volume/workcell-sim/homebody-baseline/curobo_dex1/curobo_dex1_server.sh watch"]
+objective = "placed"         # accept on the share of target objects placed (stage value is reported, not decisive)
+disturbance_penalty = 0.25   # a session loses a quarter of one object per other product it disturbed (floored at 0)
+# Preregistered (2026-10-20): validation must be shown non-inferior, its difference's lower bound (val_z standard
+# errors, with layouts as clusters) above -val_margin of the placed share; round winners are exploratory until test.
+# Revised 2026-10-21 (from b001 on): val_z 1.0 -> 0.5. Round 1's review measured paired session noise of about 0.07
+# against reported cluster errors of 0.047-0.062 (6 val clusters), so at 1.0 a no-effect candidate failed about half
+# the time.
+val_margin = 0.05
+val_z = 0.5
+# Credit caps (spending authorisation, kept out of the experiment's identity: raising one keeps every result). One
+# persistent ledger per round (per command outside rounds; e2e/<profile>/ledger-*.txt on the remote) holds every
+# Astra call and every session attempt: each reserves its worst case before it starts and settles at its measured
+# credits when it ends. A session's worst case is its settings' every decision (max_steps, plus the plan and replans:
+# 63) at decision_credit_ceiling and every coder call (calls: 3) at coder_credit_ceiling = 102 credits (also what a
+# session of unknown usage is charged); an Astra call reserves astra_call_credit_ceiling. The ceilings are about 1.5
+# times the largest seen (2026-10-20: 811 sessions, 7,484 decisions at most 0.67 credits, 1,019 coder calls at most
+# 8.7; 182 Astra calls at most 96). A reservation that would take the ledger past its cap waits while others are in
+# flight and is otherwise refused; an evaluation whose sessions at expected_session_credits each would exceed it is
+# refused up front. The cap is round_credit_budget in a round; outside one (a baseline, test) it is the evaluation's
+# own allowance, evaluation_credit_budget or else its sessions at their worst case. With worst-case reservations, the
+# sessions in flight are at most (cap - committed) / 102; the caps below keep 24 in flight (12 per host). No new
+# session or Astra call starts past a cap, but a call already running cannot be cut off, so a settled cost above its
+# ceiling can still pass it; the expected spend is far lower (a baseline about 135, a round about 650-700).
+decision_credit_ceiling = 1.0
+coder_credit_ceiling = 13.0
+astra_call_credit_ceiling = 120.0
+expected_session_credits = 3.0
+evaluation_credit_budget = 2500
+round_credit_budget = 7000
+clusters = {}  # variants of one scanned scene: one sample (no picking tasks from 2026-10-21)
+speed_acceptance = false     # session time varies with the model and host load: no time-only or cost-only wins
+strategy = "evolve"          # run --strategy greedy for one patch per mechanism from the best version
+prompts = "e2e"
+evo_prompts = "e2e"
+evo_candidates = 4           # per round: focused diffs, plus a crossover and (after barren rounds) a rewrite
+evo_models = ["gpt-6-astra", "gpt-6.1-sol"]
+evo_lesson_model = "gpt-6.1-sol"
+proposals = 4                # greedy: patches per round
+editable = ["src/homebody/skills/dex1/*", "src/homebody/harness/*", "tests/*"]
+model = "gpt-6-astra"
+effort = "medium"
+brief_note = """
+The robot is the G1 with Unitree Dex1-1 two-jaw parallel grippers in place of the Dex3 hands (settings
+`[robot] hands = "dex1"`, model and calibration in assets/robot/dex1). Its pick, transport and place are
+`src/homebody/skills/dex1/` (the registry selects them for these hands); the Dex3 skills and the shared code
+(`motion/`, `helpers/`, `toolkit/`) are read-only here: put anything Dex1-specific in `src/homebody/skills/dex1/`.
+
+The gripper: two jaws on prismatic joints sliding toward each other along the palm frame's y axis, about 0.095 m
+open down to about 0.006 m; the pads sit 0.09-0.14 m out along the palm frame's +x axis, straight out of the wrist
+along the forearm, so the jaws approach along the forearm. `planning.jaw_samples[side]` holds the calibrated jaw
+frames across the closure; `grip` closure 0 opens and 1 closes most of the way, with the squeeze (up to 1.12) for a
+firm hold.
+
+A collision-aware arm planner is available (cuRobo, three servers per evaluation host): `env.plan_path(pre_poses,
+goal_poses, side, exempt=targets)` takes TORSO-frame poses (src/homebody/harness/env.py, API.md);
+`homebody.helpers.curobo.CuroboPlanner(ctx.settings).plan(...)` takes WORLD-frame poses and label ids. It sees only
+the current depth, plans the unloaded hand only (no model of a held object) and a request takes 1.5-3 s on an idle
+server, longer under load. Execute its paths with `env.move_through` (live-checked), never `env.follow`.
+"""
+
+[e2e.demo-pp.suite]
+train = ["/lambda/nfs/group-volume/dex1-demos/2026-10-21/pickplace_scenarios/pick_place_only/pp_*", "/lambda/nfs/group-volume/dex1-demos/2026-10-21/pickplace_scenarios/pipeline_advantage/pa_[ors]*"]
+val = ["/lambda/nfs/group-volume/dex1-demos/2026-10-21/pickplace_scenarios/harder/hd_*"]
