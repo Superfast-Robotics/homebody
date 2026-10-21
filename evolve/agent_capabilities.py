@@ -113,6 +113,8 @@ def score_turns(rows, cases: Path) -> dict:
     tally, goals, nav = Tally(), [], {"goal": [], "facing": []}
     for row in rows:
         meta = json.loads((cases / row["case"] / "case.json").read_text())
+        if not meta["offered"]:
+            continue  # an older record without its offered skills: left out for every model alike
         reference, ok = meta["reference"], "error" not in row
         tally.add("format.parsed", ok)
         if ok:
