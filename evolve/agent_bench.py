@@ -151,7 +151,8 @@ def ask_turn(settings: Agent, case: Path, out: Path) -> dict:
         provider.turn(tuple(meta["allowed"]))
     try:
         decision = provider.generate((case / "prompt.txt").read_text(), images=tuple(case / n for n in IMAGES),
-                                     names=tuple(meta["offered"]), attempt=attempt_dir(out, case), tick=lambda: None,
+                                     names=tuple(meta["offered"] or meta["allowed"]),  # older records lack it
+                                     attempt=attempt_dir(out, case), tick=lambda: None,
                                      cancelled=lambda: False)
         record = {"skill": decision.skill, "arguments": decision.arguments, "text": decision.text}
     except ProviderError as error:
