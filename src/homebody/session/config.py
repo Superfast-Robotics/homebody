@@ -126,6 +126,12 @@ MODELS = {
     "cosmos3-nano-vllm": ("vllm", "cosmos3-nano", None),
     "cosmos3-super-vllm": ("vllm", "cosmos3-super", None),
     "gemma4-31b-vllm": ("vllm", "gemma-4-31b", None),
+    "qwen38-27b-think-vllm": ("vllm", "qwen3.8-27b", "think"),
+    # served by SGLang (Mage-VL) or the HF server (evolve hf_server.py: HY-Embodied-0.5, RxBrain), same API
+    "mage-vl-vllm": ("vllm", "mage-vl", None),
+    "hy-embodied-05x-vllm": ("vllm", "hy-embodied-0.5-x", None),
+    "hy-embodied-05-vllm": ("vllm", "hy-embodied-0.5", None),
+    "hy-rxbrain-vllm": ("vllm", "hy-rxbrain-1.0", None),
     # the reasoning models allowed to think before the decision (effort "think": vlm/api.py LocalVlm)
     "cosmos-r2-8b-think-vllm": ("vllm", "cosmos-reason2-8b", "think"),
     "cosmos-r2-32b-think-vllm": ("vllm", "cosmos-reason2-32b", "think"),

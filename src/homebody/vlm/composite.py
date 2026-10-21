@@ -66,9 +66,14 @@ POINTER_PROMPTS = {
     "qwen_json": "Locate {target} in this image. Output the point coordinates in JSON format.",
     "gemma": ("Point to {target}. Output the point coordinates in JSON format: [{{\"point\": [y, x], \"label\": "
               "\"point_1\"}}], with y and x normalized to 0-1000."),
+    # HY-Embodied-0.5-X's training data (data_examples/data_demo.jsonl; its template adds /no_think)
+    "hy05": ("Select a point on the {target}. Your answer should be formatted as a single point or a list of points, "
+             "i.e. <point>(x,y)</point> or [<point>(x1,y1)</point>,<point>(x2,y2)</point>,...], where each point "
+             "contain the x and y coordinates of a point satisfying the targeting object. The coordinates should be "
+             "between 0 and 1000, indicating the normalized locations of the coordinates in the image."),
 }
 # the answers in 0-1000 [x, y] after any reasoning; gemma's are [y, x]; pixels are the Qwen2.5-VL resized image's
-THOUSANDS = ("qwen1000", "robobrain", "embodied_r15", "rynnbrain", "cosmos3", "qwen_json")
+THOUSANDS = ("qwen1000", "robobrain", "embodied_r15", "rynnbrain", "cosmos3", "qwen_json", "hy05")
 PIXELS = ("pixels", "embodied_r1", "mimo")
 NO_THINK = {"mimo-embodied-7b": " /no_think"}  # a verifier question to a model that thinks unless told not to
 # the yes/no check of a done claim: "plain" shows the goal and the claim; "evidence" adds the robot's last skill
@@ -155,6 +160,8 @@ def to_1000(answer: str, form: str, image: Path) -> list[int]:
             x, y = values[2:4]  # image index, point id, x, y
         elif coords and len(values) >= 2:
             x, y = values[-2:]
+        elif len(values := numbers(answer)) >= 2:  # a Molmo-trained model answering [x, y] (Mage-VL), 0-1000
+            x, y = values[:2]
         else:
             raise ProviderError(f"no point in the pointer's answer: {answer[:200]}")
     else:
