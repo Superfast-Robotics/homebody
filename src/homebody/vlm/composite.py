@@ -72,7 +72,8 @@ class Endpoint:
         content.append({"type": "text", "text": prompt})
         body = {"model": self.served, "messages": [{"role": "user", "content": content}],
                 "max_tokens": ENDPOINT_TOKENS.get(self.format, 256), "temperature": 0.0,
-                **SAMPLING.get(self.format, {})}
+                # a model whose template thinks by default (Hy-Embodied) answers directly, as the pointers do
+                "chat_template_kwargs": {"enable_thinking": False}, **SAMPLING.get(self.format, {})}
         headers = {"Authorization": f"Bearer {key('VLLM_API_KEY')}", "content-type": "application/json"}
         reply = run_request(f"vLLM {self.served}", self.url.rstrip("/") + "/chat/completions", headers, body,
                             prompt=prompt, attempt=attempt, timeout=self.timeout, tick=tick, cancelled=cancelled,

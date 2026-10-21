@@ -246,3 +246,17 @@ def test_best_picks_resolve_to_models_names():
     assert resolve(settings, "best-small") == "sol61-litellm" and resolve(settings, "astra") == "astra"
     with pytest.raises(ProviderError):
         resolve(settings, "nonesuch")
+
+
+def test_an_endpoint_asks_with_the_image_first_and_thinking_off(tmp_path, image, monkeypatch):
+    from homebody.vlm import composite
+    sent = []
+    monkeypatch.setenv("VLLM_API_KEY", "k")
+    monkeypatch.setattr(composite, "run_request", lambda *a, **kw: sent.append(a[3]) or {
+        "choices": [{"message": {"content": "<answer><point>[[1, 2]]</point></answer>"}}]})
+    answer = composite.Endpoint("embodied-r1-3b", "embodied_r1", "http://x/v1", 5.0).ask(
+        "p", (image,), attempt=tmp_path / "a", tick=lambda: None, cancelled=lambda: False)
+    body = sent[0]
+    assert answer.startswith("<answer>") and body["chat_template_kwargs"] == {"enable_thinking": False}
+    assert [c["type"] for c in body["messages"][0]["content"]] == ["image_url", "text"]
+    assert body["max_tokens"] == 2048 and body["repetition_penalty"] == 1.05 and body["temperature"] == 0.0
