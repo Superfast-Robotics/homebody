@@ -4,9 +4,10 @@ from homebody.session.settings import Agent
 from .api import ClaudeApi, LiteLlm, OpenAiApi
 from .claude import ClaudeCode
 from .codex import Codex
+from .composite import Composite
 
 PROVIDERS = {"codex": Codex, "claude-code": ClaudeCode, "openai-api": OpenAiApi, "claude-api": ClaudeApi,
-             "litellm": LiteLlm}
+             "litellm": LiteLlm, "composite": Composite}
 
 
 def make(settings: Agent):

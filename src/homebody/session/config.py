@@ -110,6 +110,41 @@ MODELS = {
     "haiku-api": ("claude-api", "claude-haiku-4-5-20251001", None),
 }
 
+# Multi-model agents (vlm/composite.py), each a MODELS row ("composite", its name, None). A role is a MODELS member
+# ({"model": name, "server": local or second}; best-small and best-base are agent.best_small and agent.best_base) or,
+# for a pointer or verifier, a model on our vLLM servers asked in its own words ({"served": its --served-model-name,
+# "format": its point format, "server"}). Servers: local is agent.local_url, second is agent.second_url.
+MOLMO_ER = {"served": "molmo2-er", "format": "molmo", "server": "second"}
+COMPOSITES = {
+    "e7-qwen30b-molmo": {"kind": "pointer", "planner": {"model": "qwen3vl-30b-vllm"}, "pointer": MOLMO_ER},
+    "e8-qwen30b-er1": {"kind": "pointer", "planner": {"model": "qwen3vl-30b-vllm"},
+                       "pointer": {"served": "embodied-r1-3b", "format": "pixels", "server": "second"}},
+    "e9-hy-molmo": {"kind": "pointer", "planner": {"model": "hy-embodied-vllm"}, "pointer": MOLMO_ER},
+    "e10-small-molmo": {"kind": "pointer", "planner": {"model": "best-small"}, "pointer": MOLMO_ER},
+    "e11-robobrain-sol": {"kind": "cascade", "routine": {"model": "robobrain25-8b-vllm"},
+                          "fallback": {"model": "sol61-litellm"}, "escalate": ("refusal", "plan", "claim")},
+    "e12-cosmos8b-sol": {"kind": "cascade", "routine": {"model": "cosmos-r2-8b-vllm"},
+                         "fallback": {"model": "sol61-litellm"}, "escalate": ("refusal", "plan", "claim")},
+    "e13-robobrain-cosmos32b": {"kind": "cascade", "routine": {"model": "robobrain25-8b-vllm"},
+                                "fallback": {"model": "cosmos-r2-32b-vllm", "server": "second"},
+                                "escalate": ("refusal", "plan", "claim")},
+    "e14-cosmos8b-cosmos32b": {"kind": "cascade", "routine": {"model": "cosmos-r2-8b-vllm"},
+                               "fallback": {"model": "cosmos-r2-32b-vllm", "server": "second"},
+                               "escalate": ("refusal", "plan", "claim")},
+    "e15-cosmos32b-robobrain": {"kind": "router", "planner": {"model": "cosmos-r2-32b-vllm"},
+                                "executor": {"model": "robobrain25-8b-vllm", "server": "second"}},
+    "e16-cosmos32b-cosmos8b": {"kind": "router", "planner": {"model": "cosmos-r2-32b-vllm"},
+                               "executor": {"model": "cosmos-r2-8b-vllm", "server": "second"}},
+    "e17-qwen30b-small": {"kind": "router", "planner": {"model": "qwen3vl-30b-vllm"},
+                          "executor": {"model": "best-small", "server": "second"}},
+    "e18-sol-small": {"kind": "router", "planner": {"model": "sol61-litellm"}, "executor": {"model": "best-small"}},
+    "e19-base-robobrain": {"kind": "verifier", "base": {"model": "best-base"}, "vetoes": 2,
+                           "verifier": {"served": "robobrain2.5-8b", "format": "yesno", "server": "second"}},
+    "e20-base-molmo": {"kind": "verifier", "base": {"model": "best-base"}, "vetoes": 2,
+                       "verifier": {**MOLMO_ER, "format": "yesno"}},
+}
+MODELS.update({name: ("composite", name, None) for name in COMPOSITES})
+
 
 @dataclass(frozen=True)
 class Agent:
@@ -126,6 +161,10 @@ class Agent:
     done_settle_seconds: float = 3.0
     # the world holds still while a decision is outstanding, as for the coder; false: physics runs on, as on a robot
     pause_while_thinking: bool = True
+    # a multi-model agent's (COMPOSITES) second vLLM server, and the picks its best-small and best-base roles take
+    second_url: str = "http://10.19.89.218:8001/v1"
+    best_small: str = "robobrain25-8b-vllm"
+    best_base: str = "robobrain25-8b-vllm"
 
     def __post_init__(self):
         if self.service_tier not in ("default", "fast", "flex"):

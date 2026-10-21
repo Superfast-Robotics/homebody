@@ -647,3 +647,19 @@ server, longer under load. Execute its paths with `env.move_through` (live-check
 [e2e.demo-pp.suite]
 train = ["/lambda/nfs/group-volume/dex1-demos/2026-10-21/pickplace_scenarios/pick_place_only/pp_*", "/lambda/nfs/group-volume/dex1-demos/2026-10-21/pickplace_scenarios/pipeline_advantage/pa_[ors]*"]
 val = ["/lambda/nfs/group-volume/dex1-demos/2026-10-21/pickplace_scenarios/harder/hd_*"]
+
+# Open-weight robot agents (evolve/agent_experiments.py, astra-evolve/e2e/agent_experiments.md): the GPU hosts that
+# serve the models, one experiment at a time each (the queue gives the next one to whichever is free, preferring one
+# that keeps its models loaded). A worker runs on each GPU host from its own checkout, serving vLLM there and running
+# the experiment's baseline against the evaluation hosts in [remote]; the GPU hosts share `shared` (claims, rows).
+[agents]
+servers = [{name = "loki-a100", ip = "10.19.89.218"}, {name = "loki-a100-2", ip = "10.19.86.207"}]
+ports = [8000, 8001]           # an experiment's local and second model server on its GPU host
+venv = "~/vllm-venv"           # vLLM on each GPU host, with ~/vlm/api_key (the key sessions send) and ~/hf (HF_HOME)
+logs = "~/vlm"
+work = "~/hb-agents-work"      # the loop's local work folder on the GPU host's own disk
+shared = "/lambda/nfs/group-volume/workcell-sim/homebody-baseline/agent-experiments"
+base_profile = "demo-pp"
+parallel = 6                   # sessions per evaluation host per experiment: two at once keep the planner servers at
+                               # the 12 per host their load test passed ([e2e.demo-pp] parallel)
+ready_seconds = 2400           # a model server's first start downloads its weights

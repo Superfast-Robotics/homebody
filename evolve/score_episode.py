@@ -75,12 +75,41 @@ def tokens(value):
     return isinstance(value, int) and not isinstance(value, bool) and 0 <= value < 10**9
 
 
+FREE = (0.0, 0.0, 0.0)  # a model on our own GPUs
+
+
+def decision_calls(decision, model):
+    """[(tokens or None, rates, model)] of one decision folder: its one reply at MODEL's rates, or a multi-model
+    decision's calls (vlm/composite.py routing.json), each at its own model's rates (free on our own GPUs). A local
+    call without usage costs nothing and is not unmetered."""
+    routing = decision / "routing.json"
+    if not routing.is_file():
+        return [(decision_usage(decision / "reply.json"), agent_rates(model), model)]
+    try:
+        calls = json.loads(routing.read_text())["calls"]
+    except (ValueError, KeyError, TypeError):
+        return [(None, agent_rates(model), model)]
+    return [(decision_usage(decision / str(call.get("dir", "")) / "reply.json")
+             or ((0, 0, 0) if call.get("local") else None),
+             FREE if call.get("local") else agent_rates(call.get("model")), call.get("model"))
+            for call in calls if isinstance(call, dict)]
+
+
 def cost(task_dir, model=None):
     """The task's token use and credits: agent decisions (every attempt, retries included) and coder calls. A decision
     or coder call that reported no usage is counted (main_unmetered, coder_unmetered) and makes the record
     "unmetered": its credits are then a lower estimate, and the loop charges the session its cap instead."""
-    replies = [decision_usage(decision / "reply.json") for decision in task_dir.glob("decisions/*") if decision.is_dir()]
-    main, main_unmetered = [r for r in replies if r is not None], sum(r is None for r in replies)
+    calls = [call for decision in sorted(task_dir.glob("decisions/*")) if decision.is_dir()
+             for call in decision_calls(decision, model)]
+    main, main_unmetered = [used for used, _, _ in calls if used is not None], sum(used is None for used, _, _ in calls)
+    by_model = {}
+    for used, rates, name in calls:
+        entry = by_model.setdefault(str(name), {"calls": 0, "input": 0, "cached": 0, "output": 0, "credits": 0.0})
+        entry["calls"] += 1
+        if used is not None:
+            entry.update(input=entry["input"] + used[0], cached=entry["cached"] + used[1],
+                         output=entry["output"] + used[2],
+                         credits=round(entry["credits"] + credits(used[0] - used[1], used[1], used[2], rates), 4))
     coder, unmetered = [], 0
     for events in task_dir.glob("coder/call-*/events.jsonl"):
         turns = []
@@ -98,13 +127,15 @@ def cost(task_dir, model=None):
             unmetered += 1
     main_in, main_cached, main_out = (sum(column) for column in zip(*main)) if main else (0, 0, 0)
     coder_in, coder_cached, coder_out = (sum(column) for column in zip(*coder)) if coder else (0, 0, 0)
-    metered = credits(main_in - main_cached, main_cached, main_out, agent_rates(model)) + credits(coder_in - coder_cached, coder_cached, coder_out)
+    metered = (sum(credits(used[0] - used[1], used[1], used[2], rates) for used, rates, _ in calls if used is not None)
+               + credits(coder_in - coder_cached, coder_cached, coder_out))
     per_call = (credits(coder_in - coder_cached, coder_cached, coder_out) / len(coder) if coder
                 else credits(*CODER_FALLBACK))
     return {"main_input": main_in, "main_cached": main_cached, "main_output": main_out,
             "coder_input": coder_in, "coder_cached": coder_cached, "coder_output": coder_out,
             "coder_metered": len(coder), "coder_unmetered": unmetered, "main_unmetered": main_unmetered,
-            "unmetered": bool(main_unmetered or unmetered), "credits": round(metered + unmetered * per_call, 3)}
+            "unmetered": bool(main_unmetered or unmetered), "credits": round(metered + unmetered * per_call, 3),
+            "models": by_model}
 
 
 def latest(session):
