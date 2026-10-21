@@ -159,6 +159,12 @@ def experiments(best_small="robobrain2.5-8b", best_base="robobrain2.5-8b", gpu_g
                           best=("best-base",)),
         "E20": Experiment("e20-base-molmo", Serve(best_base, 0.55, 16384), Serve("molmo2-er", 0.33, 8192),
                           best=("best-base",)),
+        # bench-selected replacements (evolve/agent_bench.py): Qwen3.8-27B plans, alone or with a pointer that may
+        # also check done claims; on loki-gh200 (its FP8 build at 0.55 beside an 8B pointer in BF16)
+        "Q38": Experiment("qwen38-27b-vllm", Serve("qwen3.8-27b", 0.90, 16384)),
+        "Q38R": Experiment("c-q38-robobrain-v", Serve("qwen3.8-27b", 0.55, 16384), Serve("robobrain2.5-8b", 0.33, 8192)),
+        "Q38M": Experiment("c-q38-mimo", Serve("qwen3.8-27b", 0.55, 16384), Serve("mimo-embodied-7b", 0.33, 8192)),
+        "Q38L": Experiment("c-q38-molmo-v", Serve("qwen3.8-27b", 0.55, 16384), Serve("molmo2-er", 0.33, 8192)),
     }
 
 
