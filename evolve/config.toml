@@ -463,8 +463,11 @@ on them many times); claims about unseen layouts need episodes no round has used
 default = "demo-wh"
 
 [e2e.demo-wh]
-# The G1 with Dex1-1 grippers on the warehouse suite (dex1-demos/2026-10-20/warehouse_suite: procedural warehouse
-# layouts and variants of the two scanned scenes; test holds the two original tasks and is run only by `test`).
+# The G1 with Dex1-1 grippers on the warehouse suite. From 2026-10-21: dex1-demos/2026-10-21/warehouse_suite, the
+# feasible suite (targets the Dex1 never placed in any version dropped: sweetener boxes, trays and the picking scene;
+# evolve/suite_feasible.py, see that date's README), 10 train and 6 val tasks at 3 repeats (48 sessions a version),
+# test 6 tasks run only by `test`, legacy the two original tasks. Before: dex1-demos/2026-10-20/warehouse_suite at 2
+# repeats (b000, b001, rounds e001-e002).
 # Astra improves the Dex1 skills and the agent harness; Sol plays the agent and the coding sub-agent.
 name = "dex1-warehouse"
 workdir = "demo-wh"
@@ -472,8 +475,10 @@ source = "src/homebody/skills/dex1/ and src/homebody/harness/"
 proposer_jail = true         # Astra (Codex) runs in a bubblewrap jail: its source export and the round folder only
 session_sandbox = true       # sessions and candidate tests run in bubblewrap on the hosts: all read-only but the
                              # session's own folder, /tmp and the coder's home (evolve/remote.py SANDBOX)
-repeats = 2                  # sessions per task and version
-settings = "episode_settings_dex1.toml"
+repeats = 3                  # sessions per task and version
+settings = "episode_settings_dex1_rt.toml"   # physics in real time while the model thinks (from 2026-10-21)
+reference_settings = "episode_settings_homebody.toml"  # `reference`: what the HomeBody baseline branch accepts
+concurrent_parent = true     # every candidate batch runs the parent again; candidates are judged against that run
 agent_model = "sol61-litellm"
 parallel = 12                # sessions at once per host: the planner load test (evolve/curobo_load.py through
                              # Env.plan_path, 2026-10-20, CUDA graphs off) with 12 clients planning nonstop in mixed
@@ -512,7 +517,7 @@ astra_call_credit_ceiling = 120.0
 expected_session_credits = 3.0
 evaluation_credit_budget = 2500
 round_credit_budget = 7000
-clusters = { wh_shelf = "wh_shelf", wh_picking = "wh_picking" }  # variants of one scanned scene: one sample
+clusters = { wh_shelf = "wh_shelf" }  # variants of one scanned scene: one sample (no picking tasks from 2026-10-21)
 speed_acceptance = false     # session time varies with the model and host load: no time-only or cost-only wins
 strategy = "evolve"          # run --strategy greedy for one patch per mechanism from the best version
 prompts = "e2e"
@@ -544,9 +549,9 @@ server, longer under load. Execute its paths with `env.move_through` (live-check
 """
 
 [e2e.demo-wh.suite]
-train = ["/lambda/nfs/group-volume/dex1-demos/2026-10-20/warehouse_suite/train/wh_*"]
-val = ["/lambda/nfs/group-volume/dex1-demos/2026-10-20/warehouse_suite/val/wh_*"]
-test = ["/lambda/nfs/group-volume/dex1-demos/2026-10-20/warehouse_suite/test/wh_*"]
+train = ["/lambda/nfs/group-volume/dex1-demos/2026-10-21/warehouse_suite/train/wh_*"]
+val = ["/lambda/nfs/group-volume/dex1-demos/2026-10-21/warehouse_suite/val/wh_*"]
+test = ["/lambda/nfs/group-volume/dex1-demos/2026-10-21/warehouse_suite/test/wh_*"]
 # the two original tasks (fixed instances for "a front ..." kinds, a bowl wider than the jaws): reported apart,
 # only by `legacy CID`
-legacy = ["/lambda/nfs/group-volume/dex1-demos/2026-10-20/warehouse_suite/legacy/wh_*"]
+legacy = ["/lambda/nfs/group-volume/dex1-demos/2026-10-21/warehouse_suite/legacy/wh_*"]

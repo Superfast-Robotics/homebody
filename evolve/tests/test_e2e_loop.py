@@ -325,12 +325,12 @@ def test_raising_a_credit_cap_changes_no_identity():
     profile = tomllib.loads((HERE / "config.toml").read_text())["e2e"]["demo-wh"]
     raised = {**profile, **{key: 99999.0 for key in SPENDING}}
     assert measured(raised) == measured(profile)
-    assert measured({**profile, "repeats": 3}) != measured(profile)  # what is measured still counts
+    assert measured({**profile, "repeats": profile["repeats"] + 1}) != measured(profile)  # what is measured counts
 
 
 def worst_case_loop(cfg):
     from types import SimpleNamespace
-    loop = SimpleNamespace(cfg=cfg)
+    loop = SimpleNamespace(cfg=cfg, settings_file=lambda: cfg["settings"])
     loop.session_worst_case = lambda: E2EMixin.session_worst_case(loop)
     loop.cap = E2EMixin.cap.fget(loop)
     return loop
@@ -499,3 +499,60 @@ def test_the_network_screen_matches_network_use_not_the_word_in_prose():
     assert not unsafe(['    """Check the measured footprint before `place_on` requests a release."""'])
     assert unsafe(["import requests"]) and unsafe(["    reply = requests.get(url)"])
     assert unsafe(["from urllib import request"]) and unsafe(["    conn = http.client.HTTPConnection(host)"])
+
+
+def test_candidates_are_judged_against_the_parent_run_in_their_own_batch():
+    from types import SimpleNamespace
+
+    from evolve.evo_loop import EvoLoop
+    recorded, evaluated = [], []
+
+    def evaluate_many(items):
+        evaluated.extend(i[0] for i in items)
+        return {i[0]: {"train": {"value": 0.5 if i[0] == "b002-e003-1" else 0.6}, "val": {"value": 0.5}} for i in items}
+
+    loop = SimpleNamespace(
+        manifest=lambda path, commit, refresh=False: "m", evaluate_many=evaluate_many, record=recorded.append,
+        parent_rerun=lambda best: ("b002-e003-1", Path("/tmp/b002")), activation=lambda entry: {},
+        summaries=lambda cid: pytest.fail("the recorded parent must not be the comparator"),
+        judge=lambda parent, child: {"ok": child["train"]["value"] > parent["train"]["value"], "basis": "x"})
+    import evolve.evo_loop as evo
+    evo.skill_score.describe, describe = (lambda verdict: verdict["basis"]), evo.skill_score.describe
+    entry = {"id": "e003c1", "path": "/tmp/c1", "commit": "c", "round": 3}
+    try:
+        judged = EvoLoop.judge_candidates(loop, [entry], {"id": "b002", "commit": "p"})
+    finally:
+        evo.skill_score.describe = describe
+    assert evaluated == ["e003c1", "b002-e003-1"] and judged[0]["status"] == "accepted"
+    assert recorded[0]["status"] == "parent-rerun" and recorded[0]["parent"] == "b002"
+
+
+def test_measurements_are_never_part_of_the_population(tmp_path):
+    from types import SimpleNamespace
+
+    from evolve.evo_loop import EvoLoop
+    for cid in ("b002", "b002-e003-1", "h000"):
+        (tmp_path / "results" / cid).mkdir(parents=True)
+    split = {"value": 0.5}
+    archive = [{"id": "b002", "commit": "p", "status": "baseline", "train": split, "val": split},
+               {"id": "b002-e003-1", "commit": "p", "status": "parent-rerun", "train": split, "val": split},
+               {"id": "h000", "commit": "h", "status": "reference", "train": split, "val": split}]
+    loop = SimpleNamespace(archive=lambda: archive, work=tmp_path)
+    assert list(EvoLoop.population(loop)) == ["b002"]
+
+
+def test_a_settings_file_without_a_coder_has_no_coder_calls_in_its_worst_case():
+    from types import SimpleNamespace
+
+    from evolve.e2e_loop import E2EMixin
+    loop = SimpleNamespace(cfg={"decision_credit_ceiling": 1.0, "coder_credit_ceiling": 13.0},
+                           settings_file=lambda: "episode_settings_homebody.toml")
+    assert E2EMixin.session_worst_case(loop) == 60.0  # 60 steps, no plan, no coder
+
+
+def test_the_profile_runs_real_time_physics_and_names_a_reference_settings_file_the_baseline_accepts():
+    profile = tomllib.loads((Path(__file__).parents[1] / "config.toml").read_text())["e2e"]["demo-wh"]
+    settings = tomllib.loads((Path(__file__).parents[1] / profile["settings"]).read_text())
+    assert settings["agent"]["pause_while_thinking"] is False and profile["repeats"] == 3
+    reference = tomllib.loads((Path(__file__).parents[1] / profile["reference_settings"]).read_text())
+    assert set(reference) <= {"agent", "robot"} and profile["concurrent_parent"] is True

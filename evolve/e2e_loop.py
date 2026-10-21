@@ -351,12 +351,14 @@ class E2EMixin:
         """The most a session can cost under its settings: every decision it may make (the step limit, plus the
         plan and its replans) at decision_credit_ceiling, and every coder call it may make at coder_credit_ceiling.
         A retry of a busy service is refused before generation and costs nothing."""
-        settings = tomllib.loads((HERE / self.cfg["settings"]).read_text())
-        try:
-            steps, calls = int(settings["agent"]["max_steps"]), int(settings["coder"]["calls"])
+        name = self.settings_file()
+        settings = tomllib.loads((HERE / name).read_text())
+        try:  # a settings file without [coder] belongs to a version with no coding sub-agent: no coder calls
+            steps = int(settings["agent"]["max_steps"])
+            calls = int(settings["coder"]["calls"]) if "coder" in settings else 0
         except KeyError as error:
-            raise SystemExit(f"{self.cfg['settings']} must set [agent] max_steps and [coder] calls: the worst case a "
-                             f"session can cost is computed from them") from error
+            raise SystemExit(f"{name} must set [agent] max_steps (and [coder] calls when it has a coder): the worst "
+                             f"case a session can cost is computed from them") from error
         plan = settings.get("plan", {})
         decisions = steps + (1 + int(plan.get("replans", 0)) if plan.get("enabled") else 0)
         return round(decisions * float(self.cfg.get("decision_credit_ceiling", DECISION_CEILING))
@@ -540,6 +542,41 @@ class E2EMixin:
         self.round_dir = self.work / "rounds" / f"{'e' if isinstance(self, EvoLoop) else 's'}{number:03d}"
         return super().round(number)
 
+    def settings_file(self):
+        """The settings file (in evolve/) sessions run with: the profile's, or a reference version's while one runs."""
+        return getattr(self, "reference_settings", None) or self.cfg["settings"]
+
+    def parent_rerun(self, best):
+        """With concurrent_parent (default on), BEST runs again in every candidate batch, under an id of its own
+        (BEST-SCOPE-N), and the candidates are judged against that run alone: same hosts, same hours, same load. A
+        resumed batch keeps its id; a later batch of the same round (an extension) gets the next one."""
+        if not self.cfg.get("concurrent_parent", True):
+            return None
+        scope = self.round_dir.name if getattr(self, "round_dir", None) is not None else "eval"
+        recorded, number = {e["id"] for e in self.archive()}, 1
+        while f"{best['id']}-{scope}-{number}" in recorded:
+            number += 1
+        rid = f"{best['id']}-{scope}-{number}"
+        return rid, self.loop.worktree(self.cand(rid), best["commit"])
+
+    def reference(self, commit, cid="h000"):
+        """COMMIT (another branch, e.g. the HomeBody baseline) on train and val as a reference version, with the
+        profile's reference_settings (settings that branch accepts): reported and archived, never judged, never a
+        parent."""
+        name = self.cfg.get("reference_settings")
+        if not name:
+            raise SystemExit("the profile names no reference_settings for a reference version")
+        commit = git("rev-parse", commit)
+        path = self.loop.worktree(self.cand(cid), commit)
+        self.reference_settings = name
+        try:
+            summaries = self.evaluate(cid, path)
+        finally:
+            self.reference_settings = None
+        self.record({"id": cid, "round": 0, "commit": commit, "status": "reference", "settings": name,
+                     "reason": f"reference version on {name}, not judged", **summaries})
+        return summaries
+
     def measured_before(self, cid, commit):
         """Whether a split of CID was dispatched for COMMIT under this experiment (its remote identity marker): the
         candidate passed its checks before that, so a resumed round does not screen it again."""
@@ -671,13 +708,13 @@ class E2EMixin:
         experiment, results, pending = self.setup_fingerprint(), {}, []
         hosts = self.hosts()
         per_host = [[] for _ in hosts]
-        settings = self.cfg["settings"]
+        settings = self.settings_file()
         rsync("-a", str(HERE / "run_jobs.sh"), str(HERE / "score_episode.py"), str(REPO / "evaluation/evaluate.py"),
               str(HERE / "episode_settings.toml"), str(HERE / settings), f"{self.remote.host}:{self.remote.work}/")
         for cid, checkout, _, cand in items:
             local, root = self.work / "results" / cid, self.results_root(cid)
             identity = {"commit": git("rev-parse", "HEAD", cwd=checkout), "experiment": experiment,
-                        "repeats": self.repeats}
+                        "repeats": self.repeats, **({"settings": settings} if settings != self.cfg["settings"] else {})}
             todo = [s for s in splits if not ((local / s / COMPLETE).exists()
                                               and read_json(local / s / "identity.json") == identity)]
             if not todo:
@@ -1004,6 +1041,9 @@ def main(argv=None):
     run.add_argument("--strategy", choices=("greedy", "evolve"), help="the round's search (default: profile strategy)")
     run.add_argument("--no-stop", action="store_true", help="run every round even if round 1 is barren")
     run.add_argument("--candidates", type=int, help="versions a round proposes, this run only (default: evo_candidates)")
+    ref = sub.add_parser("reference", help="another branch's commit measured on train and val, never judged")
+    ref.add_argument("commit")
+    ref.add_argument("--id", default="h000")
     ext = sub.add_parser("extend", help="more candidates for a finished round (evolutionary strategy)")
     ext.add_argument("round", type=int)
     ext.add_argument("--candidates", type=int, default=0, help="new candidates to plan")
@@ -1021,6 +1061,8 @@ def main(argv=None):
         loop.baseline(args.commit, args.id)
     elif args.command in ("test", "legacy"):
         loop.test(args.cid, args.command)
+    elif args.command == "reference":
+        loop.reference(args.commit, args.id)
     elif args.command == "extend":
         loop.extend(args.round, args.candidates, wait=args.wait, only=tuple(args.slots))
     elif args.command == "run":

@@ -111,3 +111,15 @@ or user. The planner servers exit on a CUDA error (`tools/curobo_server.py`), an
 every minute during a batch (`curobo_dex1_server.sh watch`), restarting any that is down or fails its CUDA check and
 counting restarts in each version's `planner_restarts.txt`. Profile `demo-wh`: the Dex1 skills and the agent harness on the warehouse suite in
 `dex1-demos/2026-10-20/warehouse_suite`. `curobo_load.py` is the planner load test that set its sessions per host.
+
+From 2026-10-21 the measurement is reworked (`[e2e.demo-wh]`): the feasible suite `dex1-demos/2026-10-21/
+warehouse_suite` (`suite_feasible.py` drops the targets no version ever placed), 10 train and 6 val tasks at 3
+repeats, physics in real time while the model thinks (`episode_settings_dex1_rt.toml`), and a concurrent parent:
+every candidate batch of an evolutionary round runs the parent again (archived as `parent-rerun`, never a parent or
+an inspiration) and the candidates are judged against that run alone, not against the parent's earlier results. The
+HomeBody baseline branch can be measured on the same suite as a reference version, reported and never judged:
+
+    python3 -m evolve.e2e_loop --profile demo-wh reference demo-homebody-baseline --id h000
+
+It runs with `episode_settings_homebody.toml`, the settings that branch accepts (no `[coder]`, `[plan]`, `[curobo]`
+or keyframes: it has none of them). The greedy strategy still judges against the recorded parent.

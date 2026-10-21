@@ -94,6 +94,9 @@ def fingerprint(row):
             row.get("error"))
 
 
+# archive statuses that record a measurement, not a version: never parents, donors or inspirations
+MEASUREMENTS = ("parent-rerun", "reference")
+
 class EvoLoop(SkillLoop):
     def __init__(self, profile=None):
         super().__init__(profile)
@@ -121,7 +124,7 @@ class EvoLoop(SkillLoop):
         for entry in self.archive():
             if all(s in entry for s in SPLITS) and entry.get("commit") and (self.work / "results" / entry["id"]).exists():
                 latest[entry["id"]] = entry
-        return latest
+        return {i: e for i, e in latest.items() if e.get("status") not in MEASUREMENTS}
 
     def lineage(self, population):
         """The versions built on the latest baseline (a re-baseline after a pipeline change starts a new lineage)."""
@@ -335,6 +338,11 @@ class EvoLoop(SkillLoop):
         self.log(f"evolve round {number}: done; best is now {self.best()['id']}; "
                  f"optimisation credits this round {astra.credits_in(round_dir)}")
 
+    def parent_rerun(self, best):
+        """(id, checkout) of a run of BEST in the candidates' own batch, which they are then judged against; None
+        judges them against BEST's recorded results. Profiles that measure in batches redirect."""
+        return None
+
     def measured_before(self, cid, commit):
         """Whether CID has evaluation results for COMMIT (it passed its checks then); profiles that know redirect."""
         return False
@@ -471,8 +479,16 @@ class EvoLoop(SkillLoop):
         if not entries:
             return []
         before = {e["id"]: self.manifest(Path(e["path"]), e["commit"]) for e in entries}
-        everything = self.evaluate_many([(e["id"], Path(e["path"]), None, None) for e in entries])
-        reference = self.summaries(best["id"])
+        rerun = self.parent_rerun(best)  # BEST run again in the same batch, the candidates' comparator
+        items = [(e["id"], Path(e["path"]), None, None) for e in entries]
+        everything = self.evaluate_many(items + ([(rerun[0], rerun[1], None, None)] if rerun else []))
+        if rerun:
+            reference = everything[rerun[0]]
+            self.record({"id": rerun[0], "round": entries[0].get("round"), "parent": best["id"], "commit": best["commit"],
+                         "status": "parent-rerun", "reason": f"{best['id']} run again alongside "
+                         f"{', '.join(e['id'] for e in entries)}: their comparator", **reference})
+        else:
+            reference = self.summaries(best["id"])
         judged = []
         for index, entry in enumerate(entries):  # the setup measured afresh once after the evaluation, then reused
             after = self.manifest(Path(entry["path"]), entry["commit"], refresh=index == 0)

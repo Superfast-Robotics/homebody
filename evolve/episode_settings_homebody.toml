@@ -1,0 +1,10 @@
+# Settings for the HomeBody baseline branch (demo-homebody-baseline) as a reference version on the warehouse suite
+# (`e2e_loop reference`): episode_settings_dex1_rt.toml without what that branch does not have and refuses as
+# unknown sections or keys, [coder] (no coding sub-agent), [plan] (no behavior-tree plan mode), [curobo] (no
+# planning servers) and [recording] keyframes (no per-stage keyframes). Its physics always runs in real time.
+[agent]
+reasoning_effort = "medium"
+max_steps = 60
+
+[robot]
+hands = "dex1"
