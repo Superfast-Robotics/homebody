@@ -48,7 +48,8 @@ def test_a_96_gb_gpu_runs_the_32b_and_hy_embodied_experiments():
 
 
 def test_an_ssh_server_is_driven_through_ssh_and_reached_through_its_tunnel(evolve_dir, monkeypatch):
-    gh = {"name": "gh", "ip": "10.0.0.9", "ssh": "gh-host", "ports": [9000, 9001], "gpu_gb": 96}
+    gh = {"name": "gh", "ip": "10.0.0.9", "ssh": "gh-host", "ports": [9000, 9001], "gpu_gb": 96,
+          "venv": "~/v21", "env": {"LD_LIBRARY_PATH": "~/compat"}}
     assert ax.on_host(gh, ["pgrep", "-af", "vllm serve .*--port 8000( |$)"]) == [
         "ssh", "gh-host", "pgrep -af 'vllm serve .*--port 8000( |$)'"]
     assert ax.on_host({"ip": "1"}, ["pgrep"]) == ["pgrep"] and ax.bind(gh) == "127.0.0.1"
@@ -57,8 +58,9 @@ def test_an_ssh_server_is_driven_through_ssh_and_reached_through_its_tunnel(evol
     config = cfg() | {"agents": cfg()["agents"] | {"venv": "~/vllm-venv", "logs": "~/vlm"}}
     ax.start(config, gh, ax.Serve("cosmos-reason2-32b", 0.9), 8000)
     host, line = sent[0][1:]
-    assert host == "gh-host" and line.startswith("HF_HOME=~/hf VLLM_API_KEY=$(cat ~/vlm/api_key) setsid nohup "
-                                                 "~/vllm-venv/bin/vllm serve nvidia/Cosmos-Reason2-32B ")
+    assert host == "gh-host" and line.startswith(
+        "HF_HOME=~/hf HF_HUB_OFFLINE=1 VLLM_API_KEY=$(cat ~/vlm/api_key) LD_LIBRARY_PATH=~/compat setsid nohup "
+        "~/v21/bin/vllm serve nvidia/Cosmos-Reason2-32B ")
     assert "--host 127.0.0.1 --port 8000" in line and line.endswith("> ~/vlm/cosmos-reason2-32b-8000.log 2>&1 < /dev/null &")
     ax.write_settings(cfg(), "E13", ax.experiments(gpu_gb=96)["E13"], gh, ("a", "b"))
     agent = tomllib.loads((evolve_dir / "episode_settings_pp_E13.toml").read_text())["agent"]

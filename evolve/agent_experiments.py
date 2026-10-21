@@ -61,7 +61,23 @@ MODELS = {
                          blocked="no quantised build; BF16 needs 61 GB", big=True),
     "molmo2-er": Model(None, "allenai/Molmo2-ER", 9.7, "BF16", point="molmo",
                        args=("--trust-remote-code", "--dtype", "bfloat16")),
-    "embodied-r1-3b": Model(None, "IffYuan/Embodied-R1-3B-v1", 8.0, "BF16", point="pixels"),
+    "embodied-r1-3b": Model(None, "IffYuan/Embodied-R1-3B-v1", 8.0, "BF16", point="embodied_r1"),
+    # 2026 candidates (vLLM 0.32 on loki-gh200; the 8B Qwen3-VL fine-tunes also on loki-a100's 0.11.2)
+    "embodied-r1.5": Model("embodied-r15-vllm", "IffYuan/Embodied-R1.5", 17.5, "BF16", point="embodied_r15"),
+    "rynnbrain-8b": Model("rynnbrain-8b-vllm", "Alibaba-DAMO-Academy/RynnBrain-8B", 17.5, "BF16", point="rynnbrain"),
+    "rynnbrain1.1-9b": Model("rynnbrain11-9b-vllm", "Alibaba-DAMO-Academy/RynnBrain1.1-9B", 19.0, "BF16",
+                             point="rynnbrain", big=True, blocked="needs vLLM >= 0.17 (loki-gh200)"),
+    "mimo-embodied-7b": Model("mimo-embodied-7b-vllm", "XiaomiMiMo/MiMo-Embodied-7B", 16.6, "BF16", point="mimo"),
+    "qwen3.8-27b": Model("qwen38-27b-vllm", "Qwen/Qwen3.8-27B-FP8", 29.0, "FP8", point="qwen_json", big=True,
+                         blocked="needs vLLM >= 0.17 (loki-gh200)"),
+    "qwen3.6-35b-a3b": Model("qwen36-35b-vllm", "Qwen/Qwen3.6-35B-A3B-FP8", 36.0, "FP8", point="qwen_json", big=True,
+                             blocked="needs vLLM >= 0.17 (loki-gh200)"),
+    "cosmos3-nano": Model("cosmos3-nano-vllm", "nvidia/Cosmos3-Nano", 17.5, "BF16", point="cosmos3",
+                          args=("--mm-encoder-tp-mode", "data"), big=True, blocked="needs vLLM >= 0.23 (loki-gh200)"),
+    "cosmos3-super": Model("cosmos3-super-vllm", "nvidia/Cosmos3-Super", 66.7, "BF16", point="cosmos3",
+                           args=("--mm-encoder-tp-mode", "data"), big=True, blocked="66.7 GB; vLLM >= 0.23"),
+    "gemma-4-31b": Model("gemma4-31b-vllm", "google/gemma-4-31B-it", 62.0, "BF16", point="gemma", big=True,
+                         blocked="62 GB; vLLM >= 0.19"),
 }
 # built and not chosen: Qwen/Qwen3-VL-30B-A3B-Instruct-FP8 (31 GB weight-only on Ampere: alone only),
 # QuantTrio/Qwen3-VL-30B-A3B-Instruct-AWQ, cyankiwi/...-AWQ-8bit (31 GB), Qwen/Qwen3-VL-8B-Instruct-FP8
@@ -237,14 +253,17 @@ def stop(server, port):
 def start(cfg, server, item, port):
     """Start ITEM's vLLM server on PORT of the GPU host, its output in [agents] logs there."""
     agents = cfg["agents"]
-    vllm, args = f"{agents['venv']}/bin/vllm", ["serve", *command(item, bind(server), port)]
+    vllm = f"{server.get('venv', agents['venv'])}/bin/vllm"  # a server may run its own vLLM
+    args = ["serve", *command(item, bind(server), port)]
     logfile = f"{agents['logs']}/{item.model}-{port}.log"
-    if "ssh" in server:  # the host's own key and HF_HOME; ~ left unquoted for its shell
-        line = (f"HF_HOME=~/hf VLLM_API_KEY=$(cat ~/vlm/api_key) setsid nohup {vllm} {shlex.join(args)} "
-                f"> {logfile} 2>&1 < /dev/null &")
+    if "ssh" in server:  # the host's own key and HF_HOME (and env, e.g. a CUDA compat library); ~ unquoted
+        assigned = ["HF_HOME=~/hf", "HF_HUB_OFFLINE=1", "VLLM_API_KEY=$(cat ~/vlm/api_key)",
+                    *(f"{k}={v}" for k, v in server.get("env", {}).items())]
+        line = (f"{' '.join(assigned)} setsid nohup {vllm} {shlex.join(args)} > {logfile} 2>&1 < /dev/null &")
         subprocess.run(["ssh", server["ssh"], line], check=True)
         return logfile
-    env = {**os.environ, "HF_HOME": expand("~/hf"), "VLLM_API_KEY": api_key()}
+    env = {**os.environ, "HF_HOME": expand("~/hf"), "VLLM_API_KEY": api_key(),
+           **{k: expand(v) for k, v in server.get("env", {}).items()}}
     with Path(expand(logfile)).open("w") as out:
         subprocess.Popen([expand(vllm), *args], stdout=out, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
                          env=env, start_new_session=True)
