@@ -108,6 +108,11 @@ def test_point_formats(image):
     width, height = qwen_size(640, 480)
     assert (width, height) == (644, 476)
     assert to_1000(f"<point>[[{width // 2}, {height // 4}]]</point>", "pixels", image) == [500, 250]
+    assert to_1000('<points coords="1 1 523 412 2 600 300">red jars</points>', "molmo", image) == [523, 412]
+    assert to_1000("[(612, 340)]", "robobrain", image) == [612, 340]
+    reply = (f"<think>the jar at [10, 20] is behind</think><answer><point>[[{width // 2}, {height // 2}], "
+             "[5, 5]]</point></answer>")
+    assert to_1000(reply, "embodied_r1", image) == [500, 500]  # the answer's first point, not the reasoning's
     for answer, form in (("none", "qwen1000"), ("[1200, 5]", "qwen1000"), ("no", "molmo")):
         with pytest.raises(ProviderError):
             to_1000(answer, form, image)

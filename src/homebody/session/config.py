@@ -129,7 +129,7 @@ MOLMO_ER = {"served": "molmo2-er", "format": "molmo", "server": "second"}
 COMPOSITES = {
     "e7-qwen30b-molmo": {"kind": "pointer", "planner": {"model": "qwen3vl-30b-vllm"}, "pointer": MOLMO_ER},
     "e8-qwen30b-er1": {"kind": "pointer", "planner": {"model": "qwen3vl-30b-vllm"},
-                       "pointer": {"served": "embodied-r1-3b", "format": "pixels", "server": "second"}},
+                       "pointer": {"served": "embodied-r1-3b", "format": "embodied_r1", "server": "second"}},
     "e9-hy-molmo": {"kind": "pointer", "planner": {"model": "hy-embodied-vllm"}, "pointer": MOLMO_ER},
     "e10-small-molmo": {"kind": "pointer", "planner": {"model": "best-small"}, "pointer": MOLMO_ER},
     "e11-robobrain-sol": {"kind": "cascade", "routine": {"model": "robobrain25-8b-vllm"},

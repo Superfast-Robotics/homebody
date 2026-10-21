@@ -34,15 +34,26 @@ TARGET_NOTE = ("When your skill takes point_normalized_1000, also end your text 
                "on image 1, in a few words that name the object and its part>`.")
 VETO_NOTE = ("A check of the latest images does not confirm your {skill} claim: {reason} Do not claim it again until "
              "the images show it; choose your next decision.")
+# each pointer's own trained question (model cards and official inference code): Molmo2 "Point to ..."
+# (allenai/Molmo2-4B card), RoboBrain2.5 inference.py's pointing task, Embodied-R1 inference_example.py's REG mode
 POINTER_PROMPTS = {
     "molmo": "Point to {target}.",
     "qwen1000": "Point to {target}. Answer with the point as [x, y] in coordinates normalized to 0-1000.",
-    "pixels": "Point to {target}. Answer with the point as [x, y] in pixel coordinates of the image.",
+    "robobrain": ("{target}. Please provide its 2D coordinates. Your answer should be formatted as a tuple, i.e. "
+                  "[(x, y)], where the tuple contains the x and y coordinates of a point satisfying the conditions "
+                  "above."),
+    "embodied_r1": ("Provide one or more points coordinate of objects region {target}. The results are presented in "
+                    "a format <point>[[x1,y1], [x2,y2], ...]</point>. You FIRST think about the reasoning process as "
+                    "an internal monologue and then provide the final answer. The reasoning process and answer are "
+                    "enclosed within <think> </think> and <answer> </answer> tags. The answer consists only of "
+                    "several coordinate points, with the overall format being: <think> reasoning process here "
+                    "</think><answer><point>[[x1, y1], [x2, y2], ...]</point></answer>"),
 }
 VERIFY_PROMPT = ("A robot reports that it finished this goal.\nGoal: {goal}\nRobot's report: {claim}\nLook at the "
-                 "images (the latest views of the scene). Is the goal really achieved? Answer yes or no first, then "
+                 "image (the robot's head camera, now). Is the goal really achieved? Answer yes or no first, then "
                  "one sentence why.")
-ENDPOINT_TOKENS = 256
+ENDPOINT_TOKENS = {"embodied_r1": 2048, "molmo": 1024}  # room for Embodied-R1's <think>; others 256
+SAMPLING = {"embodied_r1": {"repetition_penalty": 1.05}}  # its reference decoding: greedy, 1.05
 QWEN_FACTOR, QWEN_MIN_PIXELS, QWEN_MAX_PIXELS = 28, 56 * 56, 28 * 28 * 1280  # Qwen2.5-VL image resizing
 
 
@@ -56,11 +67,12 @@ class Endpoint:
 
     def ask(self, prompt: str, images: tuple[Path, ...], *, attempt: Path, tick: Callable[[], None],
             cancelled: Callable[[], bool]) -> str:
-        content = [{"type": "text", "text": prompt}]
-        content += [{"type": "image_url", "image_url": {"url": f"data:{MEDIA[image.suffix.lower()]};base64,{image_data(image)}"}}
-                    for image in images]
+        content = [{"type": "image_url", "image_url": {"url": f"data:{MEDIA[image.suffix.lower()]};base64,{image_data(image)}"}}
+                   for image in images]  # images first, as each pointer's own examples give them
+        content.append({"type": "text", "text": prompt})
         body = {"model": self.served, "messages": [{"role": "user", "content": content}],
-                "max_tokens": ENDPOINT_TOKENS, "temperature": 0.0}
+                "max_tokens": ENDPOINT_TOKENS.get(self.format, 256), "temperature": 0.0,
+                **SAMPLING.get(self.format, {})}
         headers = {"Authorization": f"Bearer {key('VLLM_API_KEY')}", "content-type": "application/json"}
         reply = run_request(f"vLLM {self.served}", self.url.rstrip("/") + "/chat/completions", headers, body,
                             prompt=prompt, attempt=attempt, timeout=self.timeout, tick=tick, cancelled=cancelled,
@@ -87,16 +99,29 @@ def numbers(text: str) -> list[float]:
     return [float(n) for n in re.findall(r"-?\d+(?:\.\d+)?", text)]
 
 
+def answer_part(answer: str) -> str:
+    """The answer without its reasoning: after </think>, inside <answer> and <point> when present."""
+    answer = re.sub(r"^.*?</think>", "", answer, flags=re.DOTALL)
+    for tag in ("answer", "point"):
+        if inner := re.search(rf"<{tag}>(.*?)</{tag}>", answer, re.DOTALL):
+            answer = inner[1]
+    return answer
+
+
 def to_1000(answer: str, form: str, image: Path) -> list[int]:
-    """The pointer's ANSWER as point_normalized_1000 on IMAGE. molmo: <point x="%" y="%"> percentages, or
-    coords="... x y" in 0-1000; qwen1000: the first two numbers; pixels: the first two numbers in the image's
-    Qwen2.5-VL resized pixels. ProviderError when no point is found or it is off the image."""
+    """The pointer's ANSWER as point_normalized_1000 on IMAGE, its first point. molmo: Molmo2's
+    <points coords="IMAGE ID X Y [ID X Y ...]"> in 0-1000 (or Molmo 1's x="%" y="%"); qwen1000 and robobrain: the
+    first two numbers, 0-1000; embodied_r1 (and pixels): the first two numbers in the image's Qwen2.5-VL resized
+    pixels. Any <think> block is ignored. ProviderError when no point is found or it is off the image."""
+    answer = answer_part(answer)
     if form == "molmo":
         tag = re.search(r'x\d*="([\d.]+)"\s+y\d*="([\d.]+)"', answer)
         coords = re.search(r'coords="([^"]+)"', answer)
         if tag:
             x, y = float(tag[1]) * 10, float(tag[2]) * 10
-        elif coords and len(values := numbers(coords[1])) >= 2:
+        elif coords and len(values := numbers(coords[1].split(";")[0])) >= 4:
+            x, y = values[2:4]  # image index, point id, x, y
+        elif coords and len(values) >= 2:
             x, y = values[-2:]
         else:
             raise ProviderError(f"no point in the pointer's answer: {answer[:200]}")
@@ -105,13 +130,13 @@ def to_1000(answer: str, form: str, image: Path) -> list[int]:
         if len(values) < 2:
             raise ProviderError(f"no point in the pointer's answer: {answer[:200]}")
         x, y = values[:2]
-        if form == "pixels":
+        if form in ("pixels", "embodied_r1"):
             from PIL import Image  # noqa: PLC0415 -- only the pixel format reads the image size
 
             with Image.open(image) as picture:
                 width, height = qwen_size(*picture.size)
             x, y = x / width * 1000, y / height * 1000
-        elif form != "qwen1000":
+        elif form not in ("qwen1000", "robobrain"):
             raise ProviderError(f"unknown point format {form}")
     if not (0 <= x <= 1000 and 0 <= y <= 1000):
         raise ProviderError(f"the pointer's point {[x, y]} is off the image")
@@ -120,6 +145,7 @@ def to_1000(answer: str, form: str, image: Path) -> list[int]:
 
 def verdict(answer: str) -> tuple[bool, str]:
     """(achieved, reason) from a yes/no answer; anything but a leading no counts as yes (a veto needs a clear no)."""
+    answer = answer_part(answer)
     words = answer.strip().lower()
     no = bool(re.match(r"\W*no\b", words))
     return not no, re.sub(r"^\W*(yes|no)\W*", "", answer.strip(), flags=re.IGNORECASE) or answer.strip()
@@ -324,7 +350,7 @@ class Verifier(Composite):
                 return decision
             claim = str(decision.arguments.get("summary") or decision.arguments.get("reason") or decision.text)
             try:
-                answer, folder = self.query("verifier", VERIFY_PROMPT.format(goal=goal, claim=claim), images,
+                answer, folder = self.query("verifier", VERIFY_PROMPT.format(goal=goal, claim=claim), images[:1],
                                             attempt=attempt, tick=tick, cancelled=cancelled)
             except ProviderError:
                 return decision  # an unavailable verifier never blocks a claim
