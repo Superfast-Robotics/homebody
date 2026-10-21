@@ -43,6 +43,8 @@ if [ "$AGENT" != "-" ] && [[ " $SUITES " == *" turns "* ]]; then
 fi
 [[ " $SUITES " == *" point "* ]] && bench point "$CASES" "$RUNS/$NAME-point" --served "$SERVED" --format "$FORMAT" --url "$URL" --label "$NAME" \
   > "$RUNS/$NAME-point.log" 2>&1
-[[ " $SUITES " == *" verify "* ]] && bench verify "$CASES" "$RUNS/$NAME-verify" --served "$SERVED" --url "$URL" --label "$NAME" > "$RUNS/$NAME-verify.log" 2>&1
+# shellcheck disable=SC2086 # VERIFY_ARGS: extra agent_bench verify flags (--prompt evidence)
+[[ " $SUITES " == *" verify "* ]] && bench verify "$CASES" "$RUNS/$NAME-verify" --served "$SERVED" --url "$URL" --label "$NAME" \
+  ${VERIFY_ARGS:-} > "$RUNS/$NAME-verify.log" 2>&1
 stop_server
 echo "$NAME: done"
