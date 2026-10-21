@@ -52,7 +52,8 @@ def validate(tree):
         check = node.get("check")
         if check is not None:
             if not isinstance(check, dict) or check.get("name") not in CHECKS:
-                raise PlanError(f"{where}: check must be null or one of {', '.join(CHECKS)}")
+                raise PlanError(f"{where}: check must be null or an object {{\"name\": one of {', '.join(CHECKS)}}}"
+                                " (holding and hand_free also take \"hand\")")
             if check["name"] in ("holding", "hand_free") and check.get("hand") not in HANDS:
                 raise PlanError(f"{where}: check {check['name']} needs hand left or right")
         budget = node.get("budget", BUDGET_DEFAULT)

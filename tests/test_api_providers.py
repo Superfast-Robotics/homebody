@@ -289,3 +289,9 @@ def test_a_thinking_local_model_reasons_first_and_its_think_block_is_dropped():
     assert json.loads(LocalVlm.content(raw)) == {"text": "t", "skill": "done", "arguments_json": "{}"}
     with pytest.raises(ValueError, match="local_layout"):
         Agent(model="qwen3vl-8b-vllm", local_layout="sideways")
+
+
+def test_a_request_with_text_only_messages_is_recorded():
+    body = {"messages": [{"role": "system", "content": "think"}, {"role": "user", "content": [{"type": "text", "text": "p"}]},
+                         {"role": "assistant", "content": "<think>\n"}]}
+    assert api.redact(body, ()) == body

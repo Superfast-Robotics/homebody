@@ -220,7 +220,7 @@ def redact(body: dict, images: tuple[Path, ...]) -> dict:
     names = iter(image.name for image in images)
     record = json.loads(json.dumps(body))
     for message in record.get("messages") or record.get("input") or []:
-        for part in message["content"]:
+        for part in message["content"] if isinstance(message["content"], list) else ():  # text-only: as is
             if part.get("type") == "image":
                 part["source"] = {"file": next(names)}
             elif part.get("type") == "image_url":
