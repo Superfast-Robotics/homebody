@@ -13,6 +13,7 @@ replies that parse, allowed skills, agreement with the reference, and clicks aga
 when its pixel carries the object the reference picked successfully."""
 import argparse
 import json
+import os
 import shutil
 import sys
 import time
@@ -210,8 +211,7 @@ def template(args):
         provider.turn(tuple(meta["allowed"]))
     body = provider.request((case / "prompt.txt").read_text(), tuple(case / n for n in IMAGES), tuple(meta["offered"]))
     base = args.local_url.rstrip("/").removesuffix("/v1")
-    headers = {"Authorization": f"Bearer {Path('~/vlm/api_key').expanduser().read_text().strip()}"
-               if Path("~/vlm/api_key").expanduser().is_file() else "", "content-type": "application/json"}
+    headers = {"Authorization": f"Bearer {os.environ.get('VLLM_API_KEY', '')}", "content-type": "application/json"}
     tokens = post(f"{base}/tokenize", {"model": body["model"], "messages": body["messages"]}, headers)
     text = post(f"{base}/detokenize", {"model": body["model"], "tokens": tokens["tokens"]}, headers)["prompt"]
     print(f"{case.name}: {tokens['count']} tokens\n--- head ---\n{text[:1500]}\n--- tail ---\n{text[-800:]}")
