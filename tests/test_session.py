@@ -1105,3 +1105,25 @@ def test_the_settings_accept_zero_coder_calls():
     assert Settings(coder=Coder(calls=0, auto=False)).coder.calls == 0
     with pytest.raises(ValueError, match="coder.calls"):
         Settings(coder=Coder(calls=-1))
+
+
+def test_a_multi_model_agent_sees_each_turns_phase_and_result(build, monkeypatch, tmp_path):
+    from homebody.session.config import PlanMode
+    from homebody.skills.contract import Result
+    from homebody.vlm.composite import Composite
+
+    tree = {"type": "sequence", "children": [{"type": "goal", "id": "g1", "goal": "pick the cup", "check": None}]}
+    planner = Provider([Decision("Plan.", "plan", {"tree": tree})])
+    executor = Provider([Decision("Pick.", "pick", {"hand": "right"}), Decision("Held.", "goal_done", {}),
+                         Decision("Finished.", "done", {})])
+    settings = replace(Settings(agent=Agent(model="e17-qwen30b-small", done_settle_seconds=0.)),
+                       plan=PlanMode(enabled=True))
+    agent = Composite(settings.agent, members={"planner": planner, "executor": executor}, endpoints={})
+    session = build(agent, settings=settings)
+    monkeypatch.setattr(session.runner, "run", lambda skill, arguments, frame, **kw: Result(skill, "NO_GRASP", "x"))
+    session.run_task("Pick up the cup.")
+    assert len(planner.prompts) == 1 and "This turn: write the plan" in planner.prompts[0]
+    assert executor.prompts and agent.last["code"] in ("NO_GRASP", "OK", "INVALID_ARGUMENT")
+    routed = sorted(tmp_path.rglob("routing.json"))
+    roles = [json.loads(path.read_text())["calls"][0]["role"] for path in routed]
+    assert roles[0] == "planner" and set(roles[1:]) == {"executor"}

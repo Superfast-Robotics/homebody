@@ -14,3 +14,7 @@ runs/
 *.map
 CLAUDE.local.md
 MUJOCO_LOG.TXT
+
+# evolve/agent_experiments.py: the machine-local loop overlay and the settings it writes
+evolve/config.local.toml
+evolve/episode_settings_pp_*.toml

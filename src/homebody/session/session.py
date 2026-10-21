@@ -312,6 +312,11 @@ class Session:
                                     wall_seconds=held, simulation_time=self.backend.time,
                                     simulation_advanced=self.backend.time - sim)
 
+    def show_result(self, result):
+        """Show a multi-model agent (vlm/composite.py) the turn's result: it may escalate after a refusal."""
+        if hasattr(self.provider, "observe"):
+            self.provider.observe(result)
+
     def run_task(self, task: str) -> dict:
         task_dir = self.recorder.start_task(task, self.backend.epoch)
         started_wall, started_sim = time.monotonic(), self.backend.time
@@ -342,6 +347,8 @@ class Session:
                 if self.planner is not None and (note := self.planner.note()):
                     prompt += "\n\n" + note
                 self.update("Thinking")
+                if hasattr(self.provider, "turn"):  # a multi-model agent routes by phase (vlm/composite.py)
+                    self.provider.turn(names)
                 decision = self.decide(prompt, images, offered, task_dir / "decisions" / f"step-{step:03d}")
                 if self.controls.cancel.is_set() or frame.epoch != self.backend.epoch:
                     raise Cancelled("Decision invalidated before execution")
@@ -354,6 +361,7 @@ class Session:
                     self.history.append({"base_pose": frame.base_pose.tolist(), "decision": asdict(decision),
                                          "epoch": frame.epoch, "frame_sequence": frame.sequence, "result": result})
                     self.recorder.event("result", step=step, simulation_time=self.backend.time, result=result)
+                    self.show_result(result)
                     continue
                 self.recorder.event("decision", step=step, epoch=frame.epoch, sequence=frame.sequence,
                                     simulation_time=self.backend.time, decision=decision)
@@ -372,6 +380,7 @@ class Session:
                     self.history.append({"base_pose": frame.base_pose.tolist(), "decision": asdict(decision),
                                          "epoch": frame.epoch, "frame_sequence": frame.sequence, "result": result})
                     self.recorder.event("result", step=step, simulation_time=self.backend.time, result=result)
+                    self.show_result(result)
                     continue
                 if decision.arguments.get("hand") in ("left", "right"):
                     self.view_side = decision.arguments["hand"]
@@ -385,6 +394,7 @@ class Session:
                         raise PhysicsInvalid(result["message"])
                 if self.planner is not None:
                     self.planner.observe(result, self.context.carried)
+                self.show_result(result)
             else:
                 outcome["status"] = "step_limit"
         except PhysicsInvalid as exc:

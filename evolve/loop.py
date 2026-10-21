@@ -35,8 +35,19 @@ class QuotaExhausted(RuntimeError):
     pass
 
 
+LOCAL_CONFIG = "config.local.toml"  # a machine's own paths and profiles, never committed (evolve/agent_experiments.py)
+
+
+def merged(base, overlay):
+    """BASE with OVERLAY's tables merged in key by key, anything else replaced."""
+    return {**base, **{k: merged(base[k], v) if isinstance(v, dict) and isinstance(base.get(k), dict) else v
+                       for k, v in overlay.items()}}
+
+
 def config():
-    return tomllib.loads((HERE / "config.toml").read_text())
+    cfg = tomllib.loads((HERE / "config.toml").read_text())
+    local = HERE / LOCAL_CONFIG
+    return merged(cfg, tomllib.loads(local.read_text())) if local.is_file() else cfg
 
 
 def git(*args, cwd=REPO):
