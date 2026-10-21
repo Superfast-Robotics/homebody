@@ -4,6 +4,7 @@ import numpy as np
 from PIL import Image
 
 from evolve import agent_bench as bench
+from evolve import agent_capabilities as capabilities
 from homebody.vlm.provider import Decision, ProviderError
 
 OFFERED = ["navigate", "pick", "place", "done", "plan", "goal_done", "goal_failed"]
@@ -68,16 +69,45 @@ def test_collect_run_and_score(tmp_path, monkeypatch, capsys):
             return reply
 
     monkeypatch.setattr(bench, "make", lambda settings: Fake())
-    bench.main(["run", str(tmp_path / "cases"), str(tmp_path / "out"), "--model", "qwen3vl-8b-vllm", "--jobs", "1"])
-    stats = bench.score_run(tmp_path / "out")
-    assert stats["turns"] == 2 and stats["parsed"] == 1 and stats["allowed"] == 1 and stats["same_skill"] == 1
-    assert (stats["picks_scored"], stats["pick_hits"], stats["pick_background"]) == (1, 0, 1)
-    assert stats["errors"] == {"Invalid structured decision": 1}
+    bench.main(["turns", str(tmp_path / "cases"), str(tmp_path / "out"), "--model", "qwen3vl-8b-vllm", "--jobs", "1"])
+    stats = capabilities.score_run(tmp_path / "out")
+    assert stats["cases"] == 2 and stats["format.parsed"] == "1/2" and stats["format.allowed"] == "1/1"
+    assert stats["plan.accepted"] == "0/1" and stats["choose.same_skill"] == "1/1"
+    assert (stats["pick.asked"], stats["pick.hit"], stats["pick.background"]) == ("1/1", "0/1", "1/1")
 
 
 def test_a_click_reads_the_label_under_the_pixel():
     labels = np.zeros((480, 640), np.int32)
     labels[200:300, 300:400] = 7
-    assert bench.click({"point_normalized_1000": [550, 500]}, labels) == 7
-    assert bench.click({"point_normalized_1000": [10, 10]}, labels) == "background"
-    assert bench.click({"point_normalized_1000": [0.0, 1200]}, labels) == "invalid"
+    assert capabilities.label_at([550, 500], labels) == 7
+    assert capabilities.label_at([10, 10], labels) == 0
+    assert capabilities.label_at([0.0, 1200], labels) is None
+
+
+def test_argument_shapes_judging_recovery_and_navigation_distance(tmp_path):
+    assert capabilities.args_ok("navigate", {"goal_map_1000": [1, 2], "facing_map_1000": [3, 4]})
+    assert not capabilities.args_ok("navigate", {"goal_map_1000": [1, 2]})
+    assert capabilities.args_ok("place", {"hand": "left", "x_ahead_m": 0.3, "y_left_m": 0.0})
+    assert not capabilities.args_ok("pick", {"point_normalized_1000": [1200, 3]})
+    observation = {"map_click_from_world": [[100.0, 0.0, 500.0], [0.0, -100.0, 500.0]]}
+    assert capabilities.map_click({"goal_xy_m": [1.0, 1.0]}, "goal", observation) == (600.0, 400.0)
+    assert capabilities.metres((600, 400), (600, 450), observation) == 0.5
+    cases, out = tmp_path / "cases", tmp_path / "out"
+    goal = {"goal": "pick the can", "observation": observation, "target": None, "offered": ["navigate", "goal_done"],
+            "allowed": ["navigate", "goal_done"]}
+    metas = {"a": {**goal, "reference": {"skill": "goal_done", "arguments": {}}, "result": "OK", "previous": None},
+             "b": {**goal, "reference": {"skill": "navigate", "arguments": {"goal_map_1000": [600, 400],
+                                                                             "facing_map_1000": [600, 300]}},
+                   "result": "OK", "previous": {"decision": {"skill": "navigate", "arguments": {"x": 1}},
+                                                "code": "NO_ROUTE"}}}
+    replies = {"a": {"skill": "goal_done", "arguments": {}},
+               "b": {"skill": "navigate", "arguments": {"x": 1}}}
+    for name, meta in metas.items():
+        (cases / name).mkdir(parents=True)
+        (cases / name / "case.json").write_text(json.dumps(meta))
+        (out / name).mkdir(parents=True)
+        (out / name / "bench.json").write_text(json.dumps({"case": name, **replies[name], "seconds": 1.0}))
+    (out / "run.json").write_text(json.dumps({"kind": "turns", "model": "m", "cases": str(cases)}))
+    stats = capabilities.score_run(out)
+    assert stats["judge.accuracy"] == "2/2" and stats["judge.recall"] == "1/1" and stats["recover.changed"] == "0/1"
+    assert stats["navigate.goal_median_m"] == "inf" and stats["navigate.goal_within"] == "0/1"
