@@ -176,6 +176,16 @@ COMPOSITES = {
                            "pointer": {"served": "robobrain2.5-8b", "format": "robobrain", "server": "second"}},
     "c-qwen8b-robobrain-v": {"kind": "verifier", "base": {"model": "c-qwen8b-robobrain"}, "vetoes": 2,
                              "verifier": {"served": "robobrain2.5-8b", "format": "yesno", "server": "second"}},
+    # Qwen3.8-27B plans (the bench's best planner) with a pointer that may also check done claims
+    "c-q38-robobrain": {"kind": "pointer", "planner": {"model": "qwen38-27b-vllm"},
+                        "pointer": {"served": "robobrain2.5-8b", "format": "robobrain", "server": "second"}},
+    "c-q38-robobrain-v": {"kind": "verifier", "base": {"model": "c-q38-robobrain"}, "vetoes": 2,
+                          "verifier": {"served": "robobrain2.5-8b", "format": "yesno", "server": "second"}},
+    "c-q38-mimo": {"kind": "pointer", "planner": {"model": "qwen38-27b-vllm"},
+                   "pointer": {"served": "mimo-embodied-7b", "format": "mimo", "server": "second"}},
+    "c-q38-molmo-v": {"kind": "verifier", "base": {"model": "c-q38-molmo"}, "vetoes": 2,
+                      "verifier": {**MOLMO_ER, "format": "yesno"}},
+    "c-q38-molmo": {"kind": "pointer", "planner": {"model": "qwen38-27b-vllm"}, "pointer": MOLMO_ER},
 }
 MODELS.update({name: ("composite", name, None) for name in COMPOSITES})
 
