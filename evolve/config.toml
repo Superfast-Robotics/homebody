@@ -1026,10 +1026,11 @@ val = ["/lambda/nfs/group-volume/dex1-demos/2026-10-21/pickplace_scenarios/harde
 [agents]
 # loki-gh200 (GH200 96 GB, no shared volume) is driven from loki-a100: vLLM on its 127.0.0.1 ports, sessions through
 # loki-a100's tunnel on 10.19.89.218:9000-9001
-# (its own vLLM 0.32 and the CUDA 12.9 compat library its aarch64 build needs on the host's 12.8 driver)
+# (its own vLLM 0.32, the CUDA 12.9 compat library its aarch64 build needs on the host's 12.8 driver, and no
+# DeepGEMM: its FP8 JIT needs nvcc 12.9, which the host lacks)
 servers = [
   {name = "loki-a100", ip = "10.19.89.218"},
-  {name = "loki-gh200", ip = "10.19.89.218", ssh = "loki-gh200", ports = [9000, 9001], gpu_gb = 96, venv = "~/vllm21-venv", env = {LD_LIBRARY_PATH = "~/cuda-compat-12-9/root/usr/local/cuda-12.9/compat"}},
+  {name = "loki-gh200", ip = "10.19.89.218", ssh = "loki-gh200", ports = [9000, 9001], gpu_gb = 96, venv = "~/vllm21-venv", env = {LD_LIBRARY_PATH = "~/cuda-compat-12-9/root/usr/local/cuda-12.9/compat", VLLM_USE_DEEP_GEMM = "0"}},
 ]
 ports = [8000, 8001]           # an experiment's local and second model server on its GPU host
 venv = "~/vllm-venv"           # vLLM on each GPU host, with ~/vlm/api_key (the key sessions send) and ~/hf (HF_HOME)
