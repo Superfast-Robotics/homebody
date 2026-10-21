@@ -170,6 +170,12 @@ COMPOSITES = {
                            "verifier": {"served": "robobrain2.5-8b", "format": "yesno", "server": "second"}},
     "e20-base-molmo": {"kind": "verifier", "base": {"model": "best-base"}, "vetoes": 2,
                        "verifier": {**MOLMO_ER, "format": "yesno"}},
+    # bench-selected combinations (evolve/agent_bench.py): a planner, and a pointer that also checks done claims
+    # (the evidence prompt), on the second server
+    "c-qwen8b-robobrain": {"kind": "pointer", "planner": {"model": "qwen3vl-8b-vllm"},
+                           "pointer": {"served": "robobrain2.5-8b", "format": "robobrain", "server": "second"}},
+    "c-qwen8b-robobrain-v": {"kind": "verifier", "base": {"model": "c-qwen8b-robobrain"}, "vetoes": 2,
+                             "verifier": {"served": "robobrain2.5-8b", "format": "yesno", "server": "second"}},
 }
 MODELS.update({name: ("composite", name, None) for name in COMPOSITES})
 
