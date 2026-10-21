@@ -95,3 +95,14 @@ def test_goal_done_needs_its_check_and_bad_plans_end_plan_mode():
     assert other.names(("pick", "done")) == ("plan",)
     other.handle(plan_decision({"type": "loop"}), {})
     assert other.abandoned and other.names(("pick", "done")) == ("pick", "done") and other.note() == ""
+
+
+def test_a_placed_or_arrived_goal_closes_when_a_coder_call_did_the_work():
+    by_coder = {"skill": "call_coder", "code": "OK",
+                "details": {"target": "place", "executes": [{"version": 2, "code": "OK"}]}}
+    assert check_holds({"name": "placed"}, {}, [by_coder])
+    assert not check_holds({"name": "arrived"}, {}, [by_coder])  # it changed place, not navigate
+    no_run = {"skill": "call_coder", "code": "OK", "details": {"target": "place", "executes": []}}
+    failed = {"skill": "call_coder", "code": "CODER_FAILED",
+              "details": {"target": "place", "executes": [{"version": 2, "code": "OK"}]}}
+    assert not check_holds({"name": "placed"}, {}, [no_run]) and not check_holds({"name": "placed"}, {}, [failed])

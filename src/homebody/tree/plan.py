@@ -10,6 +10,8 @@ succeeds at the first child that succeeds and fails when all do.
 """
 from dataclasses import dataclass, field
 
+CODER = "call_coder"  # session.coder.CALL: a coder call's result names the skill it changed
+
 TYPES = ("sequence", "fallback", "goal")
 MAX_GOALS, MAX_DEPTH = 12, 4
 BUDGET_DEFAULT, BUDGET_MAX = 8, 15
@@ -135,4 +137,11 @@ def check_holds(check, carried, results):
     if name == "hand_free":
         return check["hand"] not in carried
     skill = {"placed": "place", "arrived": "navigate"}[name]
-    return any(r.get("skill") == skill and r.get("code") == "OK" for r in results)
+    return any(r.get("code") == "OK" and (r.get("skill") == skill or did_by_coder(r, skill)) for r in results)
+
+
+def did_by_coder(result, skill):
+    """Whether RESULT is a coder call that ran SKILL on the robot and got OK (the coder did the goal's work)."""
+    details = result.get("details") or {}
+    return (result.get("skill") == CODER and details.get("target") == skill
+            and any(run.get("code") == "OK" for run in details.get("executes") or ()))

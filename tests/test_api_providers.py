@@ -222,3 +222,12 @@ def test_a_reply_that_is_not_a_json_object_or_a_protocol_failure_is_a_provider_e
     assert json.loads((tmp_path / "a/status.json").read_text())["status"] == "error"
     if not isinstance(reply, Exception):
         assert (tmp_path / "a/reply.json").read_text() in ("[]", "<html>")
+
+
+def test_the_litellm_request_carries_the_sessions_own_cache_key():
+    from homebody.session.config import Agent
+    from homebody.vlm.api import LiteLlm
+    provider = LiteLlm(Agent(model="sol61-litellm"))
+    assert provider.request("p", (), ("pick", "done"))["prompt_cache_key"] == "homebody-agent"
+    provider.cache_key = "homebody-session-20261021T000000Z-abcd1234"
+    assert provider.request("p", (), ("pick", "done"))["prompt_cache_key"] == provider.cache_key

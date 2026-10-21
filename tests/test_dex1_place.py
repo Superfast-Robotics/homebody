@@ -251,3 +251,20 @@ def test_complete_return_passes_release_envelope(monkeypatch):
     monkeypatch.setattr(place, 'return_checked', lambda *args: calls.append(args))
     assert place.complete_return(plan, object()) is None
     assert calls[0][-1] is envelope
+
+
+def test_a_verified_landing_stays_placed_when_only_the_arm_return_fails(monkeypatch):
+    settings = Settings()
+    ctx = SimpleNamespace(settings=settings, carried={}, stage=lambda text: None, advance=lambda *args: None,
+                          observe=lambda epoch: None)
+    plan = place.Plan(1, 'right', 3, np.zeros(3), None, np.eye(4), np.eye(4))
+    settling = SimpleNamespace(update=lambda frame: True, previous=np.array([.5, .1, .8]))
+    monkeypatch.setattr(place, 'Settling', lambda *args: settling)
+    refused = place.Result('place', 'COLLISION', 'Released; arm return refused: shelf edge', {'hand': 'right'})
+    monkeypatch.setattr(place, 'complete_return', lambda *args: refused)
+    result = place.verify_settled(plan, ctx, np.zeros(3))
+    assert result.code == 'OK' and result.details['arm_returned'] is False
+    assert 'COLLISION' in result.details['arm_return_error'] and "only the right arm's return" in result.message
+    monkeypatch.setattr(place, 'complete_return', lambda *args: None)
+    result = place.verify_settled(plan, ctx, np.zeros(3))
+    assert result.code == 'OK' and result.details['arm_returned'] is True and 'return to rest' not in result.message

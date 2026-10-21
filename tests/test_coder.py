@@ -144,3 +144,31 @@ def test_the_coder_sees_the_head_image_in_its_first_prompt(tmp_path):
     index = command.index("--image")
     assert command[index + 1].endswith("observation/image-1.png") and command[index + 2].startswith("--")
     assert command[-1] == CODER_START
+
+
+def _finishing_call(tmp_path, status, executes):
+    """A CoderCall stub at finish: its final answer STATUS, its EXECUTES and one checked version ready to register."""
+    from types import SimpleNamespace
+
+    from homebody.session.coder import CoderCall
+    call = object.__new__(CoderCall)
+    registered = []
+    call.coder = SimpleNamespace(register=lambda *args: registered.append(args), skills={},
+                                 library=lambda: tmp_path / "library")
+    call.settings = SimpleNamespace(seconds=300.0)
+    call.target, call.call_dir = "pick", tmp_path
+    call.lib_dir, call.frozen_lib = tmp_path / "lib", set()
+    call.executes, call.checks, call.physics_error = executes, [], None
+    call.registered = ("module", 2, "source")
+    (tmp_path / "last_message.json").write_text(json.dumps({"status": status, "summary": "done"}))
+    return call, registered
+
+
+def test_a_failed_or_timed_out_coder_call_registers_no_skill_version(tmp_path):
+    ok = [{"version": 2, "arguments": {}, "code": "OK", "message": ""}]
+    call, registered = _finishing_call(tmp_path, "failed", ok)
+    assert call.finish("exited", 10.0)["code"] == "CODER_FAILED" and registered == []
+    call, registered = _finishing_call(tmp_path, "success", ok)
+    assert call.finish("timeout", 300.0)["code"] == "CODER_TIMEOUT" and registered == []
+    call, registered = _finishing_call(tmp_path, "success", ok)
+    assert call.finish("exited", 10.0)["code"] == "OK" and registered == [("pick", "module", 2, "source")]

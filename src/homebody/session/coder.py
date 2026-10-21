@@ -455,12 +455,6 @@ class CoderCall:
 
     def finish(self, how, seconds):
         report = self.final_message()
-        if self.registered is not None:
-            module, version, source = self.registered
-            self.coder.register(self.target, module, version, source)
-            for path in self.lib_dir.glob("*.py"):
-                if path.name not in self.frozen_lib:
-                    shutil.copyfile(path, self.coder.library() / path.name)
         ok_runs = [run for run in self.executes if run["code"] == "OK"]
         if how == "physics":
             code = "PHYSICS_INVALID"
@@ -474,11 +468,17 @@ class CoderCall:
             code = "CODER_INFEASIBLE"
         else:
             code = "CODER_FAILED"
+        if code == "OK" and self.registered is not None:  # a failed or timed-out call leaves the skill as it was
+            module, version, source = self.registered
+            self.coder.register(self.target, module, version, source)
+            for path in self.lib_dir.glob("*.py"):
+                if path.name not in self.frozen_lib:
+                    shutil.copyfile(path, self.coder.library() / path.name)
         summary = (report or {}).get("summary") or {"timeout": f"no answer within {self.settings.seconds:g} s",
                                                      "physics": self.physics_error}.get(how, f"the coder ended without an answer ({how})")
         if report and report["status"] == "success" and not ok_runs:
             summary = "claimed success without an execute that returned OK: " + summary
-        details = {"status": (report or {}).get("status", how), "state": (report or {}).get("state", ""),
+        details = {"target": self.target, "status": (report or {}).get("status", how), "state": (report or {}).get("state", ""),
                    "usage": (report or {}).get("usage", ""), "executes": self.executes, "checks": self.checks,
                    "seconds": round(seconds, 1),
                    "skill_version": self.coder.skills[self.target]["version"] if self.target in self.coder.skills else None}

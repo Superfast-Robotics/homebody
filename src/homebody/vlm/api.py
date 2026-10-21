@@ -88,14 +88,16 @@ class OpenAiApi:
 
 class LiteLlm:
     """OpenAI Responses API through a LiteLLM proxy (LITELLM_BASE_URL, default 127.0.0.1:4000) holding a
-    ChatGPT sign-in: only this request reaches the model. The text goes before the images and the cache key
-    is fixed, so the instructions every turn repeats are served from the prompt cache."""
+    ChatGPT sign-in: only this request reaches the model. The text goes before the images, and the cache key is
+    the session's own (cache_key, set by the session), so the instructions every turn repeats are served from the
+    prompt cache without every concurrent session crowding one key."""
     LABEL, KEY = "LiteLLM", "LITELLM_API_KEY"
     BASE = "http://127.0.0.1:4000"
     CACHE_KEY = "homebody-agent"
 
     def __init__(self, settings: Agent):
         self.settings = settings
+        self.cache_key = self.CACHE_KEY
 
     @staticmethod
     def effort(settings: Agent) -> str:
@@ -106,7 +108,7 @@ class LiteLlm:
         content += [{"type": "input_image", "image_url": f"data:{MEDIA[image.suffix.lower()]};base64,{image_data(image)}"}
                     for image in images]
         return {"model": self.settings.model_id, "input": [{"role": "user", "content": content}],
-                "reasoning": {"effort": self.effort(self.settings)}, "prompt_cache_key": self.CACHE_KEY,
+                "reasoning": {"effort": self.effort(self.settings)}, "prompt_cache_key": self.cache_key,
                 "text": {"format": {"type": "json_schema", "name": "decision", "strict": True, "schema": schema(names)}}}
 
     def generate(self, prompt: str, *, images: tuple[Path, ...], names: tuple[str, ...],

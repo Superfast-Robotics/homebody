@@ -19,6 +19,9 @@ saw a thing, and a portable object may have moved since, so update your belief f
 results and the current view. Each recent step
 gives the base pose it was decided from.
 
+A place that returns OK with arm_returned false has placed the object; only its arm's return to rest
+was refused, so do not place that object again.
+
 A skill ends with OK or a refusal code and a message; refusals are normal. Always use the built-in
 skills first, and answer a refusal the way it suggests: a better click, another stance, the other
 hand, a retry. Only when a skill call has failed and its result shows that the skill itself must

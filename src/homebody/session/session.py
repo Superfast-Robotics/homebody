@@ -6,13 +6,14 @@ import time
 import traceback
 from collections.abc import Callable
 from dataclasses import asdict
+from pathlib import Path
 
 from homebody import harness
 from homebody.primitives.actions import PhysicsInvalid
 from homebody.session.coder import CALL, Coder
 from homebody.session.planned import OWN as PLAN_DECISIONS
 from homebody.session.planned import PlanRunner
-from homebody.session.recovery import Recovery, request
+from homebody.session.recovery import Recovery, request, stuck_key
 from homebody.session.trace import Trace
 from homebody.skills.contract import COMMON_FAILURES, Context, Runner
 from homebody.skills.registry import Prompts, registry
@@ -145,6 +146,8 @@ class Session:
                  scene_update=None, real_time=False):
         self.backend, self.provider = backend, provider
         self.settings, self.recorder = settings, recorder
+        if hasattr(provider, "cache_key"):  # one prompt-cache key per session (vlm.api.LiteLlm)
+            provider.cache_key = f"homebody-{Path(getattr(recorder, 'path', 'session')).name}"
         self.controls, self.ui = controls, ui
         self.semantic_context = semantic_context or {}
         self.observer_frame, self.shoulder_frame, self.view_side = observer_frame, shoulder_frame, "right"
@@ -234,22 +237,27 @@ class Session:
         time.sleep(max(0, 0.02 - (time.monotonic() - start)))
 
     def prompt(self, task, frame):
-        """The turn's prompt: instructions, skills, scene annotations, hands, task, observation and recent steps."""
+        """The turn's prompt. Its opening is the same every turn of a task so the model's prompt cache can serve it
+        (instructions, the built-in skills, the coder, scene memory, task, plan instructions); what changes follows
+        (skills the coder wrote, hands, coder calls left, recent steps, observation)."""
         settings = vars(self.settings)
-        modules = {**self.coder.registry, **{name: self.coder.module(name) for name in self.coder.names()}}
-        skills = "\n".join(f"{prompt_line(skill.PROMPT, settings)} Refusals: {', '.join(dict.fromkeys(skill.FAILURES))}."
-                           for skill in modules.values())
-        left = self.settings.coder.calls - self.coder.calls
+
+        def line(skill):
+            return f"{prompt_line(skill.PROMPT, settings)} Refusals: {', '.join(dict.fromkeys(skill.FAILURES))}."
+        skills = "\n".join(line(skill) for skill in self.coder.registry.values())
         skills += (f"\n{CALL}: skill, goal, tried, success, constraints. A coding assistant changes the skill and "
-                   f"runs it on the robot (see above); {left} call{'s' if left != 1 else ''} left this task.")
+                   f"runs it on the robot (see above); the calls left this task are under Status below.")
         if self.settings.coder.auto:
             tries, rescues = self.settings.coder.tries, self.settings.coder.rescues
             skills += (f" In this session a failed skill call goes to the coding assistant automatically, at most "
-                       f"{rescues} time{'s' if rescues != 1 else ''} while that skill keeps failing; its result follows "
-                       f"the failure in the recent steps. Once a skill has failed you may call it at most {tries} more "
-                       "times until a call of "
-                       "it succeeds; use the results to decide whether another try can help, else choose "
-                       "something else or done.")
+                       f"{rescues} time{'s' if rescues != 1 else ''} while that skill keeps failing on a target; its "
+                       f"result follows the failure in the recent steps. Once a skill has failed on a target you may "
+                       f"call it there at most {tries} more times until a call of it succeeds; use the results to "
+                       "decide whether another try can help, else choose something else or done.")
+        coded = "\n".join(f"{name} (version {self.coder.skills[name]['version']}, written by the coding assistant "
+                          f"this task; it replaces any built-in skill of that name): " + line(self.coder.module(name))
+                          for name in self.coder.names())
+        left = self.settings.coder.calls - self.coder.calls
         hands = "; ".join(hand_status(side, self.context.carried.get(side)) for side in ("left", "right"))
         recent = self.history[-HISTORY_STEPS:]
         steps = "\n".join(json.dumps(rounded(history_line(entry, full=index >= len(recent) - DETAILED_STEPS)))
@@ -258,10 +266,12 @@ class Session:
             harness.agent_instructions(settings),
             f"Skills:\n{skills}\nAny skill may also refuse with: {', '.join(COMMON_FAILURES)}.",
             "Initial-scene memory:\n" + annotations(self.semantic_context),
-            f"Hands now: {hands}.",
             "Current task:\n" + task,
-            "Current observation:\n" + json.dumps(model_observation(frame)),
-            "Recent steps, oldest first:\n" + (steps or "none")))
+            harness.plan_instructions(settings) if self.planner is not None else "",
+            "Skills the coding assistant wrote this task:\n" + coded if coded else "",
+            f"Status: hands now: {hands}. {CALL}: {left} call{'s' if left != 1 else ''} left this task.",
+            "Recent steps, oldest first:\n" + (steps or "none"),
+            "Current observation:\n" + json.dumps(model_observation(frame))) if part)
 
     def paused_tick(self):
         """Wait one heartbeat period without advancing the world (agent.pause_while_thinking)."""
@@ -313,6 +323,9 @@ class Session:
             self.backend.set_evaluation_sink(self.recorder.physics)
             for step in range(self.settings.agent.max_steps):
                 names = tuple(dict.fromkeys((*Prompts(self.coder.registry), *self.coder.names(), CALL, "done")))
+                # the response schema lists every decision of the task, the same each turn (a stable prompt the
+                # model's cache can serve); the plan phase's choices are checked here instead
+                offered = names + (PLAN_DECISIONS if self.planner is not None else ())
                 if self.planner is not None:
                     names = self.planner.names(names)
                 if self.controls.cancel.is_set():
@@ -321,13 +334,21 @@ class Session:
                 images = self.recorder.agent_images(frame)
                 prompt = self.prompt(task, frame)
                 if self.planner is not None and (note := self.planner.note()):
-                    prompt += "\n\n" + harness.plan_instructions(vars(self.settings)) + "\n\n" + note
+                    prompt += "\n\n" + note
                 self.update("Thinking")
-                decision = self.decide(prompt, images, names, task_dir / "decisions" / f"step-{step:03d}")
+                decision = self.decide(prompt, images, offered, task_dir / "decisions" / f"step-{step:03d}")
                 if self.controls.cancel.is_set() or frame.epoch != self.backend.epoch:
                     raise Cancelled("Decision invalidated before execution")
-                if decision.skill not in names:
+                if decision.skill not in offered:
                     raise ProviderError(f"Unsupported skill: {decision.skill}")
+                if decision.skill not in names:  # a decision of another plan phase: refused, the agent chooses again
+                    result = {"skill": decision.skill, "code": "INVALID_ARGUMENT",
+                              "message": f"{decision.skill} is not available now; choose one of: {', '.join(names)}"}
+                    outcome["steps"] = step + 1
+                    self.history.append({"base_pose": frame.base_pose.tolist(), "decision": asdict(decision),
+                                         "epoch": frame.epoch, "frame_sequence": frame.sequence, "result": result})
+                    self.recorder.event("result", step=step, simulation_time=self.backend.time, result=result)
+                    continue
                 self.recorder.event("decision", step=step, epoch=frame.epoch, sequence=frame.sequence,
                                     simulation_time=self.backend.time, decision=decision)
                 outcome["steps"] = step + 1
@@ -351,7 +372,8 @@ class Session:
                 result = self.act(decision, frame, step)
                 if result["code"] == "PHYSICS_INVALID":
                     raise PhysicsInvalid(result["message"])
-                if self.settings.coder.auto and self.recovery.wants_coder(decision.skill, result):
+                if self.settings.coder.auto and self.recovery.wants_coder(stuck_key(decision.skill, decision.arguments),
+                                                                          result):
                     result = self.rescue(task, decision, result, step)
                     if result["code"] == "PHYSICS_INVALID":
                         raise PhysicsInvalid(result["message"])
@@ -396,23 +418,25 @@ class Session:
                 self.update(outcome["status"], outcome.get("reason") or outcome.get("model_claim") or "")
         return outcome
 
-    def act(self, decision, frame, step):
-        """Run DECISION (a skill, a coded skill or a coder call) from FRAME; record it and return its result."""
+    def act(self, decision, frame, step, rescued=None):
+        """Run DECISION (a skill, a coded skill or a coder call) from FRAME; record it and return its result. RESCUED
+        is the stuck point an automatic coder call is for."""
         carried_before = {side: dict(carry) for side, carry in self.context.carried.items()}
-        refused = self.recovery.admit(decision.skill) if self.settings.coder.auto and decision.skill != CALL else None
+        key = stuck_key(decision.skill, decision.arguments)
+        refused = self.recovery.admit(key) if self.settings.coder.auto and decision.skill != CALL else None
         if refused is not None:
             result = refused
         elif decision.skill == CALL:
             result = self.coder.call(decision.arguments, self)
             if self.settings.coder.auto and result["code"] not in ("INVALID_ARGUMENT", "CODER_LIMIT", "CODER_NOT_YET"):
-                self.recovery.coder_done(decision.arguments.get("skill"), result["code"])
+                self.recovery.coder_done(decision.arguments.get("skill"), result["code"], rescued)
         elif decision.skill in self.coder.skills:
             result = self.runner.run(decision.skill, decision.arguments, frame,
                                      skill=self.coder.module(decision.skill)).as_dict()
         else:
             result = self.runner.run(decision.skill, decision.arguments, frame).as_dict()
         if decision.skill != CALL and refused is None:
-            self.recovery.settle(decision.skill, result["code"])
+            self.recovery.settle(key, result["code"])
         entry = {"base_pose": frame.base_pose.tolist(), "decision": asdict(decision), "epoch": frame.epoch,
                  "frame_sequence": frame.sequence, "result": prompted(result)}
         if decision.skill != CALL and refused is None and result["code"] != "PHYSICS_INVALID":  # for the coder
@@ -432,7 +456,7 @@ class Session:
         self.recorder.event("decision", step=step, epoch=frame.epoch, sequence=frame.sequence,
                             simulation_time=self.backend.time, decision=auto, automatic=True)
         self.update("Executing", auto.text)
-        return self.act(auto, frame, step)
+        return self.act(auto, frame, step, rescued=stuck_key(decision.skill, decision.arguments))
 
     def _halt(self, status):
         """Stop the robot after a task; a finished task keeps its arm targets."""

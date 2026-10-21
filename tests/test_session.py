@@ -332,16 +332,18 @@ def test_reset_clears_task_history_and_carried_state(build):
 
 
 @pytest.mark.parametrize("carried, line", [
-    ({}, "Hands now: the left hand is free; the right hand is free."),
+    ({}, "hands now: the left hand is free; the right hand is free."),
     ({"left": {"state": "verified"}, "right": {"state": "pending"}},
-     ("Hands now: the left hand HOLDS the object from its last pick, not placed yet; only a "
+     ("hands now: the left hand HOLDS the object from its last pick, not placed yet; only a "
       "place by that hand opens it; the right hand's grasp is uncertain; repeat pick on its "
       "target to recheck it.")),
 ])
 def test_prompt_states_what_each_hand_holds(build, carried, line):
     session = build(Provider([]))
     session.context.carried.update(carried)
-    assert line in session.prompt("Inspect", session.backend.snapshot()).split("\n\n")
+    status = next(part for part in session.prompt("Inspect", session.backend.snapshot()).split("\n\n")
+                  if part.startswith("Status: "))
+    assert line in status
 
 
 def test_prompt_numbers_are_settings_limits_or_coordinate_conventions(build):
@@ -1047,7 +1049,8 @@ def test_plan_mode_plans_then_works_goal_by_goal(build, monkeypatch):
     session = build(provider, settings=settings)
     monkeypatch.setattr(session.runner, "run", lambda skill, arguments, frame, **kw: Result(skill, "OK", "held"))
     assert session.run_task("Pick up the cup.")["status"] == "model_done"
-    assert provider.names[0] == ("plan",) and "goal_done" in provider.names[1] and provider.names[3] == ("done",)
+    # the response schema offers every decision every turn (a stable prompt); the phase is checked in code
+    assert len(set(provider.names)) == 1 and {"plan", "goal_done", "goal_failed", "done", "pick"} <= set(provider.names[0])
     assert "This turn: write the plan" in provider.prompts[0] and "Active goal g1" in provider.prompts[1]
     codes = [entry["result"]["code"] for entry in session.history if "result" in entry]
     assert codes == ["OK", "OK", "OK"] and session.planner.plan.status == {"g1": "done"}
@@ -1061,3 +1064,29 @@ def test_a_skill_prompt_with_literal_braces_keeps_them_and_fills_its_settings():
     text = 'push: squeeze {grasp.squeeze}; example {"hand":"right","verify_released":{"label":21}}'
     assert prompt_line(text, settings) == 'push: squeeze 0.12; example {"hand":"right","verify_released":{"label":21}}'
     assert prompt_line("plain {grasp.squeeze}", settings) == "plain 0.12"
+
+
+def test_a_decision_of_another_plan_phase_is_refused_and_the_agent_chooses_again(build, monkeypatch):
+    from homebody.session.config import PlanMode
+    from homebody.skills.contract import Result
+
+    tree = {"type": "sequence", "children": [{"type": "goal", "id": "g1", "goal": "pick the cup", "check": None}]}
+    decisions = [Decision("Pick first.", "pick", {"hand": "right"}), Decision("Plan.", "plan", {"tree": tree}),
+                 Decision("Finished.", "done", {})]
+    settings = replace(Settings(agent=Agent(done_settle_seconds=0.)), plan=PlanMode(enabled=True))
+    session = build(Provider(decisions), settings=settings)
+    monkeypatch.setattr(session.runner, "run", lambda skill, arguments, frame, **kw: Result(skill, "OK", "held"))
+    assert session.run_task("Pick up the cup.")["status"] == "model_done"
+    first = next(entry for entry in session.history if "result" in entry)["result"]
+    assert first["code"] == "INVALID_ARGUMENT" and "not available now" in first["message"]
+
+
+def test_the_prompt_opening_stays_the_same_across_turns(build):
+    session = build(Provider([]))
+    first = session.prompt("Inspect", session.backend.snapshot())
+    session.context.carried["right"] = {"state": "verified"}
+    session.history.append({"operator_task": "Inspect"})
+    session.coder.calls += 1
+    second = session.prompt("Inspect", session.backend.snapshot())
+    opening = first[:first.index("Status: ")]
+    assert second.startswith(opening) and "Current task:\nInspect" in opening and "Skills:" in opening

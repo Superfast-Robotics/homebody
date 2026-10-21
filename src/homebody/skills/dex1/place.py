@@ -389,12 +389,10 @@ def verify_settled(plan, ctx, center_in_palm):
     for _ in range(ctx.settings.placement.settle_count):
         ctx.advance(plan.epoch, ctx.settings.placement.tick)
         if settling.update(ctx.observe(plan.epoch)) and plan.side not in ctx.carried:
-            failed = complete_return(plan, ctx)
-            if failed is not None:
-                return failed
-            if plan.support:
-                return placed(plan, "it settled on the support", settling.previous)
-            return placed(plan, "it settled below the release point", settling.previous)
+            # the landing is verified: a blocked arm return is reported with it, not in its place
+            returned = complete_return(plan, ctx)
+            where = "it settled on the support" if plan.support else "it settled below the release point"
+            return placed(plan, where, settling.previous, returned)
     if not settling.seen:
         return unseen_release(plan, ctx, settling.open_hand.count)
     raise SkillFailure("PLACEMENT_NOT_VERIFIED",
@@ -466,11 +464,14 @@ def unseen_release(plan, ctx, open_count):
     raise SkillFailure("PLACEMENT_NOT_VERIFIED", "Both jaws opened, but the landing is not visible")
 
 
-def placed(plan, message, landing=None):
-    """An OK result saying what was verified."""
+def placed(plan, message, landing=None, returned=None):
+    """An OK result saying what was verified; RETURNED is the arm return's refusal (None when the arm returned)."""
     short = f", {plan.short_m:.2f} m XY displacement from the requested point" if plan.short_m else ""
-    return Result("place", "OK", f"Released from the {plan.side} hand; {message}{short}.",
-                  {"hand": plan.side, "short_of_point_m": round(plan.short_m, 3),
+    arm = "" if returned is None else (f" The object is placed; only the {plan.side} arm's return to rest was "
+                                       f"refused ({returned.code}: {returned.message}).")
+    return Result("place", "OK", f"Released from the {plan.side} hand; {message}{short}.{arm}",
+                  {"hand": plan.side, "short_of_point_m": round(plan.short_m, 3), "arm_returned": returned is None,
+                   "arm_return_error": None if returned is None else f"{returned.code}: {returned.message}",
                    "target_world": plan.point.tolist(),
                    "selected_payload_world": None if plan.selected_point is None else plan.selected_point.tolist(),
                    "observed_landing_world": None if landing is None else landing.tolist(),
