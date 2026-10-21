@@ -36,6 +36,35 @@ def test_runnable_pairs_fit_one_a100():
             assert gpu <= 0.92 * ax.GPU_GB and weights < gpu - 4, eid  # room for activations and KV cache
 
 
+def test_a_96_gb_gpu_runs_the_32b_and_hy_embodied_experiments():
+    table = ax.experiments(gpu_gb=96)
+    blocked = {eid for eid, exp in table.items() if exp.blocked(96)}
+    assert blocked == {"E11", "E12", "E18"}  # only the Sol ones wait
+    for eid, exp in table.items():
+        weights, gpu = exp.memory(96)
+        assert gpu <= 0.92 * 96 and weights < gpu - 4, eid
+    assert table["E3"].local == ax.single("cosmos-reason2-32b")  # alone: BF16
+    assert table["E13"].second.online_fp8 and not table["E13"].local.online_fp8  # beside an 8B: the 32B in FP8
+
+
+def test_an_ssh_server_is_driven_through_ssh_and_reached_through_its_tunnel(evolve_dir, monkeypatch):
+    gh = {"name": "gh", "ip": "10.0.0.9", "ssh": "gh-host", "ports": [9000, 9001], "gpu_gb": 96}
+    assert ax.on_host(gh, ["pgrep", "-af", "vllm serve .*--port 8000( |$)"]) == [
+        "ssh", "gh-host", "pgrep -af 'vllm serve .*--port 8000( |$)'"]
+    assert ax.on_host({"ip": "1"}, ["pgrep"]) == ["pgrep"] and ax.bind(gh) == "127.0.0.1"
+    sent = []
+    monkeypatch.setattr(ax.subprocess, "run", lambda argv, **kw: sent.append(argv))
+    config = cfg() | {"agents": cfg()["agents"] | {"venv": "~/vllm-venv", "logs": "~/vlm"}}
+    ax.start(config, gh, ax.Serve("cosmos-reason2-32b", 0.9), 8000)
+    host, line = sent[0][1:]
+    assert host == "gh-host" and line.startswith("HF_HOME=~/hf VLLM_API_KEY=$(cat ~/vlm/api_key) setsid nohup "
+                                                 "~/vllm-venv/bin/vllm serve nvidia/Cosmos-Reason2-32B ")
+    assert "--host 127.0.0.1 --port 8000" in line and line.endswith("> ~/vlm/cosmos-reason2-32b-8000.log 2>&1 < /dev/null &")
+    ax.write_settings(cfg(), "E13", ax.experiments(gpu_gb=96)["E13"], gh, ("a", "b"))
+    agent = tomllib.loads((evolve_dir / "episode_settings_pp_E13.toml").read_text())["agent"]
+    assert (agent["local_url"], agent["second_url"]) == ("http://10.0.0.9:9000/v1", "http://10.0.0.9:9001/v1")
+
+
 def test_the_picks_change_the_served_models():
     table = ax.experiments(best_small="qwen3-vl-8b", best_base="cosmos-reason2-8b")
     assert table["E10"].local.model == "qwen3-vl-8b" and table["E17"].second.model == "qwen3-vl-8b"
@@ -95,13 +124,13 @@ def test_loop_config_merges_the_overlay_table_by_table():
 def test_the_queue_prefers_an_experiment_on_the_loaded_models(tmp_path, monkeypatch):
     table = ax.experiments()
     loaded = {8000: ("qwen3-vl-30b-a3b", ""), 8001: ("embodied-r1-3b", "")}
-    monkeypatch.setattr(ax, "served", lambda port: loaded.get(port))
-    config = cfg()
-    assert ax.next_experiment(config, ["E7", "E8", "E10"], table, tmp_path) == "E8"
-    assert ax.next_experiment(config, ["E7", "E8", "E10"], table, tmp_path) == "E7"  # E8 is claimed
+    monkeypatch.setattr(ax, "served", lambda server, port: loaded.get(port))
+    config, here = cfg(), {"ip": "10.0.0.9"}
+    assert ax.next_experiment(config, here, ["E7", "E8", "E10"], table, tmp_path) == "E8"
+    assert ax.next_experiment(config, here, ["E7", "E8", "E10"], table, tmp_path) == "E7"  # E8 is claimed
     (tmp_path / "rows").mkdir()
     (tmp_path / "rows" / "E10.json").write_text("{}")
-    assert ax.next_experiment(config, ["E7", "E8", "E10"], table, tmp_path) is None
+    assert ax.next_experiment(config, here, ["E7", "E8", "E10"], table, tmp_path) is None
 
 
 def test_summary_row_from_the_baseline_entry(tmp_path):

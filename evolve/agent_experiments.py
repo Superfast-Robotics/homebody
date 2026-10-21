@@ -5,15 +5,20 @@ host, run the demo-pp baseline (17 sessions) with the experiment's agent, write 
     python3 -m evolve.agent_experiments worker [IDS] [--commit C] [--best-small M] [--best-base M] [--keep]
     python3 -m evolve.agent_experiments summary                  every row written so far
 
-A worker runs on each GPU host ([agents] servers, found by private IP), from a checkout of a commit that has the
+A worker runs on each GPU host ([agents] servers, found by private IP, or named with --server), from a checkout of a commit that has the
 agent code (the vllm provider and vlm/composite.py). Workers share [agents] shared: each claims the next unclaimed
 experiment of IDS (default: every runnable one, in order), preferring one whose models it already serves, so two
 GPU hosts run two experiments at once. It writes evolve/config.local.toml (the machine's work folder and one
 demo-pp-<id> profile per experiment) and evolve/episode_settings_pp_<id>.toml (the agent and its server URLs), then
-runs `evolve.e2e_loop --profile demo-pp-<id> baseline COMMIT`."""
+runs `evolve.e2e_loop --profile demo-pp-<id> baseline COMMIT`.
+
+A server with `ssh` is a GPU host without the shared volume (the GH200): the worker runs on a machine that has it,
+starts vLLM there over ssh on 127.0.0.1 [agents] ports, and holds a tunnel from its own `ip` and the server's `ports`
+to them, which sessions use. `gpu_gb` (default 40) sets which experiments fit and their shares."""
 import argparse
 import json
 import os
+import shlex
 import socket
 import subprocess
 import sys
@@ -25,6 +30,7 @@ from pathlib import Path
 from .loop import HERE, LOCAL_CONFIG, REPO, config, git
 
 GPU_GB = 40.0
+BIG_GB = 90.0  # a GPU this large (GH200 96 GB) serves the 32B and Hy-Embodied models in BF16
 SMALL = ("robobrain2.5-8b", "cosmos-reason2-8b", "qwen3-vl-8b")  # the Phase-1 8B models best-small may name
 
 
@@ -39,6 +45,7 @@ class Model:
     point: str = "qwen1000"  # molmo: <point x y> percentages; qwen1000: [x, y] in 0-1000; pixels: Qwen2.5-VL pixels
     args: tuple[str, ...] = ()
     blocked: str = ""  # why it cannot be served on one A100 40 GB
+    big: bool = False  # served only on a BIG_GB GPU (blocked says why)
 
 
 MODELS = {
@@ -48,10 +55,10 @@ MODELS = {
     "qwen3-vl-30b-a3b": Model("qwen3vl-30b-vllm", "cyankiwi/Qwen3-VL-30B-A3B-Instruct-AWQ-4bit", 17.0, "AWQ 4-bit"),
     "cosmos-reason2-32b": Model("cosmos-r2-32b-vllm", "nvidia/Cosmos-Reason2-32B", 66.8, "BF16",
                                 blocked="no standard 4-bit build (only GGUF and embedl's FlashHead W4A16 with a "
-                                        "custom architecture); BF16 needs 67 GB"),
+                                        "custom architecture); BF16 needs 67 GB", big=True),
     "hy-embodied": Model("hy-embodied-vllm", "tencent/Hy-Embodied-VLM-1.0", 61.0, "BF16",
                          args=("--trust-remote-code",),
-                         blocked="no quantised build; BF16 needs 61 GB"),
+                         blocked="no quantised build; BF16 needs 61 GB", big=True),
     "molmo2-er": Model(None, "allenai/Molmo2-ER", 9.7, "BF16", point="molmo",
                        args=("--trust-remote-code", "--dtype", "bfloat16")),
     "embodied-r1-3b": Model(None, "IffYuan/Embodied-R1-3B-v1", 8.0, "BF16", point="pixels"),
@@ -77,27 +84,35 @@ class Experiment:
     quota: bool = False  # uses Sol: waits for the ChatGPT quota reset
     best: tuple[str, ...] = field(default=())  # the picks it takes: best-small, best-base
 
-    def blocked(self):
-        reasons = [MODELS[s.model].blocked for s in (self.local, self.second) if s and MODELS[s.model].blocked]
+    def blocked(self, gpu_gb=GPU_GB):
+        reasons = [MODELS[s.model].blocked for s in (self.local, self.second)
+                   if s and MODELS[s.model].blocked and not (MODELS[s.model].big and gpu_gb >= BIG_GB)]
         if self.quota:
             reasons.append("uses Sol: after the Oct 27 quota reset")
         return "; ".join(reasons)
 
-    def memory(self):
+    def memory(self, gpu_gb=GPU_GB):
         """(weights, the vLLM shares as GB) on one GPU."""
         serves = [s for s in (self.local, self.second) if s]
         weights = sum(MODELS[s.model].weights_gb / (2 if s.online_fp8 else 1) for s in serves)
-        return weights, sum(s.share for s in serves) * GPU_GB
+        return weights, sum(s.share for s in serves) * gpu_gb
 
 
 def single(model):
     return Serve(model, 0.90)
 
 
-def experiments(best_small="robobrain2.5-8b", best_base="robobrain2.5-8b"):
+def experiments(best_small="robobrain2.5-8b", best_base="robobrain2.5-8b", gpu_gb=GPU_GB):
     """E1-E20 with the Phase-1 8B pick (best_small) and the verifier experiments' base (best_base, one 8B: a
-    composite base would need its own servers beside the verifier's)."""
+    composite base would need its own servers beside the verifier's). On a BIG_GB GPU a 32B beside an 8B is
+    weight-only FP8 (native on Hopper, 33 GB) so both keep KV room; alone it is BF16."""
     qwen30 = Serve("qwen3-vl-30b-a3b", 0.55, 16384)
+    big = gpu_gb >= BIG_GB
+    c32 = Serve("cosmos-reason2-32b", 0.55, 16384, online_fp8=True) if big else single("cosmos-reason2-32b")
+
+    def beside_32b(model):
+        return Serve(model, 0.35, 16384) if big else Serve(model, 0.45)
+
     return {
         "E1": Experiment("cosmos-r2-8b-vllm", single("cosmos-reason2-8b")),
         "E2": Experiment("robobrain25-8b-vllm", single("robobrain2.5-8b")),
@@ -107,14 +122,15 @@ def experiments(best_small="robobrain2.5-8b", best_base="robobrain2.5-8b"):
         "E6": Experiment("hy-embodied-vllm", single("hy-embodied")),
         "E7": Experiment("e7-qwen30b-molmo", qwen30, Serve("molmo2-er", 0.33, 8192)),
         "E8": Experiment("e8-qwen30b-er1", Serve("qwen3-vl-30b-a3b", 0.58, 16384), Serve("embodied-r1-3b", 0.30, 8192)),
-        "E9": Experiment("e9-hy-molmo", single("hy-embodied"), Serve("molmo2-er", 0.33, 8192)),
+        "E9": Experiment("e9-hy-molmo", Serve("hy-embodied", 0.72, 16384) if big else single("hy-embodied"),
+                         Serve("molmo2-er", 0.20 if big else 0.33, 8192)),
         "E10": Experiment("e10-small-molmo", Serve(best_small, 0.55, 16384), Serve("molmo2-er", 0.33, 8192), best=("best-small",)),
         "E11": Experiment("e11-robobrain-sol", single("robobrain2.5-8b"), quota=True),
         "E12": Experiment("e12-cosmos8b-sol", single("cosmos-reason2-8b"), quota=True),
-        "E13": Experiment("e13-robobrain-cosmos32b", Serve("robobrain2.5-8b", 0.45), single("cosmos-reason2-32b")),
-        "E14": Experiment("e14-cosmos8b-cosmos32b", Serve("cosmos-reason2-8b", 0.45), single("cosmos-reason2-32b")),
-        "E15": Experiment("e15-cosmos32b-robobrain", single("cosmos-reason2-32b"), Serve("robobrain2.5-8b", 0.45)),
-        "E16": Experiment("e16-cosmos32b-cosmos8b", single("cosmos-reason2-32b"), Serve("cosmos-reason2-8b", 0.45)),
+        "E13": Experiment("e13-robobrain-cosmos32b", beside_32b("robobrain2.5-8b"), c32),
+        "E14": Experiment("e14-cosmos8b-cosmos32b", beside_32b("cosmos-reason2-8b"), c32),
+        "E15": Experiment("e15-cosmos32b-robobrain", c32, beside_32b("robobrain2.5-8b")),
+        "E16": Experiment("e16-cosmos32b-cosmos8b", c32, beside_32b("cosmos-reason2-8b")),
         "E17": Experiment("e17-qwen30b-small", Serve("qwen3-vl-30b-a3b", 0.52, 16384),
                           Serve(best_small, 0.38, 16384, online_fp8=True), best=("best-small",)),
         "E18": Experiment("e18-sol-small", single(best_small), quota=True, best=("best-small",)),
@@ -133,23 +149,55 @@ def expand(path):
     return os.path.expanduser(path)
 
 
-def this_server(cfg):
-    """The [agents] servers entry of this machine, by its private IP."""
-    ips = set(subprocess.run(["hostname", "-I"], capture_output=True, text=True).stdout.split())
-    found = [s for s in cfg["agents"]["servers"] if s["ip"] in ips]
+def this_server(cfg, name=None):
+    """The [agents] servers entry NAME, or this machine's by its private IP (one without ssh)."""
+    if name:
+        found = [s for s in cfg["agents"]["servers"] if s["name"] == name]
+    else:
+        ips = set(subprocess.run(["hostname", "-I"], capture_output=True, text=True).stdout.split())
+        found = [s for s in cfg["agents"]["servers"] if s["ip"] in ips and "ssh" not in s]
     if not found:
-        raise SystemExit(f"this machine ({socket.gethostname()}) is none of [agents] servers")
+        raise SystemExit(f"{name or socket.gethostname()} is none of [agents] servers")
     return found[0]
+
+
+def on_host(server, argv):
+    """ARGV as run on the GPU host: here, or through ssh."""
+    return ["ssh", server["ssh"], shlex.join(argv)] if "ssh" in server else argv
+
+
+def bind(server):
+    """The address vLLM listens on: the private IP here, 127.0.0.1 behind a tunnel."""
+    return "127.0.0.1" if "ssh" in server else server["ip"]
+
+
+def client_ports(cfg, server):
+    """The ports sessions reach the experiment's two model servers on."""
+    return server.get("ports", cfg["agents"]["ports"])
+
+
+def tunnel(cfg, server):
+    """For an ssh server, forward its ip:ports here to the host's vLLM ports, for the worker's lifetime."""
+    if "ssh" not in server:
+        return None
+    forwards = [arg for c, r in zip(client_ports(cfg, server), cfg["agents"]["ports"])
+                for arg in ("-L", f"{server['ip']}:{c}:127.0.0.1:{r}")]
+    process = subprocess.Popen(["ssh", "-N", "-o", "ExitOnForwardFailure=yes", "-o", "ServerAliveInterval=30",
+                                *forwards, server["ssh"]], stdin=subprocess.DEVNULL)
+    time.sleep(5)
+    if process.poll() is not None:
+        raise SystemExit(f"the tunnel to {server['ssh']} did not open")
+    return process
 
 
 def api_key():
     return Path(expand("~/vlm/api_key")).read_text().strip()
 
 
-def served(port):
-    """(model, vLLM arguments) of the vLLM server on PORT here, or None."""
-    lines = subprocess.run(["pgrep", "-af", f"vllm serve .*--port {port}( |$)"], capture_output=True,
-                           text=True).stdout.splitlines()
+def served(server, port):
+    """(model, vLLM arguments) of the vLLM server on PORT of the GPU host, or None."""
+    lines = subprocess.run(on_host(server, ["pgrep", "-af", f"vllm serve .*--port {port}( |$)"]),
+                           capture_output=True, text=True).stdout.splitlines()
     for line in lines:
         words = line.split()
         if "--served-model-name" in words:
@@ -175,38 +223,51 @@ def ready(ip, port, name):
         return False
 
 
-def stop(port):
-    subprocess.run(["pkill", "-f", f"vllm serve .*--port {port}( |$)"], check=False)
+def stop(server, port):
+    subprocess.run(on_host(server, ["pkill", "-f", f"vllm serve .*--port {port}( |$)"]), check=False)
     for _ in range(60):
-        if served(port) is None:
+        if served(server, port) is None:
             return
         time.sleep(2)
     raise SystemExit(f"the vLLM server on port {port} did not stop")
 
 
+def start(cfg, server, item, port):
+    """Start ITEM's vLLM server on PORT of the GPU host, its output in [agents] logs there."""
+    agents = cfg["agents"]
+    vllm, args = f"{agents['venv']}/bin/vllm", ["serve", *command(item, bind(server), port)]
+    logfile = f"{agents['logs']}/{item.model}-{port}.log"
+    if "ssh" in server:  # the host's own key and HF_HOME; ~ left unquoted for its shell
+        line = (f"HF_HOME=~/hf VLLM_API_KEY=$(cat ~/vlm/api_key) setsid nohup {vllm} {shlex.join(args)} "
+                f"> {logfile} 2>&1 < /dev/null &")
+        subprocess.run(["ssh", server["ssh"], line], check=True)
+        return logfile
+    env = {**os.environ, "HF_HOME": expand("~/hf"), "VLLM_API_KEY": api_key()}
+    with Path(expand(logfile)).open("w") as out:
+        subprocess.Popen([expand(vllm), *args], stdout=out, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+                         env=env, start_new_session=True)
+    return logfile
+
+
 def serve(cfg, server, wanted):
     """Make the GPU serve exactly WANTED ({port: Serve}): servers already serving the same are kept, the rest stopped
-    and started, the bigger first, each waited for until it answers."""
+    and started, the bigger first, each waited for until it answers (through the tunnel for an ssh server)."""
     agents, ports = cfg["agents"], cfg["agents"]["ports"]
+    outside = dict(zip(ports, client_ports(cfg, server)))
     for port in ports:
-        now, want = served(port), wanted.get(port)
-        if now and (want is None or " ".join(command(want, server["ip"], port)) not in now[1]):
+        now, want = served(server, port), wanted.get(port)
+        if now and (want is None or " ".join(command(want, bind(server), port)) not in now[1]):
             log(f"stopping {now[0]} on {port}")
-            stop(port)
+            stop(server, port)
     for port, item in sorted(wanted.items(), key=lambda kv: -kv[1].share):
-        if served(port):
+        if served(server, port):
             log(f"keeping {item.model} on {port}")
             continue
-        logfile = Path(expand(agents["logs"])) / f"{item.model}-{port}.log"
-        env = {**os.environ, "HF_HOME": expand("~/hf"), "VLLM_API_KEY": api_key()}
         log(f"starting {item.model} on {port} ({item.share:.2f} of the GPU)")
-        with logfile.open("w") as out:
-            subprocess.Popen([expand(f"{agents['venv']}/bin/vllm"), "serve", *command(item, server["ip"], port)],
-                             stdout=out, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, env=env,
-                             start_new_session=True)
+        logfile = start(cfg, server, item, port)
         until = time.monotonic() + agents["ready_seconds"]
-        while not ready(server["ip"], port, item.model):
-            if served(port) is None:
+        while not ready(server["ip"], outside[port], item.model):
+            if served(server, port) is None:
                 raise RuntimeError(f"{item.model} exited while starting: see {logfile}")
             if time.monotonic() > until:
                 raise RuntimeError(f"{item.model} not ready after {agents['ready_seconds']} s: see {logfile}")
@@ -226,8 +287,9 @@ def settings_name(eid):
 def write_settings(cfg, eid, exp, server, picks):
     """The experiment's episode settings: the demo-pp ones with its agent and model servers."""
     base = (HERE / cfg["e2e"][cfg["agents"]["base_profile"]]["settings"]).read_text()
-    local = f"http://{server['ip']}:{cfg['agents']['ports'][0]}/v1"
-    second = f"http://{server['ip']}:{cfg['agents']['ports'][1]}/v1" if exp.second else local
+    ports = client_ports(cfg, server)
+    local = f"http://{server['ip']}:{ports[0]}/v1"
+    second = f"http://{server['ip']}:{ports[1]}/v1" if exp.second else local
     agent = (f'\n# {eid} (evolve/agent_experiments.py)\n[agent]\nmodel = "{exp.agent}"\nlocal_url = "{local}"\n'
              f'second_url = "{second}"\nbest_small = "{picks[0]}"\nbest_base = "{picks[1]}"\n')
     lines, out, done = base.splitlines(), [], False
@@ -301,9 +363,9 @@ def claim(shared, eid):
         return False
 
 
-def next_experiment(cfg, ids, table, shared):
+def next_experiment(cfg, server, ids, table, shared):
     """The next unclaimed experiment, one that keeps this GPU's servers first."""
-    now = [served(port) for port in cfg["agents"]["ports"]]
+    now = [served(server, port) for port in cfg["agents"]["ports"]]
     keeps = [eid for eid in ids if [s.model if s else None for s in (table[eid].local, table[eid].second)]
              == [n[0] if n else None for n in now]]
     for eid in keeps + [e for e in ids if e not in keeps]:
@@ -314,20 +376,22 @@ def next_experiment(cfg, ids, table, shared):
 
 def worker(args):
     cfg = config()
-    server, shared = this_server(cfg), Path(cfg["agents"]["shared"])
-    table = experiments(args.best_small, args.best_base)
+    server, shared = this_server(cfg, args.server), Path(cfg["agents"]["shared"])
+    gpu_gb = server.get("gpu_gb", GPU_GB)
+    table = experiments(args.best_small, args.best_base, gpu_gb)
     picks = (MODELS[args.best_small].agent, MODELS[args.best_base].agent)
-    ids = args.ids or [eid for eid, exp in table.items() if not exp.blocked()]
+    ids = args.ids or [eid for eid, exp in table.items() if not exp.blocked(gpu_gb)]
     for eid in ids:
         if eid not in table:
             raise SystemExit(f"unknown experiment {eid}")
-        if table[eid].blocked():
-            raise SystemExit(f"{eid} is blocked: {table[eid].blocked()}")
+        if table[eid].blocked(gpu_gb):
+            raise SystemExit(f"{eid} is blocked: {table[eid].blocked(gpu_gb)}")
     commit = git("rev-parse", args.commit or "HEAD")
     write_overlay(cfg, table, ids)
     (shared / "rows").mkdir(parents=True, exist_ok=True)
     (shared / "failed").mkdir(parents=True, exist_ok=True)
-    while (eid := next_experiment(cfg, ids, table, shared)) is not None:
+    forward = tunnel(cfg, server)
+    while (eid := next_experiment(cfg, server, ids, table, shared)) is not None:
         log(f"{server['name']} takes {eid}")
         try:
             row = run(cfg, server, eid, table[eid], picks, commit) | {"server": server["name"]}
@@ -338,8 +402,10 @@ def worker(args):
             log(f"{eid} failed: {error}")
     if not args.keep:
         for port in cfg["agents"]["ports"]:
-            if served(port):
-                stop(port)
+            if served(server, port):
+                stop(server, port)
+    if forward is not None:
+        forward.terminate()
     log(f"{server['name']}: no experiment left")
 
 
@@ -351,13 +417,15 @@ def cell(item: Serve | None) -> str:
 
 
 def plan(args):
-    table = experiments(args.best_small, args.best_base)
+    gpu_gb = args.gpu_gb
+    table = experiments(args.best_small, args.best_base, gpu_gb)
+    print(f"GPU {gpu_gb:g} GB")
     print("| ID | Agent | Local server | Second server | Weights GB | GPU GB | Status |")
     print("| --- | --- | --- | --- | --- | --- | --- |")
     for eid, exp in table.items():
-        weights, gpu = exp.memory()
+        weights, gpu = exp.memory(gpu_gb)
         print(f"| {eid} | {exp.agent} | {cell(exp.local)} | {cell(exp.second)} | {weights:.1f} | {gpu:.0f} | "
-              f"{exp.blocked() or 'runnable'} |")
+              f"{exp.blocked(gpu_gb) or 'runnable'} |")
 
 
 def summary(args):
@@ -382,12 +450,13 @@ def main(argv=None):
     parser.add_argument("--best-small", default="robobrain2.5-8b", choices=SMALL, help="the Phase-1 8B pick")
     parser.add_argument("--best-base", default="robobrain2.5-8b", choices=SMALL, help="the verifier experiments' base")
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("plan")
+    sub.add_parser("plan").add_argument("--gpu-gb", type=float, default=GPU_GB, help="the GPU's memory")
     sub.add_parser("summary")
     work = sub.add_parser("worker")
     work.add_argument("ids", nargs="*")
     work.add_argument("--commit", help="the version sessions run (default: this checkout's HEAD)")
     work.add_argument("--keep", action="store_true", help="leave the model servers running at the end")
+    work.add_argument("--server", help="the [agents] servers entry to drive (default: this machine's)")
     args = parser.parse_args(argv)
     {"plan": plan, "summary": summary, "worker": worker}[args.command](args)
 
