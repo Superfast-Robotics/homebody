@@ -98,8 +98,15 @@ class LocalVlm(OpenAiApi):
     def URL(self) -> str:  # noqa: N802 -- the parent's class constant, from settings here
         return self.settings.local_url.rstrip("/") + "/chat/completions"
 
+    allowed: tuple[str, ...] = ()
+
+    def turn(self, allowed: tuple[str, ...]):
+        """The turn's allowed decisions (the session says them each turn): the response schema offers only these,
+        so a small model cannot answer with another plan phase's skill. The schema is not part of the cached text."""
+        self.allowed = tuple(allowed)
+
     def request(self, prompt: str, images: tuple[Path, ...], names: tuple[str, ...]) -> dict:
-        body = super().request(prompt, images, names)
+        body = super().request(prompt, images, tuple(n for n in names if n in self.allowed) or names)
         content = body["messages"][0]["content"]
         body["messages"][0]["content"] = content[-1:] + content[:-1]  # text, then the images
         return {**body, "max_tokens": self.MAX_TOKENS}

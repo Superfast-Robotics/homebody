@@ -247,3 +247,14 @@ def test_a_local_vllm_model_sends_text_before_images_to_its_configured_server(tm
     content = body["messages"][0]["content"]
     assert content[0] == {"type": "text", "text": "prompt text"} and [c["type"] for c in content[1:]] == ["image_url"] * 2
     assert body["response_format"]["json_schema"]["strict"] is True and LocalVlm.LOCAL
+
+
+def test_a_local_model_may_answer_only_the_turns_allowed_decisions():
+    provider = LocalVlm(Agent(model="robobrain25-8b-vllm"))
+    offered = ("navigate", "pick", "plan", "done")
+    enum = lambda: provider.request("p", (), offered)["response_format"]["json_schema"]["schema"]["properties"]["skill"]["enum"]  # noqa: E731
+    assert enum() == list(offered)
+    provider.turn(("plan",))
+    assert enum() == ["plan"]
+    provider.turn(("navigate", "pick", "done"))
+    assert enum() == ["navigate", "pick", "done"]
