@@ -492,3 +492,10 @@ def test_unjudged_sessions_are_retried_in_the_same_call_but_quota_and_other_stop
     with pytest.raises(e2e_loop.InfrastructureFailure):
         e2e_loop.E2EMixin.evaluate_many(loop, [])
     assert len(calls) == 1
+
+
+def test_the_network_screen_matches_network_use_not_the_word_in_prose():
+    from evolve.e2e_loop import unsafe
+    assert not unsafe(['    """Check the measured footprint before `place_on` requests a release."""'])
+    assert unsafe(["import requests"]) and unsafe(["    reply = requests.get(url)"])
+    assert unsafe(["from urllib import request"]) and unsafe(["    conn = http.client.HTTPConnection(host)"])

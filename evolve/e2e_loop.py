@@ -80,7 +80,8 @@ UNSAFE = {r"\bimport\s+(os|subprocess|socket|importlib|shutil|ctypes|multiproces
           r"\bopen\([^)]*['\"][wax]\+?b?['\"]": "opens a file for writing",
           r"\.(write_text|write_bytes|unlink|rmdir|mkdir|touch|rename|replace)\(": "writes the filesystem",
           r"\b(__import__|eval|exec|compile)\(": "runs dynamic code",
-          r"\b(urllib|requests|http\.client|socket)\b": "reaches the network",
+          r"\b(import|from)\s+(urllib|requests|httpx|aiohttp|http|socket)\b|\b(urllib|requests|httpx|socket)\.\w+"
+          r"|\bhttp\.client\b": "reaches the network",  # a network module imported or used, not the word in prose
           r"\bsettings\.\w+(\.\w+)*\s*=(?!=)|\bsetattr\([^,]*settings": "writes the settings",
           r"\bobject\.__setattr__\(": "bypasses frozen settings"}
 
