@@ -7,6 +7,7 @@ scores them).
     python3 -m evolve.agent_bench point CASES OUT --served S --format F --url U   object pointing asked alone
     python3 -m evolve.agent_bench verify CASES OUT --served S --url U            goal checks asked as yes/no
     python3 -m evolve.agent_bench score OUT...                  one row per run, one column per capability
+    python3 -m evolve.agent_bench report OUT...                 one row per model (its runs merged), in percent
     python3 -m evolve.agent_bench template CASES --model M --local-url U   the text the server renders for one case
 
 A case is one turn a session decided: its prompt, the four images it sent, the label image of that frame, the
@@ -242,6 +243,33 @@ def score(args):
         print(f"| {row['model']} | {row['kind']} | " + " | ".join(str(row.get(k, "")) for k in keys) + " |")
 
 
+# the capability table: one row per model (its runs merged), a column per capability
+COLUMNS = (("format", "format.parsed"), ("args", "format.args_ok"), ("plan", "plan.accepted"),
+           ("choose", "choose.same_skill"), ("done when done", "judge.recall"),
+           ("not done when not", "judge.specificity"), ("recover", "recover.changed"),
+           ("pick hit", "pick.hit"), ("place support", "place.same_support"),
+           ("nav goal <0.5 m", "navigate.goal_within"), ("nav facing <0.5 m", "navigate.facing_within"),
+           ("point hit", "point.hit"), ("verify acc", "verify.accuracy"), ("verify recall", "verify.recall"),
+           ("verify spec", "verify.specificity"))
+
+
+def percent(value) -> str:
+    if not isinstance(value, str) or "/" not in value:
+        return "-"
+    got, out_of = (int(n) for n in value.split("/"))
+    return f"{100 * got / out_of:.0f}% ({out_of})" if out_of else "-"
+
+
+def report(args):
+    merged: dict[str, dict] = {}
+    for out in args.outs:
+        row = score_run(Path(out))
+        merged.setdefault(row["model"], {}).update(row)
+    print("| model | " + " | ".join(name for name, _ in COLUMNS) + " |\n|" + " --- |" * (len(COLUMNS) + 1))
+    for model, row in merged.items():
+        print(f"| {model} | " + " | ".join(percent(row.get(key)) for _, key in COLUMNS) + " |")
+
+
 def template(args):
     """The text the vLLM server renders for the first case's request (its chat template, vision placeholders)."""
     provider = make(Agent(model=args.model, local_url=args.local_url))
@@ -289,14 +317,14 @@ def main(argv=None):
             r.add_argument("--url", required=True)
             if name == "point":
                 r.add_argument("--format", required=True, choices=sorted(POINTER_PROMPTS))
-    s = sub.add_parser("score")
-    s.add_argument("outs", nargs="+")
+    for name in ("score", "report"):
+        sub.add_parser(name).add_argument("outs", nargs="+")
     t = sub.add_parser("template")
     t.add_argument("cases")
     t.add_argument("--model", required=True)
     t.add_argument("--local-url", required=True)
     args = parser.parse_args(argv)
-    commands = {"collect": collect, "score": score, "template": template, "turns": run_turns,
+    commands = {"collect": collect, "score": score, "report": report, "template": template, "turns": run_turns,
                 "point": lambda a: run_endpoint(a, "point", ask_point),
                 "verify": lambda a: run_endpoint(a, "verify", ask_verify)}
     commands[args.command](args)
