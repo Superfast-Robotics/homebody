@@ -46,7 +46,8 @@ class Model:
     args: tuple[str, ...] = ()
     blocked: str = ""  # why it cannot be served on one A100 40 GB
     big: bool = False  # served only on a BIG_GB GPU (blocked says why)
-    whitespace: bool = False  # its JSON needs free whitespace (Cosmos3 garbles its text fields without it)
+    whitespace: bool = False  # its JSON needs free whitespace: Cosmos3 garbles its text fields and the Qwen3.5-family
+    #                           models (Qwen3.6/3.8, RynnBrain1.1) close their arguments early without it
 
 
 MODELS = {
@@ -67,11 +68,11 @@ MODELS = {
     "embodied-r1.5": Model("embodied-r15-vllm", "IffYuan/Embodied-R1.5", 17.5, "BF16", point="embodied_r15"),
     "rynnbrain-8b": Model("rynnbrain-8b-vllm", "Alibaba-DAMO-Academy/RynnBrain-8B", 17.5, "BF16", point="rynnbrain"),
     "rynnbrain1.1-9b": Model("rynnbrain11-9b-vllm", "Alibaba-DAMO-Academy/RynnBrain1.1-9B", 19.0, "BF16",
-                             point="rynnbrain", big=True, args=("--reasoning-parser", "qwen3"), blocked="needs vLLM >= 0.17 (loki-gh200)"),
+                             point="rynnbrain", big=True, whitespace=True, args=("--reasoning-parser", "qwen3"), blocked="needs vLLM >= 0.17 (loki-gh200)"),
     "mimo-embodied-7b": Model("mimo-embodied-7b-vllm", "XiaomiMiMo/MiMo-Embodied-7B", 16.6, "BF16", point="mimo"),
-    "qwen3.8-27b": Model("qwen38-27b-vllm", "Qwen/Qwen3.8-27B-FP8", 29.0, "FP8", point="qwen_json", big=True, args=("--reasoning-parser", "qwen3"),
+    "qwen3.8-27b": Model("qwen38-27b-vllm", "Qwen/Qwen3.8-27B-FP8", 29.0, "FP8", point="qwen_json", big=True, whitespace=True, args=("--reasoning-parser", "qwen3"),
                          blocked="needs vLLM >= 0.17 (loki-gh200)"),
-    "qwen3.6-35b-a3b": Model("qwen36-35b-vllm", "Qwen/Qwen3.6-35B-A3B-FP8", 36.0, "FP8", point="qwen_json", big=True, args=("--reasoning-parser", "qwen3"),
+    "qwen3.6-35b-a3b": Model("qwen36-35b-vllm", "Qwen/Qwen3.6-35B-A3B-FP8", 36.0, "FP8", point="qwen_json", big=True, whitespace=True, args=("--reasoning-parser", "qwen3"),
                              blocked="needs vLLM >= 0.17 (loki-gh200)"),
     "cosmos3-nano": Model("cosmos3-nano-vllm", "nvidia/Cosmos3-Nano", 17.5, "BF16", point="cosmos3", whitespace=True,
                           args=("--mm-encoder-tp-mode", "data"), big=True, blocked="needs vLLM >= 0.23 (loki-gh200)"),
