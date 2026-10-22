@@ -163,3 +163,23 @@ def test_each_group_rewrites_only_its_own_texts():
     texts = [t for g in gepa_groups.GROUPS.values() for t in g["texts"]]
     assert sorted(texts) == sorted(gepa_open.seed_texts()) and len(texts) == len(set(texts))
     assert [g for g, spec in gepa_groups.GROUPS.items() if spec["e2e"]] == ["planner", "pointer"]
+
+
+def test_val_scores_average_their_two_passes(tmp_path):
+    (tmp_path / "records").mkdir()
+    for cid, scores in (("c001", [1.0, 0.0]), ("c001~2", [0.0, 0.0])):
+        (tmp_path / "records" / f"{cid}.jsonl").write_text(
+            "".join(json.dumps({"case": f"k{i}", "score": v}) + "\n" for i, v in enumerate(scores)))
+    got = gepa_open.val_records(tmp_path, "c001", ["k0", "k1"])
+    assert [r["score"] for r in got.values()] == [0.5, 0.0]
+
+
+def test_a_proposal_that_rewrites_its_parent_is_refused(tmp_path, monkeypatch):
+    parent = "Walk closer before placing. Claim done only after a placed result. Never repeat a failed decision."
+    answers = iter(["```\nCompletely new guidance about other matters entirely.\n```",
+                    f"```\n{parent} Mark the goal failed after two refused tries.\n```"])
+    monkeypatch.setattr(gepa_open, "critic", lambda prompt, name="sol": (next(answers), 0.5))
+    monkeypatch.setattr(gepa_open, "log", lambda run, message: None)
+    state = {"credits": 0.0, "banned": [], "iteration": 1}
+    text = gepa_open.propose(tmp_path, state, "sol", "guidance", parent, "prompt")
+    assert text.endswith("after two refused tries.") and state["credits"] == 1.0

@@ -17,6 +17,7 @@ sessions, evolve/agent_experiments.py) and is dropped from the front if it place
 seed's runs (SPR2, SPR3). Proposals naming the scenarios' objects or places, or numbers that are no robot fact, are
 refused (the texts must hold in scenes never seen); each text has a word limit."""
 import argparse
+import difflib
 import json
 import random
 import re
@@ -54,8 +55,18 @@ SHARED = "/lambda/nfs/group-volume/workcell-sim/homebody-baseline/agent-experime
 E2E_WORK = "~/hb-agents-work/e2e"
 E2E_MARGIN = 0.06  # a candidate whose val placed share is this far below the seed's is dropped
 PROXY = "http://127.0.0.1:4000/v1/responses"
-CRITIC = "gpt-6.1-sol"
-RATES = {"input": 50.0, "cached": 2.5, "output": 250.0}  # credits per 1M tokens (evolve/score_episode.py)
+# the reflection models through the LiteLLM proxy, with their credit rates per 1M tokens (evolve/score_episode.py)
+CRITICS = {"sol": ("gpt-6.1-sol", {"input": 50.0, "cached": 2.5, "output": 250.0}),
+           "astra": ("gpt-6-astra", {"input": 250.0, "cached": 25.0, "output": 1250.0})}
+# a guidance iteration reflects on one decision failure at a time, in turn (a pointer per candidate)
+GUIDANCE_FOCUS = ("navigate", "choose", "judge", "recover", "place", "pick")
+FOCUS_TEXT = {"navigate": "decision to walk (navigate, with a good goal and facing point) before acting",
+              "choose": "choice of the skill the active goal needs next",
+              "judge": "claim of goal_done exactly when the goal is achieved",
+              "recover": "change of decision after a failed or refused result",
+              "place": "decision to place, and where, once the robot holds the object within reach",
+              "pick": "decision to pick, and what, when the object is within reach"}
+EDIT_RATIO = 0.5  # a proposal keeping less of a non-empty parent text than this (difflib ratio) is a rewrite
 MINIBATCH, VAL_SIZE = 40, 240
 PERFECT = 1.0  # a minibatch the parent gets all right is skipped (gepa's perfect_score)
 
@@ -157,7 +168,7 @@ def evaluate(run: Path, state: dict, cid: str, names: list[str]) -> dict:
     known = records(run, cid)
     missing = [n for n in names if n not in known]
     if missing:
-        texts = next(c for c in state["candidates"] if c["id"] == cid)["texts"]
+        texts = next(c for c in state["candidates"] if c["id"] == cid.split("~")[0])["texts"]  # cid~2: a second pass
         started = time.monotonic()
         group = state.get("group", "planner")
         if group == "pointer":
@@ -336,6 +347,21 @@ def init_group(args):
     log(run, f"seed val {seed['val_mean']:.3f}")
 
 
+def configure(args):
+    """Change how a run iterates: its critics (each proposes a child on the same parent and minibatch), focused
+    guidance reflection, and val passes (two: every kept candidate's val asked again, its scores averaged)."""
+    run = RUNS / args.name
+    state = load(run)
+    state |= {"critics": args.critics.split(","), "focused": args.focused, "val_passes": args.val_passes}
+    save(run, state)
+    if args.val_passes > 1:
+        for candidate in [c for c in state["candidates"] if c.get("val_mean") is not None]:
+            candidate["val_mean"] = val_twice(run, state, candidate["id"])
+            log(run, f"{candidate['id']}: val over two passes {candidate['val_mean']:.3f}")
+            save(run, state)
+    log(run, f"configured: critics {state['critics']}, focused {state['focused']}, val passes {state['val_passes']}")
+
+
 def seed_e2e(args):
     """The seed end to end, when init ran without it (every test task's plan recorded first)."""
     run = RUNS / args.name
@@ -351,10 +377,11 @@ def episodes(workdir: str) -> list[dict]:
 
 
 # --- reflection ---
-def critic(prompt: str) -> tuple[str, float]:
-    """Sol's answer to PROMPT through the LiteLLM proxy and its cost in credits."""
+def critic(prompt: str, name: str = "sol") -> tuple[str, float]:
+    """The reflection model NAME's answer to PROMPT through the LiteLLM proxy and its cost in credits."""
+    model, rates = CRITICS[name]
     key = (REPO.parent / "litellm_proxy" / "master_key").read_text().strip()
-    body = {"model": CRITIC, "input": [{"role": "user", "content": [{"type": "input_text", "text": prompt}]}],
+    body = {"model": model, "input": [{"role": "user", "content": [{"type": "input_text", "text": prompt}]}],
             "reasoning": {"effort": "high"}}
     request = urllib.request.Request(PROXY, data=json.dumps(body).encode(),
                                      headers={"Authorization": f"Bearer {key}", "content-type": "application/json"})
@@ -365,8 +392,8 @@ def critic(prompt: str) -> tuple[str, float]:
                    for part in item.get("content") or [] if part.get("type") == "output_text")
     usage = reply.get("usage") or {}
     cached = (usage.get("input_tokens_details") or {}).get("cached_tokens", 0)
-    cost = ((usage.get("input_tokens", 0) - cached) * RATES["input"] + cached * RATES["cached"]
-            + usage.get("output_tokens", 0) * RATES["output"]) / 1e6
+    cost = ((usage.get("input_tokens", 0) - cached) * rates["input"] + cached * rates["cached"]
+            + usage.get("output_tokens", 0) * rates["output"]) / 1e6
     return text, cost
 
 
@@ -397,8 +424,9 @@ def episode_text(sessions: list[dict]) -> str:
                      f"report: {s['done_summary'][:200]}" for s in shown)
 
 
-def reflection_prompt(component: str, text: str, batch: list[dict], sessions: list[dict], banned: list[str]) -> str:
-    failures = [r for r in batch if r["score"] is not None and r["score"] < 1][:12]
+def reflection_prompt(component: str, text: str, batch: list[dict], sessions: list[dict], banned: list[str],
+                      focus: str | None = None) -> str:
+    failures = [r for r in batch if r["score"] is not None and r["score"] < 1][:24 if focus else 12]
     passes = [r for r in batch if r["score"] == 1][:3]
     parts = [
         "You improve one text of a robot agent's prompt.",
@@ -413,6 +441,12 @@ def reflection_prompt(component: str, text: str, batch: list[dict], sessions: li
           "keeping what already works.",
         "Weak cases:\n\n" + "\n\n".join(example(r) for r in failures),
         "Cases it got right:\n\n" + "\n\n".join(example(r) for r in passes)]
+    if focus:
+        parts.insert(3, f"This round is about one failure only: the {FOCUS_TEXT[focus]}. Every case below tests "
+                        "it; find the general rule the model is missing for it.")
+    if text.strip():
+        parts.append("Edit, do not rewrite: return the whole current text with at most two rules added or changed "
+                     "for these failures, and every other sentence kept word for word (the rest already works).")
     if component == "guidance" and sessions:
         parts.append("Whole sessions of the same agent in simulation (failed or refused steps with their messages; "
                      "'placed' counts the task's objects placed):\n" + episode_text(sessions))
@@ -481,11 +515,25 @@ def dominated_removed(fronts: dict[str, set], means: dict[str, float]) -> dict[s
     return {case: {p for p in front if p not in dominated} for case, front in fronts.items()}
 
 
+def val_records(run: Path, cid: str, names: list[str]) -> dict:
+    """CID's records of NAMES, each score the mean of its val passes (cid and, when asked, cid~2)."""
+    first, second = records(run, cid), records(run, f"{cid}~2")
+    out = {}
+    for n in names:
+        if n not in first:
+            continue
+        r = first[n]
+        if n in second and r["score"] is not None and second[n]["score"] is not None:
+            r = {**r, "score": (r["score"] + second[n]["score"]) / 2}
+        out[n] = r
+    return out
+
+
 def front(state: dict, run: Path) -> dict[str, int]:
     """The Pareto front over the val cases (gepa's select_program_candidate_from_pareto_front): the eligible
     candidates best on each case, dominated ones removed, and how many cases each survivor is best on."""
     alive = eligible(state)
-    scores = {c["id"]: {k: r["score"] for k, r in records(run, c["id"]).items()} for c in alive}
+    scores = {c["id"]: {k: r["score"] for k, r in val_records(run, c["id"], state["val"]).items()} for c in alive}
     fronts: dict[str, set] = {}
     for case in state["val"]:
         values = {cid: s.get(case) for cid, s in scores.items() if s.get(case) is not None}
@@ -499,14 +547,39 @@ def front(state: dict, run: Path) -> dict[str, int]:
     return counts
 
 
-def minibatch(state: dict, component: str, rng: random.Random) -> list[str]:
-    wanted = FAMILIES[component]
+def minibatch(state: dict, component: str, rng: random.Random, wanted: tuple[str, ...] | None = None) -> list[str]:
+    wanted = wanted or FAMILIES[component]
     pool = [case for case, fams in state["train"].items() if set(fams) & set(wanted)]
     rng.shuffle(pool)
     chosen, per = [], max(1, MINIBATCH // len(wanted))
     for family in wanted:
         chosen += [c for c in pool if family in state["train"][c] and c not in chosen][:per]
     return chosen[:MINIBATCH]
+
+
+def propose(run: Path, state: dict, name: str, component: str, parent_text: str, prompt: str) -> str | None:
+    """A text from critic NAME for PROMPT, within the lint and, for a non-empty parent text, an edit of it; None
+    after two refusals."""
+    for _ in range(2):
+        answer, cost = critic(prompt, name)
+        state["credits"] += cost
+        text = proposal(answer)
+        refused = lint(component, text, state["banned"])
+        if not refused and parent_text.strip() and difflib.SequenceMatcher(None, parent_text, text).ratio() < EDIT_RATIO:
+            refused = "it rewrote the text; keep every sentence that is not about these failures word for word"
+        if not refused:
+            return text
+        log(run, f"iteration {state['iteration']}: {name}'s proposal refused ({refused})")
+        prompt += f"\n\nYour previous text was refused: {refused}. Write it again within the rules."
+    return None
+
+
+def val_twice(run: Path, state: dict, cid: str) -> float:
+    """CID's val mean over two passes (a second ask, cid~2, halves the server's run-to-run jitter)."""
+    evaluate(run, state, cid, state["val"])
+    if state.get("val_passes", 1) > 1:
+        evaluate(run, state, f"{cid}~2", state["val"])
+    return round(mean(val_records(run, cid, state["val"]).values()), 4)
 
 
 def iterate(run: Path, state: dict, rng: random.Random):
@@ -516,47 +589,45 @@ def iterate(run: Path, state: dict, rng: random.Random):
     parent = next(c for c in state["candidates"] if c["id"] == parent_id)
     texts = GROUPS[state.get("group", "planner")]["texts"]
     component = texts[parent.get("next_text", 0) % len(texts)]  # gepa's round robin: a pointer per candidate
+    focus = None
+    if component == "guidance" and state.get("focused"):  # one decision failure at a time
+        focus = GUIDANCE_FOCUS[parent.get("next_focus", 0) % len(GUIDANCE_FOCUS)]
     state["iteration"] += 1
-    names = minibatch(state, component, rng)
+    names = minibatch(state, component, rng, (focus,) if focus else None)
     batch = list(evaluate(run, state, parent_id, names).values())
     if all(r["score"] is None or r["score"] >= PERFECT for r in batch):  # gepa's skip_perfect_score
         log(run, f"iteration {state['iteration']}: {component} of {parent_id} perfect on its minibatch, skipped")
         save(run, state)
         return
     parent["next_text"] = (parent.get("next_text", 0) + 1) % len(texts)
+    if focus:
+        parent["next_focus"] = parent.get("next_focus", 0) + 1
     sessions = state["episodes"].get(parent_id) or state["episodes"].get("c000") or []  # none before a check
-    prompt = reflection_prompt(component, parent["texts"][component], batch, sessions, state["banned"])
-    refused, text = "no proposal", ""
-    for _ in range(2):
-        answer, cost = critic(prompt)
-        state["credits"] += cost
-        text = proposal(answer)
-        refused = lint(component, text, state["banned"])
-        if not refused:
-            break
-        log(run, f"iteration {state['iteration']}: proposal refused ({refused})")
-        prompt += f"\n\nYour previous text was refused: {refused}. Write it again within the rules."
-    save(run, state)
-    if refused:
-        return
-    cid = f"c{len(state['candidates']):03d}"
-    child = {"id": cid, "parent": parent_id, "component": component, "iteration": state["iteration"],
-             "texts": {**parent["texts"], component: text}, "next_text": parent["next_text"]}
-    state["candidates"].append(child)
-    save(run, state)
-    inherit(run, cid, parent_id, component, names)
-    before, after = mean(batch), mean(evaluate(run, state, cid, names).values())
-    child["minibatch"] = [round(before, 4), round(after, 4)]
-    if after <= before:
-        child["val_mean"] = None
-        log(run, f"{cid} ({component} of {parent_id}): minibatch {before:.3f} -> {after:.3f}, not kept")
-    else:
-        evaluate(run, state, parent_id, state["val"])  # known for every kept candidate; inherit reads them
-        inherit(run, cid, parent_id, component, state["val"])
-        child["val_mean"] = round(mean(evaluate(run, state, cid, state["val"]).values()), 4)
-        log(run, f"{cid} ({component} of {parent_id}): minibatch {before:.3f} -> {after:.3f}, val "
-                 f"{child['val_mean']:.3f}")
-    save(run, state)
+    prompt = reflection_prompt(component, parent["texts"][component], batch, sessions, state["banned"], focus)
+    for name in state.get("critics", ["sol"]):  # each critic's child on the same parent and minibatch
+        text = propose(run, state, name, component, parent["texts"][component], prompt)
+        save(run, state)
+        if text is None:
+            continue
+        cid = f"c{len(state['candidates']):03d}"
+        child = {"id": cid, "parent": parent_id, "component": component, "iteration": state["iteration"],
+                 "critic": name, "focus": focus, "texts": {**parent["texts"], component: text},
+                 "next_text": parent["next_text"], "next_focus": parent.get("next_focus", 0)}
+        state["candidates"].append(child)
+        save(run, state)
+        inherit(run, cid, parent_id, component, names)
+        before, after = mean(batch), mean(evaluate(run, state, cid, names).values())
+        child["minibatch"] = [round(before, 4), round(after, 4)]
+        label = f"{cid} ({component}{'/' + focus if focus else ''} of {parent_id}, {name})"
+        if after <= before:
+            child["val_mean"] = None
+            log(run, f"{label}: minibatch {before:.3f} -> {after:.3f}, not kept")
+        else:
+            evaluate(run, state, parent_id, state["val"])  # known for every kept candidate; inherit reads them
+            inherit(run, cid, parent_id, component, state["val"])
+            child["val_mean"] = val_twice(run, state, cid)
+            log(run, f"{label}: minibatch {before:.3f} -> {after:.3f}, val {child['val_mean']:.3f}")
+        save(run, state)
 
 
 # a candidate end to end: the Dex1 profile (demo-pp and warehouse tasks) and the Dex3 one (G1 and move-variety
@@ -705,6 +776,11 @@ def main(argv=None):
     f = sub.add_parser("seed-from")
     f.add_argument("ids", nargs=2, help="the Dex1 and Dex3 experiments whose rows are the seed's check (GD1 GD3)")
     f.add_argument("--names", nargs="+", required=True, help="the group runs that share it")
+    c = sub.add_parser("configure")
+    c.add_argument("name")
+    c.add_argument("--critics", default="sol", help="comma separated: sol, astra")
+    c.add_argument("--focused", action="store_true", help="guidance reflects on one decision failure at a time")
+    c.add_argument("--val-passes", type=int, default=1, choices=(1, 2))
     g = sub.add_parser("init-group")
     g.add_argument("name")
     g.add_argument("--group", required=True, choices=sorted(GROUPS))
@@ -718,7 +794,7 @@ def main(argv=None):
     sub.add_parser("status").add_argument("name")
     args = parser.parse_args(argv)
     {"init": init, "run": run_loop, "status": status, "seed-e2e": seed_e2e, "init-group": init_group,
-     "seed-from": seed_from}[args.command](args)
+     "seed-from": seed_from, "configure": configure}[args.command](args)
 
 
 if __name__ == "__main__":
