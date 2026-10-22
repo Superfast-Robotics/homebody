@@ -243,6 +243,8 @@ class Composite:
         self.allowed: tuple[str, ...] = ()
         self.last: dict | None = None
         self.calls: list[dict] = []
+        # free when every member runs on our own GPUs (a composite nested in another is priced as one call)
+        self.LOCAL = all(getattr(member, "LOCAL", False) for member in self.members.values())
 
     def build_members(self) -> dict[str, Any]:
         from .catalog import make  # noqa: PLC0415 -- the catalog imports this module
@@ -294,7 +296,7 @@ class Composite:
 
     def record(self, role: str, folder: Path, **extra):
         member = self.members.get(role)
-        local = True if role in self.endpoints else bool(getattr(type(member), "LOCAL", False))
+        local = True if role in self.endpoints else bool(getattr(member, "LOCAL", False))
         model = self.model_name(role)
         model_id = MODELS[model][1] if model in MODELS else model
         self.calls.append({"role": role, "model": model, "model_id": model_id, "local": local,

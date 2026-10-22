@@ -291,3 +291,13 @@ def test_a_recorded_plan_answers_the_first_plan_turn_and_the_base_model_the_rest
     other = prompt.replace(entry["task"], "an unrecorded task")
     agent.turn(("plan",))
     assert agent.generate(other, **turn(tmp_path, 3)) is not None and len(base.prompts) == 3  # no recording: base
+
+
+def test_a_nested_composite_of_local_models_is_recorded_as_free(tmp_path):
+    inner = Composite(Agent(model="c-q38-mimo"), members={"planner": Fake([Decision("go", "done", {})])},
+                      endpoints={"pointer": FakeEndpoint("mimo", [])})
+    outer = Composite(Agent(model="c-solplan-q38-mimo"), members={"base": inner}, endpoints={})
+    outer.turn(("done",))
+    outer.generate("Current task:\nan unrecorded task\n", **turn(tmp_path))
+    routing = json.loads((tmp_path / "step-000" / "routing.json").read_text())
+    assert inner.LOCAL and routing["calls"][0]["role"] == "base" and routing["calls"][0]["local"] is True
