@@ -522,7 +522,7 @@ def iterate(run: Path, state: dict, rng: random.Random):
         save(run, state)
         return
     parent["next_text"] = (parent.get("next_text", 0) + 1) % len(texts)
-    sessions = state["episodes"].get(parent_id) or state["episodes"]["c000"]
+    sessions = state["episodes"].get(parent_id) or state["episodes"].get("c000") or []  # none before a check
     prompt = reflection_prompt(component, parent["texts"][component], batch, sessions, state["banned"])
     refused, text = "no proposal", ""
     for _ in range(2):
