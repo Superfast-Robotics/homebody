@@ -68,10 +68,11 @@ def test_the_front_keeps_every_candidate_best_somewhere(tmp_path):
     for cid, values in scores.items():
         (tmp_path / "records" / f"{cid}.jsonl").write_text(
             "".join(json.dumps({"case": f"k{i}", "score": v}) + "\n" for i, v in enumerate(values)))
-    state = {"val": ["k0", "k1", "k2"], "candidates": [{"id": c, "val_mean": 0.5} for c in scores]}
-    assert gepa_open.front(state, tmp_path) == {"c000": 2, "c001": 2, "c002": 1}
-    state["candidates"][2]["dropped"] = True
-    assert "c002" not in gepa_open.front(state, tmp_path)
+    state = {"val": ["k0", "k1", "k2"], "candidates": [{"id": c, "val_mean": 0.5, "parent": None} for c in scores]}
+    # c002 is best only on k2, where c000 and c001 are too: dominated, removed (gepa's remove_dominated_programs)
+    assert gepa_open.front(state, tmp_path) == {"c000": 2, "c001": 2}
+    state["candidates"][1]["dropped"] = True
+    assert gepa_open.front(state, tmp_path) == {"c000": 3}  # on k1 c000 ties c002 at 0; c002 is dominated
 
 
 def test_a_minibatch_draws_the_texts_capabilities():
@@ -98,3 +99,19 @@ def test_cases_go_to_executors_in_proportion_to_their_weights_and_always_the_sam
     share = sum(gepa_open.executor_of(n, executors)["host"] == "a" for n in names) / len(names)
     assert 0.72 < share < 0.78
     assert gepa_open.executor_of("case-7", executors) is gepa_open.executor_of("case-7", executors)
+
+
+def test_a_dropped_candidates_descendants_wait_for_a_check_of_their_own():
+    state = {"candidates": [{"id": "c000", "parent": None, "val_mean": 0.7, "e2e": {"val": 0.2}},
+                            {"id": "c001", "parent": "c000", "val_mean": 0.8, "dropped": True, "e2e": {"val": 0.1}},
+                            {"id": "c002", "parent": "c001", "val_mean": 0.9},
+                            {"id": "c003", "parent": "c002", "val_mean": 0.9, "e2e": {"val": 0.3}},
+                            {"id": "c004", "parent": "c003", "val_mean": 0.9},
+                            {"id": "c005", "parent": "c000", "val_mean": None}]}
+    assert [c["id"] for c in gepa_open.eligible(state)] == ["c000", "c003", "c004"]
+
+
+def test_domination_keeps_a_best_candidate_on_every_case():
+    fronts = {"a": {"x", "y"}, "b": {"y"}, "c": {"x", "z"}}
+    kept = gepa_open.dominated_removed(fronts, {"x": 0.5, "y": 0.6, "z": 0.4})
+    assert all(kept[k] for k in fronts) and kept["c"] == {"x"} and "z" not in kept["c"]

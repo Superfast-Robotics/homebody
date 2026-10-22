@@ -55,6 +55,7 @@ PROXY = "http://127.0.0.1:4000/v1/responses"
 CRITIC = "gpt-6.1-sol"
 RATES = {"input": 50.0, "cached": 2.5, "output": 250.0}  # credits per 1M tokens (evolve/score_episode.py)
 MINIBATCH, VAL_SIZE = 40, 240
+PERFECT = 1.0  # a minibatch the parent gets all right is skipped (gepa's perfect_score)
 
 TEXTS = ("guidance", "target_note", "pick_note", "place_note")
 FAMILIES = {"guidance": ("choose", "judge", "recover", "navigate", "pick", "place"),
@@ -372,19 +373,57 @@ def lint(component: str, text: str, banned: list[str]) -> str | None:
 
 
 # --- the loop ---
+def eligible(state: dict) -> list[dict]:
+    """Candidates that may be parents: scored on val and neither dropped by an end-to-end check nor descended from
+    one dropped without a passed check of their own (the nearest checked ancestor-or-self decides)."""
+    by_id = {c["id"]: c for c in state["candidates"]}
+
+    def cleared(candidate) -> bool:
+        while candidate is not None:
+            if candidate.get("dropped"):
+                return False
+            if "val" in candidate.get("e2e", {}):
+                return True
+            candidate = by_id.get(candidate["parent"])
+        return True
+
+    return [c for c in state["candidates"] if c.get("val_mean") is not None and cleared(c)]
+
+
+def dominated_removed(fronts: dict[str, set], means: dict[str, float]) -> dict[str, set]:
+    """gepa's remove_dominated_programs (gepa_utils.py): a candidate is dominated when every case it is best on
+    also has another surviving best candidate; checked from the lowest val mean up, one at a time."""
+    programs = sorted({p for front in fronts.values() for p in front}, key=lambda p: means[p])
+    dominated: set[str] = set()
+    found = True
+    while found:
+        found = False
+        for y in programs:
+            if y in dominated:
+                continue
+            others = set(programs) - {y} - dominated
+            if all(any(o in front for o in others) for front in fronts.values() if y in front):
+                dominated.add(y)
+                found = True
+                break
+    return {case: {p for p in front if p not in dominated} for case, front in fronts.items()}
+
+
 def front(state: dict, run: Path) -> dict[str, int]:
-    """The Pareto front over the val cases: each kept candidate and how many cases it is (jointly) best on."""
-    alive = [c for c in state["candidates"] if c.get("val_mean") is not None and not c.get("dropped")]
+    """The Pareto front over the val cases (gepa's select_program_candidate_from_pareto_front): the eligible
+    candidates best on each case, dominated ones removed, and how many cases each survivor is best on."""
+    alive = eligible(state)
     scores = {c["id"]: {k: r["score"] for k, r in records(run, c["id"]).items()} for c in alive}
-    counts: dict[str, int] = {}
+    fronts: dict[str, set] = {}
     for case in state["val"]:
         values = {cid: s.get(case) for cid, s in scores.items() if s.get(case) is not None}
-        if not values:
-            continue
-        best = max(values.values())
-        for cid, value in values.items():
-            if value == best:
-                counts[cid] = counts.get(cid, 0) + 1
+        if values:
+            best = max(values.values())
+            fronts[case] = {cid for cid, value in values.items() if value == best}
+    counts: dict[str, int] = {}
+    for kept in dominated_removed(fronts, {c["id"]: c["val_mean"] for c in alive}).values():
+        for cid in kept:
+            counts[cid] = counts.get(cid, 0) + 1
     return counts
 
 
@@ -403,10 +442,15 @@ def iterate(run: Path, state: dict, rng: random.Random):
     ids = sorted(counts)
     parent_id = rng.choices(ids, weights=[counts[i] for i in ids])[0]
     parent = next(c for c in state["candidates"] if c["id"] == parent_id)
-    component = TEXTS[state["iteration"] % len(TEXTS)]
+    component = TEXTS[parent.get("next_text", 0)]  # gepa's round robin: a pointer per candidate
     state["iteration"] += 1
     names = minibatch(state, component, rng)
     batch = list(evaluate(run, state, parent_id, names).values())
+    if all(r["score"] is None or r["score"] >= PERFECT for r in batch):  # gepa's skip_perfect_score
+        log(run, f"iteration {state['iteration']}: {component} of {parent_id} perfect on its minibatch, skipped")
+        save(run, state)
+        return
+    parent["next_text"] = (parent.get("next_text", 0) + 1) % len(TEXTS)
     sessions = state["episodes"].get(parent_id) or state["episodes"]["c000"]
     prompt = reflection_prompt(component, parent["texts"][component], batch, sessions, state["banned"])
     refused, text = "no proposal", ""
@@ -424,7 +468,7 @@ def iterate(run: Path, state: dict, rng: random.Random):
         return
     cid = f"c{len(state['candidates']):03d}"
     child = {"id": cid, "parent": parent_id, "component": component, "iteration": state["iteration"],
-             "texts": {**parent["texts"], component: text}}
+             "texts": {**parent["texts"], component: text}, "next_text": parent["next_text"]}
     state["candidates"].append(child)
     save(run, state)
     inherit(run, cid, parent_id, component, names)
@@ -490,8 +534,7 @@ def end_to_end(run: Path, state: dict, candidate: dict | None = None):
             time.sleep(300)
         end_to_end(run, state, seed)
     if candidate is None:
-        untested = [c for c in state["candidates"] if c.get("val_mean") and "e2e" not in c
-                    and not c.get("dropped") and c["val_mean"] > seed["val_mean"]]
+        untested = [c for c in eligible(state) if "e2e" not in c and c["val_mean"] > seed["val_mean"]]
         if not untested:
             return
         candidate = max(untested, key=lambda c: c["val_mean"])
