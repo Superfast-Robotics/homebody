@@ -78,3 +78,15 @@ def test_a_minibatch_draws_the_texts_capabilities():
     train = {f"p{i}": ["pick"] for i in range(30)} | {f"n{i}": ["navigate"] for i in range(30)}
     names = gepa_open.minibatch({"train": train}, "pick_note", random.Random(0))
     assert len(names) == 30 and all(n.startswith("p") for n in names)
+
+
+def test_a_pointer_note_child_inherits_its_parents_turns_of_other_skills(tmp_path):
+    (tmp_path / "records").mkdir()
+    rows = [{"case": "a", "score": 1, "decision": {"skill": "navigate"}},
+            {"case": "b", "score": 0, "decision": {"skill": "pick"}},
+            {"case": "c", "score": 0, "decision": {"error": "bad"}}]
+    (tmp_path / "records" / "c000.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
+    gepa_open.inherit(tmp_path, "c001", "c000", "pick_note", ["a", "b", "c"])
+    assert set(gepa_open.records(tmp_path, "c001")) == {"a"}
+    gepa_open.inherit(tmp_path, "c002", "c000", "guidance", ["a", "b", "c"])
+    assert gepa_open.records(tmp_path, "c002") == {}

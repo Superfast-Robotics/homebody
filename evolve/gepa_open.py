@@ -130,6 +130,23 @@ def evaluate(run: Path, state: dict, cid: str, names: list[str]) -> dict:
     return {n: known[n] for n in names}
 
 
+POINTER_NOTES = {"pick_note": "pick", "place_note": "place"}  # a text read only by the pointer, for this skill
+
+
+def inherit(run: Path, child: str, parent: str, component: str, names: list[str]):
+    """A pointer note changes only the turns where the planner chose its skill (the planner's prompt is the same):
+    the child takes the parent's records of NAMES' other turns, so the server's run-to-run jitter on them (about 8%
+    of turns at temperature 0) does not decide whether the note helped."""
+    skill = POINTER_NOTES.get(component)
+    if skill is None:
+        return
+    mine, theirs = records(run, child), records(run, parent)
+    same = [theirs[n] for n in names if n in theirs and n not in mine and "error" not in theirs[n]["decision"]
+            and theirs[n]["decision"].get("skill") != skill]
+    with (run / "records" / f"{child}.jsonl").open("a") as out:
+        out.write("".join(json.dumps(r) + "\n" for r in same))
+
+
 def mean(rows) -> float:
     scores = [r["score"] for r in rows if r["score"] is not None]
     return sum(scores) / len(scores) if scores else 0.0
@@ -362,12 +379,15 @@ def iterate(run: Path, state: dict, rng: random.Random):
              "texts": {**parent["texts"], component: text}}
     state["candidates"].append(child)
     save(run, state)
+    inherit(run, cid, parent_id, component, names)
     before, after = mean(batch), mean(evaluate(run, state, cid, names).values())
     child["minibatch"] = [round(before, 4), round(after, 4)]
     if after <= before:
         child["val_mean"] = None
         log(run, f"{cid} ({component} of {parent_id}): minibatch {before:.3f} -> {after:.3f}, not kept")
     else:
+        evaluate(run, state, parent_id, state["val"])  # known for every kept candidate; inherit reads them
+        inherit(run, cid, parent_id, component, state["val"])
         child["val_mean"] = round(mean(evaluate(run, state, cid, state["val"]).values()), 4)
         log(run, f"{cid} ({component} of {parent_id}): minibatch {before:.3f} -> {after:.3f}, val "
                  f"{child['val_mean']:.3f}")
