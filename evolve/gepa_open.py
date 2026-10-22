@@ -487,7 +487,8 @@ def iterate(run: Path, state: dict, rng: random.Random):
 
 
 # a candidate end to end: the Dex1 profile (demo-pp and warehouse tasks) and the Dex3 one (G1 and move-variety
-# tasks) at once, each train, val and test with Sol's recorded plans; val decides, test is only reported
+# tasks) at once, each train, val and test with Sol's recorded first plans and live rewrites; val decides, test is
+# only reported
 E2E_BASES = {"A": ("GD1", "gepa-dex1"), "B": ("GD3", "gepa-dex3")}
 
 

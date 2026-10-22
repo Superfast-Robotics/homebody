@@ -221,10 +221,11 @@ def experiments(best_small="robobrain2.5-8b", best_base="robobrain2.5-8b", gpu_g
         "NG4": Experiment("gemma4-31b-vllm", Serve("gemma-4-31b", 0.90, 16384, max_seqs=32)),
         "NC3S": Experiment("cosmos3-super-vllm", Serve("cosmos3-super", 0.90, 16384, max_seqs=32)),
         # GEPA's end-to-end checks (evolve/gepa_open.py; a candidate's texts join these options): Sol's recorded
-        # plans only; the Dex3 one's planner is the Qwen3.8 replica on loki-a100's A100, spreading the load
-        "GD1": Experiment("c-solplan-q38-robobrain", Serve("qwen3.8-27b", 0.55, 16384, max_seqs=32),
+        # first plans, and Sol rewrites a failed tree live, as in the final test and deployment; the Dex3 one's
+        # planner is the Qwen3.8 replica on loki-a100's A100, spreading the load
+        "GD1": Experiment("c-solall-q38-robobrain", Serve("qwen3.8-27b", 0.55, 16384, max_seqs=32),
                           Serve("robobrain2.5-8b", 0.33, 8192), options=OPEN_FIXES, profile="gepa-dex1", test=True),
-        "GD3": Experiment("c-solplan-q38-robobrain", Serve("qwen3.8-27b", 0.55, 16384, max_seqs=32),
+        "GD3": Experiment("c-solall-q38-robobrain", Serve("qwen3.8-27b", 0.55, 16384, max_seqs=32),
                           Serve("robobrain2.5-8b", 0.33, 8192),
                           options={**OPEN_FIXES, "local_url": A100_REPLICA}, profile="gepa-dex3", test=True),
     }
