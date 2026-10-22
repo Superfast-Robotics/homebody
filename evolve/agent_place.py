@@ -5,7 +5,8 @@ placed on (its label), and on reach: the clicked point's horizontal distance fro
 
 Variants: "plain" asks as the composite pointer does; "reach" adds that the spot is near the surface's front edge
 within reach; "mask" greys out the pixels whose point lies beyond reach before the pointer sees the image; "clamp"
-moves a click beyond reach toward the robot until it is within reach, on the same support; "mask+clamp" does both."""
+moves a click beyond reach toward the robot until it is within reach, on the same support; "mask+clamp" does both.
+The geometry is helpers/reach.py's, as the session's open-model options use it."""
 import json
 import time
 from pathlib import Path
@@ -13,6 +14,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
+from homebody.helpers.reach import beyond, greyed, pull_within, reach_of, world_of
 from homebody.vlm.composite import POINTER_PROMPTS, Endpoint, to_1000
 from homebody.vlm.provider import ProviderError
 
@@ -28,65 +30,21 @@ def geometry(case: Path):
     return g["depth"].astype(np.float32), g["intrinsics"], g["world_camera"], g["world_torso"]
 
 
-def world_of(point, depth, intrinsics, world_camera):
-    """The world point under point_normalized_1000 POINT (None where the depth is missing)."""
-    h, w = depth.shape
-    u, v = int(point[0] * (w - 1) / 1000), int(point[1] * (h - 1) / 1000)
-    z = float(depth[v, u])
-    if not np.isfinite(z) or z <= 0:
-        return None
-    camera = [(u - intrinsics[0, 2]) * z / intrinsics[0, 0], (v - intrinsics[1, 2]) * z / intrinsics[1, 1], z, 1.0]
-    return (world_camera @ camera)[:3]
-
-
-def reach_of(world, world_torso) -> float:
-    return float(np.hypot(*(world[:2] - world_torso[:3, 3][:2])))
-
-
 def masked(case: Path, out: Path) -> Path:
     """The head image with every pixel whose point lies beyond reach greyed out."""
     depth, intrinsics, world_camera, world_torso = geometry(case)
-    h, w = depth.shape
-    v, u = np.mgrid[0:h, 0:w]
-    camera = np.stack([(u - intrinsics[0, 2]) * depth / intrinsics[0, 0],
-                       (v - intrinsics[1, 2]) * depth / intrinsics[1, 1], depth, np.ones_like(depth)], -1)
-    world = camera @ world_camera.T
-    far = np.hypot(world[..., 0] - world_torso[0, 3], world[..., 1] - world_torso[1, 3]) > SCORE_REACH_M + 0.05
-    far |= ~np.isfinite(depth) | (depth <= 0)
-    rgb = np.asarray(Image.open(case / "rgb.png").convert("RGB")).copy()
-    rgb[far] = (rgb[far] * 0.25 + 96).astype(np.uint8)
+    rgb = np.asarray(Image.open(case / "rgb.png").convert("RGB"))
     out.mkdir(parents=True, exist_ok=True)
-    Image.fromarray(rgb).save(out / "rgb_masked.png")
+    Image.fromarray(greyed(rgb, beyond(depth, intrinsics, world_camera, world_torso, SCORE_REACH_M + 0.05))).save(
+        out / "rgb_masked.png")
     return out / "rgb_masked.png"
 
 
 def clamped(point, case: Path):
-    """POINT moved toward the robot until within reach, on the same support label (unchanged when it is already
-    within reach, or when no such pixel is found)."""
+    """POINT moved within reach on the same support (helpers/reach.pull_within)."""
     depth, intrinsics, world_camera, world_torso = geometry(case)
     labels = np.load(case / "labels.npz")["labels"]
-    start = world_of(point, depth, intrinsics, world_camera)
-    if start is None or reach_of(start, world_torso) <= REACH_M:
-        return point
-    h, w = depth.shape
-    label = int(labels[int(point[1] * (h - 1) / 1000), int(point[0] * (w - 1) / 1000)])
-    torso = world_torso[:3, 3]
-    camera_from_world = np.linalg.inv(world_camera)
-    for fraction in np.linspace(0.05, 0.6, 12):  # slide toward the torso, keeping the height
-        target = start.copy()
-        target[:2] = start[:2] + (torso[:2] - start[:2]) * fraction
-        if reach_of(target, world_torso) > REACH_M:
-            continue
-        x, y, z, _ = camera_from_world @ [*target, 1.0]
-        if z <= 0:
-            continue
-        u, v = intrinsics[0, 0] * x / z + intrinsics[0, 2], intrinsics[1, 1] * y / z + intrinsics[1, 2]
-        if 0 <= u < w and 0 <= v < h and int(labels[int(v), int(u)]) == label:
-            moved = [round(u * 1000 / (w - 1)), round(v * 1000 / (h - 1))]
-            seen = world_of(moved, depth, intrinsics, world_camera)  # what the camera sees there, not the guess
-            if seen is not None and reach_of(seen, world_torso) <= SCORE_REACH_M:
-                return moved
-    return point
+    return pull_within(point, depth, intrinsics, world_camera, world_torso, labels, REACH_M, SCORE_REACH_M)
 
 
 def place_target(meta) -> str | None:

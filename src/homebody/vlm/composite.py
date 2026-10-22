@@ -347,8 +347,10 @@ class PlannerPointer(Composite):
         own = decision.arguments[POINT]
         endpoint = self.endpoints["pointer"]
         try:
+            masked = images[0].with_name("rgb_masked.png")  # agent.local_reach_mask (session/open_assist.py)
             answer, folder = self.query("pointer", POINTER_PROMPTS[endpoint.format].format(target=target),
-                                        images[:1], attempt=attempt, tick=tick, cancelled=cancelled)
+                                        (masked if masked.is_file() else images[0],), attempt=attempt, tick=tick,
+                                        cancelled=cancelled)
         except ProviderError:
             self.calls[-1].update(target=target, planner_point=own, used="planner")
             return decision

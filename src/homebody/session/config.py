@@ -227,6 +227,13 @@ class Agent:
     local_image_labels: bool = True
     # extra guidance for the open models only (configs/prompts/open_models/<name>.md, comma separated; "" for none)
     local_notes: str = ""
+    # open-model help (session/open_assist.py), off for every model by default: the pointer sees the head camera with
+    # beyond-reach pixels greyed out; a place click beyond reach is moved within it; a repeat of the decision that
+    # just failed is refused; the reach they assume
+    local_reach_mask: bool = False
+    local_place_reach: bool = False
+    local_repeat_guard: bool = False
+    local_reach_m: float = 0.42
 
     def __post_init__(self):
         if self.service_tier not in ("default", "fast", "flex"):

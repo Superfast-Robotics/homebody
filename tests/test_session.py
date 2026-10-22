@@ -1137,3 +1137,13 @@ def test_an_unreadable_reply_is_refused_as_one_step_and_the_task_goes_on(build):
     result = session.run_task("Inspect")
     assert result["status"] == "model_done" and result["steps"] == 2 and provider.calls == 2
     assert "Expecting ',' delimiter" in provider.prompts[-1] and "INVALID_ARGUMENT" in provider.prompts[-1]
+
+
+def test_the_repeat_guard_refuses_the_decision_that_just_failed(build):
+    """With agent.local_repeat_guard, the same failing decision is refused with the reason instead of run again."""
+    failing = Decision("go", "navigate", {})  # navigate without arguments fails in the fake world
+    provider = Provider([failing, failing, Decision("Finished", "done", {"summary": "ok"})])
+    session = build(provider, settings=Settings(agent=Agent(done_settle_seconds=0., pause_while_thinking=False,
+                                                            local_repeat_guard=True)))
+    assert session.run_task("Observe")["status"] == "model_done"
+    assert "This exact navigate just failed" in provider.prompts[-1]

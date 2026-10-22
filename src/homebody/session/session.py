@@ -11,6 +11,8 @@ from pathlib import Path
 from homebody import harness
 from homebody.primitives.actions import PhysicsInvalid
 from homebody.session.coder import CALL, Coder
+from homebody.session.open_assist import POINT as POINT_ARGUMENT
+from homebody.session.open_assist import RepeatGuard, pull_place_point, write_reach_mask
 from homebody.session.planned import OWN as PLAN_DECISIONS
 from homebody.session.planned import PlanRunner
 from homebody.session.recovery import Recovery, request, stuck_key
@@ -326,6 +328,7 @@ class Session:
         self.coder.reset(task_dir)  # coded skills live for one task
         self.recovery.reset()
         self.planner = PlanRunner(self.settings.plan.replans) if self.settings.plan.enabled else None
+        self.repeat_guard = RepeatGuard()
         self.trace.reset(task_dir if self.settings.recording.keyframes else None)
         try:
             if self.requires_reset:
@@ -343,6 +346,8 @@ class Session:
                     raise Cancelled("Task stopped by operator")
                 frame = self.observed.snapshot()
                 images = self.recorder.agent_images(frame)
+                if self.settings.agent.local_reach_mask:
+                    write_reach_mask(frame, images[0].parent, self.settings.agent.local_reach_m)
                 prompt = self.prompt(task, frame)
                 if self.planner is not None and (note := self.planner.note()):
                     prompt += "\n\n" + note
@@ -374,6 +379,18 @@ class Session:
                     self.recorder.event("result", step=step, simulation_time=self.backend.time, result=result)
                     self.show_result(result)
                     continue
+                if self.settings.agent.local_repeat_guard and (refused := self.repeat_guard.refusal(decision)):
+                    outcome["steps"] = step + 1
+                    self.history.append({"base_pose": frame.base_pose.tolist(), "decision": asdict(decision),
+                                         "epoch": frame.epoch, "frame_sequence": frame.sequence, "result": refused})
+                    self.recorder.event("result", step=step, simulation_time=self.backend.time, result=refused)
+                    self.show_result(refused)
+                    continue
+                if self.settings.agent.local_place_reach:
+                    decision, moved_from = pull_place_point(decision, frame, self.settings.agent.local_reach_m)
+                    if moved_from is not None:
+                        self.recorder.event("place_point_pulled", step=step, original=moved_from,
+                                            moved=decision.arguments[POINT_ARGUMENT])
                 self.recorder.event("decision", step=step, epoch=frame.epoch, sequence=frame.sequence,
                                     simulation_time=self.backend.time, decision=decision)
                 outcome["steps"] = step + 1
@@ -388,6 +405,7 @@ class Session:
                     break
                 if self.planner is not None and decision.skill in PLAN_DECISIONS:
                     result = self.planner.handle(decision, self.context.carried)
+                    self.repeat_guard.observe(decision, result)
                     self.history.append({"base_pose": frame.base_pose.tolist(), "decision": asdict(decision),
                                          "epoch": frame.epoch, "frame_sequence": frame.sequence, "result": result})
                     self.recorder.event("result", step=step, simulation_time=self.backend.time, result=result)
@@ -405,6 +423,7 @@ class Session:
                         raise PhysicsInvalid(result["message"])
                 if self.planner is not None:
                     self.planner.observe(result, self.context.carried)
+                self.repeat_guard.observe(decision, result)
                 self.show_result(result)
             else:
                 outcome["status"] = "step_limit"
