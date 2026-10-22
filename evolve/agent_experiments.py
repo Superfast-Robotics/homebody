@@ -188,6 +188,11 @@ def experiments(best_small="robobrain2.5-8b", best_base="robobrain2.5-8b", gpu_g
         # SPO v3: SPR2 with the repeat guard letting retryable failures (stall, uncertain hold) be retried
         "SPR3": Experiment("c-solplan-q38-robobrain", Serve("qwen3.8-27b", 0.55, 16384),
                            Serve("robobrain2.5-8b", 0.33, 8192), options=OPEN_FIXES),
+        # the final fully open setups: Qwen3.8 writes its own plans, with every open-model fix
+        "Q38R3": Experiment("c-q38-robobrain", Serve("qwen3.8-27b", 0.55, 16384),
+                            Serve("robobrain2.5-8b", 0.33, 8192), options=OPEN_FIXES),
+        "Q38M3": Experiment("c-q38-mimo", Serve("qwen3.8-27b", 0.55, 16384),
+                            Serve("mimo-embodied-7b", 0.33, 8192), options=OPEN_FIXES),
     }
 
 
