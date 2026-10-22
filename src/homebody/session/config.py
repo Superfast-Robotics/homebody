@@ -188,6 +188,13 @@ COMPOSITES = {
     "c-q38-molmo": {"kind": "pointer", "planner": {"model": "qwen38-27b-vllm"}, "pointer": MOLMO_ER},
     # Gemma 4 judges progress best on the bench but cannot click: Molmo2-ER points for it
     "c-g4-molmo": {"kind": "pointer", "planner": {"model": "gemma4-31b-vllm"}, "pointer": MOLMO_ER},
+    # Sol's recorded first plans (demo-pp b002), then the open models: credit free
+    "c-solplan-q38-mimo": {"kind": "plans", "plans": "configs/plans/sol_demo_pp_b002.json",
+                           "base": {"model": "c-q38-mimo"}},
+    "c-solplan-q38-molmo": {"kind": "plans", "plans": "configs/plans/sol_demo_pp_b002.json",
+                            "base": {"model": "c-q38-molmo"}},
+    "c-solplan-q38": {"kind": "plans", "plans": "configs/plans/sol_demo_pp_b002.json",
+                      "base": {"model": "qwen38-27b-vllm"}},
 }
 MODELS.update({name: ("composite", name, None) for name in COMPOSITES})
 

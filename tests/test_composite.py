@@ -61,7 +61,7 @@ def routing(tmp_path, step=0):
 
 def test_every_composite_is_a_models_row_of_a_known_kind():
     for name, spec in COMPOSITES.items():
-        assert MODELS[name] == ("composite", name, None) and spec["kind"] in ("pointer", "cascade", "router", "verifier")
+        assert MODELS[name] == ("composite", name, None) and spec["kind"] in ("pointer", "cascade", "router", "verifier", "plans")
     assert PROVIDERS["composite"] is Composite
     assert model_label(Agent(model="e7-qwen30b-molmo")).startswith("Multi-model (e7-qwen30b-molmo")
 
@@ -272,3 +272,22 @@ def test_an_endpoint_asks_with_the_image_first_and_thinking_off(tmp_path, image,
     assert answer.startswith("<answer>") and body["chat_template_kwargs"] == {"enable_thinking": False}
     assert [c["type"] for c in body["messages"][0]["content"]] == ["image_url", "text"]
     assert body["max_tokens"] == 2048 and body["repetition_penalty"] == 1.05 and body["temperature"] == 0.0
+
+
+def test_a_recorded_plan_answers_the_first_plan_turn_and_the_base_model_the_rest(tmp_path):
+    entry = json.loads((composite.RecordedPlan.ROOT / COMPOSITES["c-solplan-q38"]["plans"]).read_text())["plans"][0]
+    prompt = f"You control a robot.\n\nCurrent task:\n{entry['task']}\n\nThis turn: write the plan (skill plan)."
+    base = Fake([Decision("rewrite", "plan", {"tree": {"type": "goal", "id": "g", "goal": "x"}}),
+                 Decision("go", "pick", {"point_normalized_1000": [5, 5]}), Decision("own plan", "plan", {})])
+    agent = Composite(Agent(model="c-solplan-q38"), members={"base": base}, endpoints={})
+    agent.turn(("plan",))
+    first = agent.generate(prompt, **turn(tmp_path, 0))
+    assert (first.skill, first.arguments["tree"]) == ("plan", entry["tree"]) and base.prompts == []
+    routing = json.loads((tmp_path / "step-000" / "routing.json").read_text())
+    assert routing["calls"][0]["role"] == "recorded" and routing["calls"][0]["local"] is True
+    assert agent.generate(prompt, **turn(tmp_path, 1)).text == "rewrite"  # a rewrite is the base model's
+    agent.turn(("pick", "done"))
+    assert agent.generate(prompt.replace("This turn: write the plan (skill plan).", ""), **turn(tmp_path, 2)).skill == "pick"
+    other = prompt.replace(entry["task"], "an unrecorded task")
+    agent.turn(("plan",))
+    assert agent.generate(other, **turn(tmp_path, 3)) is not None and len(base.prompts) == 3  # no recording: base

@@ -166,7 +166,13 @@ def experiments(best_small="robobrain2.5-8b", best_base="robobrain2.5-8b", gpu_g
         "Q38M": Experiment("c-q38-mimo", Serve("qwen3.8-27b", 0.55, 16384), Serve("mimo-embodied-7b", 0.33, 8192)),
         "Q38L": Experiment("c-q38-molmo-v", Serve("qwen3.8-27b", 0.55, 16384), Serve("molmo2-er", 0.33, 8192)),
         "Q38O": Experiment("c-q38-molmo", Serve("qwen3.8-27b", 0.55, 16384), Serve("molmo2-er", 0.33, 8192)),
-        "G4O": Experiment("c-g4-molmo", Serve("gemma-4-31b", 0.72, 16384), Serve("molmo2-er", 0.20, 8192)),
+        # Gemma 4 in weight-only FP8 (31 GB, native on Hopper): BF16 left too little KV cache beside a pointer
+        "G4O": Experiment("c-g4-molmo", Serve("gemma-4-31b", 0.62, 16384, online_fp8=True),
+                          Serve("molmo2-er", 0.30, 8192)),
+        # Sol's recorded first plans (demo-pp b002), then Qwen3.8 with a pointer or alone: no credits
+        "SPM": Experiment("c-solplan-q38-mimo", Serve("qwen3.8-27b", 0.55, 16384), Serve("mimo-embodied-7b", 0.33, 8192)),
+        "SPO": Experiment("c-solplan-q38-molmo", Serve("qwen3.8-27b", 0.55, 16384), Serve("molmo2-er", 0.33, 8192)),
+        "SPQ": Experiment("c-solplan-q38", Serve("qwen3.8-27b", 0.90, 16384)),
     }
 
 

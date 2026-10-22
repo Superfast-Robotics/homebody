@@ -10,6 +10,7 @@ cascade   the routine model answers; the fallback answers instead after a refuse
 router    plan turns go to the planner, step turns to the executor
 verifier  a done or goal_done claim is checked by a verifier model on the latest images; a "no" sends the base model
           its reason and asks again, at most `vetoes` times per goal, then the claim stands
+plans     a task's first plan is a recorded one (another model's, e.g. Sol's baseline plans); the rest goes to the base
 
 The session tells a composite each turn's allowed decisions (turn) and each result (observe)."""
 import json
@@ -409,5 +410,29 @@ class Verifier(Composite):
             asked = f"{prompt}\n\n{VETO_NOTE.format(skill=decision.skill, reason=reason)}"
 
 
-KINDS = {"pointer": PlannerPointer, "cascade": Cascade, "router": PlanRouter, "verifier": Verifier}
+class RecordedPlan(Composite):
+    """A task's first plan is a recorded one (spec "plans": a JSON file of {"task", "text", "tree"} under the repo,
+    e.g. Sol's plans of a baseline run), matched by the prompt's current task; every other turn, a rewrite of the
+    plan included, goes to the base model. No model is asked for a recorded plan."""
+    ROOT = Path(__file__).resolve().parents[3]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        recorded = json.loads((self.ROOT / self.spec["plans"]).read_text())["plans"]
+        self.recorded = {entry["task"]: entry for entry in recorded}
+        self.planned: set[str] = set()
+
+    def decide(self, prompt, *, images, names, attempt, tick, cancelled):
+        task = section(prompt, "Current task:")
+        entry = self.recorded.get(task)
+        if self.allowed == PLAN_TURN and entry and task not in self.planned:
+            self.planned.add(task)
+            self.calls.append({"role": "recorded", "model": "recorded", "model_id": self.spec["plans"], "local": True,
+                               "dir": "", "scenario": entry.get("scenario")})
+            return Decision(entry["text"], "plan", {"tree": entry["tree"]})
+        return self.ask("base", prompt, images=images, names=names, attempt=attempt, tick=tick, cancelled=cancelled)
+
+
+KINDS = {"pointer": PlannerPointer, "cascade": Cascade, "router": PlanRouter, "verifier": Verifier,
+         "plans": RecordedPlan}
 
