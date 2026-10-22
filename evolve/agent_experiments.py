@@ -278,6 +278,8 @@ def tunnel(cfg, server):
     """For an ssh server, forward its ip:ports here to the host's vLLM ports, for the worker's lifetime."""
     if "ssh" not in server:
         return None
+    if all(open_port(server["ip"], port) for port in client_ports(cfg, server)):
+        return None  # another worker's tunnel (or the balancer, ~/bench/balance.py) already forwards them
     forwards = [arg for c, r in zip(client_ports(cfg, server), cfg["agents"]["ports"])
                 for arg in ("-L", f"{server['ip']}:{c}:127.0.0.1:{r}")]
     process = subprocess.Popen(["ssh", "-N", "-o", "ExitOnForwardFailure=yes", "-o", "ServerAliveInterval=30",
@@ -286,6 +288,14 @@ def tunnel(cfg, server):
     if process.poll() is not None:
         raise SystemExit(f"the tunnel to {server['ssh']} did not open")
     return process
+
+
+def open_port(ip, port) -> bool:
+    try:
+        with socket.create_connection((ip, port), timeout=3):
+            return True
+    except OSError:
+        return False
 
 
 def api_key():

@@ -162,4 +162,4 @@ def test_each_group_rewrites_only_its_own_texts():
     from evolve import gepa_groups
     texts = [t for g in gepa_groups.GROUPS.values() for t in g["texts"]]
     assert sorted(texts) == sorted(gepa_open.seed_texts()) and len(texts) == len(set(texts))
-    assert [g for g, spec in gepa_groups.GROUPS.items() if spec["e2e"]] == ["planner"]
+    assert [g for g, spec in gepa_groups.GROUPS.items() if spec["e2e"]] == ["planner", "pointer"]

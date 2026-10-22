@@ -3,9 +3,11 @@
 planner   guidance + target note: Qwen3.8's decision turns asked through the whole stack (gepa_eval ask), scored
           against Sol's labels; checked end to end (Sol planning) every few iterations
 pointer   pick note + place note: the starting texts' planner turns frozen (their decision and target words), only
-          RoboBrain asked again (gepa_eval point); no end-to-end check of its own
+          RoboBrain asked again (gepa_eval point); checked end to end like the planner group, through the GH200's
+          second tunnel (loki-gh200-b) so both groups' checks can run at once
 planning  plan guidance: Qwen3.8's first plan for a task (plan_bench ask), judged blind in both orders against Sol's
-          plan by Claude Opus 5.5 (plan_bench judge); its score is the plan's mean rubric score over 10
+          plan by Claude Opus 5.5 (plan_bench judge); its score is the plan's mean rubric score over 10; no
+          end-to-end check (those plan with Sol, so the text would never run)
 
 A group's state names its texts; a candidate always carries all of them (the others stay the seed's)."""
 import json
@@ -13,8 +15,8 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 GROUPS = {
-    "planner": {"texts": ("guidance", "target_note"), "e2e": True},
-    "pointer": {"texts": ("pick_note", "place_note"), "e2e": False},
+    "planner": {"texts": ("guidance", "target_note"), "e2e": True, "server": "loki-gh200"},
+    "pointer": {"texts": ("pick_note", "place_note"), "e2e": True, "server": "loki-gh200-b"},
     "planning": {"texts": ("plan_guidance",), "e2e": False},
 }
 POINTER_HOST = "loki-gh200"  # RoboBrain on its 127.0.0.1:8001

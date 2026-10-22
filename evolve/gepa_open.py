@@ -295,12 +295,14 @@ def init_group(args):
     (run / "records").mkdir(parents=True, exist_ok=True)
     seed = {"id": "c000", "parent": None, "component": None, "texts": seed_texts(), "iteration": 0}
     state = {"group": args.group, "candidates": [seed], "iteration": 0, "credits": 0.0, "e2e_runs": 0,
+             "seed_shared": GROUPS[args.group]["e2e"],
              "episodes": {}, "banned": src["banned"], "executors": src.get("executors", [])}
     if args.group == "planner":
         state |= {"train": src["train"], "val": src["val"]}
         (run / "records" / "c000.jsonl").write_text((source / "records" / "c000.jsonl").read_text())
         (run / "plans_ready").touch()  # every end-to-end task's Sol plan is recorded (configs/plans)
     elif args.group == "pointer":
+        (run / "plans_ready").touch()
         clicks = {c: [f for f in fams if f in ("pick", "place")] for c, fams in src["train"].items()}
         names = [c for c, f in clicks.items() if f] + [n for n in src["val"] if n not in clicks]
         frozen = {n: r for n, r in evaluate(source, src, "c000", names).items()
@@ -571,9 +573,15 @@ def run_e2e(run: Path, state: dict, candidate: dict) -> dict:
         ssh(E2E_HOST, f"mkdir -p {SHARED}/gepa && cat > {SHARED}/gepa/{ids[suffix]}.json",
             json.dumps({"id": ids[suffix], "base": base, "options": options}))
     log(run, f"{candidate['id']}: end to end as {', '.join(ids.values())}")
+    server = GROUPS[state.get("group", "planner")].get("server", GPU_HOST)
     ssh(E2E_HOST, f"cd {E2E_REPO} && setsid nohup .venv-loop/bin/python -m evolve.agent_experiments worker --server "
-                  f"{GPU_HOST} --keep --concurrent {' '.join(ids.values())} > ~/agent-logs/gepa-{eid}.log 2>&1 "
+                  f"{server} --keep --concurrent {' '.join(ids.values())} > ~/agent-logs/gepa-{eid}.log 2>&1 "
                   f"< /dev/null &")
+    rows = wait_rows(ids)
+    return e2e_result(state, candidate, eid, rows, {s: f"{profile}-{ids[s]}" for s, (_, profile) in E2E_BASES.items()})
+
+
+def wait_rows(ids: dict[str, str]) -> dict:
     rows = {}
     while len(rows) < len(ids):
         time.sleep(120)
@@ -582,6 +590,12 @@ def run_e2e(run: Path, state: dict, candidate: dict) -> dict:
                                   f"2>/dev/null || true").strip()
             if found and suffix not in rows:
                 rows[suffix] = json.loads(found) if found.startswith("{") else {"failed": found[:300]}
+    return rows
+
+
+def e2e_result(state: dict, candidate: dict, eid: str, rows: dict, workdirs: dict[str, str]) -> dict:
+    """A candidate's end-to-end result from its experiments' rows (the mean of the two profiles' placed shares),
+    its train sessions kept as reflection material."""
     failed = [r["failed"] for r in rows.values() if "failed" in r]
     if failed:
         return {"id": eid, "failed": "; ".join(failed)}
@@ -589,15 +603,37 @@ def run_e2e(run: Path, state: dict, candidate: dict) -> dict:
               "test": round(sum(r.get("test_placed", 0.0) for r in rows.values()) / len(rows), 4),
               "train": round(sum(r["train_placed"] for r in rows.values()) / len(rows), 4),
               "rows": {s: {k: r.get(k) for k in ("train_placed", "val_placed", "test_placed")} for s, r in rows.items()}}
-    state["episodes"][candidate["id"]] = [e for s, (_, profile) in E2E_BASES.items()
-                                          for e in episodes(f"{profile}-{ids[s]}")]
+    state["episodes"][candidate["id"]] = [e for workdir in workdirs.values() for e in episodes(workdir)]
     return result
+
+
+def seed_from(args):
+    """The seed's end-to-end check from experiments already run (the base checks GD1 and GD3 with the seed's
+    texts), for a group that shares it."""
+    state = load(RUNS / args.names[0])
+    ids = dict(zip(E2E_BASES, args.ids))
+    rows = wait_rows(ids)
+    workdirs = {s: f"{E2E_BASES[s][1]}-{ids[s]}" for s in ids}
+    episodes_of: dict = {"episodes": {}}
+    result = e2e_result(episodes_of, state["candidates"][0], "+".join(args.ids), rows, workdirs)
+    for name in args.names:  # a file beside the state: the running loop adopts it (never two writers of state)
+        (RUNS / name / "seed_e2e.json").write_text(json.dumps({"e2e": result, "episodes": episodes_of["episodes"].get(
+            "c000", [])}))
+        log(RUNS / name, f"seed end to end (from {', '.join(args.ids)}): {result}")
 
 
 def end_to_end(run: Path, state: dict, candidate: dict | None = None):
     """CANDIDATE (else the best not yet run, if it beats the seed on val) end to end; dropped from the front when
     its val placed share is clearly below the seed's. The test share is logged, never used to choose."""
     seed = state["candidates"][0]
+    shared = run / "seed_e2e.json"
+    if candidate is not seed and "e2e" not in seed and state.get("seed_shared"):  # seed-from writes it
+        while not shared.exists():
+            log(run, "waiting for the shared seed check (seed_e2e.json)")
+            time.sleep(300)
+        adopted = json.loads(shared.read_text())
+        seed["e2e"], state["episodes"]["c000"] = adopted["e2e"], adopted["episodes"]
+        save(run, state)
     if candidate is not seed and "e2e" not in seed:  # the seed's check first, once every test plan is recorded
         while not (run / "plans_ready").exists():
             log(run, "waiting for plans_ready (every end-to-end task's Sol plan recorded) before the seed's check")
@@ -658,6 +694,9 @@ def main(argv=None):
     i.add_argument("--sol-val", type=int, default=100, help="Sol's recorded val turns beside the own rollouts'")
     i.add_argument("--no-e2e", action="store_true", help="leave the seed's end-to-end check to `seed-e2e`")
     sub.add_parser("seed-e2e").add_argument("name")
+    f = sub.add_parser("seed-from")
+    f.add_argument("ids", nargs=2, help="the Dex1 and Dex3 experiments whose rows are the seed's check (GD1 GD3)")
+    f.add_argument("--names", nargs="+", required=True, help="the group runs that share it")
     g = sub.add_parser("init-group")
     g.add_argument("name")
     g.add_argument("--group", required=True, choices=sorted(GROUPS))
@@ -669,7 +708,8 @@ def main(argv=None):
     r.add_argument("--e2e-every", type=int, default=10)
     sub.add_parser("status").add_argument("name")
     args = parser.parse_args(argv)
-    {"init": init, "run": run_loop, "status": status, "seed-e2e": seed_e2e, "init-group": init_group}[args.command](args)
+    {"init": init, "run": run_loop, "status": status, "seed-e2e": seed_e2e, "init-group": init_group,
+     "seed-from": seed_from}[args.command](args)
 
 
 if __name__ == "__main__":
