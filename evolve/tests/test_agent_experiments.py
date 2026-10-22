@@ -192,3 +192,15 @@ def test_an_experiments_open_model_options_join_its_agent_settings(evolve_dir):
     assert agent["local_place_reach"] is True and agent["local_repeat_guard"] is True
     from homebody.session.config import Agent
     Agent(**{k: v for k, v in agent.items() if k != "max_steps"})  # every key is a real setting
+
+
+def test_gepa_candidates_are_experiments_on_their_bases_servers(tmp_path, evolve_dir):
+    (tmp_path / "gepa").mkdir()
+    texts = {"local_notes": "", "local_guidance": 'Line one.\nSay "done" only when done.'}
+    (tmp_path / "gepa" / "G01.json").write_text(json.dumps({"id": "G01", "base": "SPR3", "options": texts}))
+    table = ax.with_candidates(ax.experiments(gpu_gb=96), tmp_path)
+    assert table["G01"].local == table["SPR3"].local and table["G01"].second == table["SPR3"].second
+    assert table["G01"].options["local_place_reach"] is True and table["G01"].options["local_notes"] == ""
+    ax.write_settings(cfg(), "G01", table["G01"], {"ip": "10.0.0.9"}, ("a", "b"))
+    agent = tomllib.loads((evolve_dir / "episode_settings_pp_G01.toml").read_text())["agent"]
+    assert agent["local_guidance"] == texts["local_guidance"]  # multi-line text survives as TOML

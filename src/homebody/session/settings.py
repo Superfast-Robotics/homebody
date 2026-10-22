@@ -32,7 +32,8 @@ class Motion(Navigate, SharedMotion):
 
 SIGNED = frozenset({"topdown.ahead", "topdown.left", "topdown.height", "placement.rest_arm_left",
                     "placement.rest_arm_right", "placement.release_twists", "grasp.approach_across"})
-MAY_BE_EMPTY = frozenset({"agent.local_notes"})  # no open-model guidance
+MAY_BE_EMPTY = frozenset({"agent.local_notes", "agent.local_guidance", "agent.local_target_note",
+                          "agent.local_pick_note", "agent.local_place_note"})  # no open-model text
 NONNEGATIVE = frozenset({"physics.noslip_iterations", "motion.route_clearance_margin",
                          "motion.left_hand_offset", "motion.right_hand_offset", "motion.close_slack",
                          "motion.close_min_gain", "grasp.spline_out", "placement.release_drops",

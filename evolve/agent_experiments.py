@@ -4,6 +4,10 @@ host, run the demo-pp baseline (17 sessions) with the experiment's agent, write 
     python3 -m evolve.agent_experiments plan                     the experiments, their models and GPU memory
     python3 -m evolve.agent_experiments worker [IDS] [--commit C] [--best-small M] [--best-base M] [--keep]
     python3 -m evolve.agent_experiments summary                  every row written so far
+    python3 -m evolve.agent_experiments serve ID [--server S]    serve one experiment's models and leave them running
+
+Experiments also come from [agents] shared/gepa/<id>.json ({"id", "base", "options"}): the experiment BASE with more
+agent settings, the GEPA prompt optimisation's candidates (evolve/gepa_open.py).
 
 A worker runs on each GPU host ([agents] servers, found by private IP, or named with --server), from a checkout of a commit that has the
 agent code (the vllm provider and vlm/composite.py). Workers share [agents] shared: each claims the next unclaimed
@@ -194,6 +198,17 @@ def experiments(best_small="robobrain2.5-8b", best_base="robobrain2.5-8b", gpu_g
         "Q38M3": Experiment("c-q38-mimo", Serve("qwen3.8-27b", 0.55, 16384),
                             Serve("mimo-embodied-7b", 0.33, 8192), options=OPEN_FIXES),
     }
+
+
+def with_candidates(table, shared: Path):
+    """TABLE and the GEPA candidates' experiments in SHARED/gepa: a base experiment's servers with more options."""
+    extra = {}
+    for path in sorted((shared / "gepa").glob("*.json")):
+        spec = json.loads(path.read_text())
+        base = table[spec["base"]]
+        extra[spec["id"]] = Experiment(base.agent, base.local, base.second, base.quota, base.best,
+                                       {**base.options, **spec["options"]})
+    return {**table, **extra}
 
 
 # --- the GPU host ---
@@ -445,7 +460,7 @@ def worker(args):
     cfg = config()
     server, shared = this_server(cfg, args.server), Path(cfg["agents"]["shared"])
     gpu_gb = server.get("gpu_gb", GPU_GB)
-    table = experiments(args.best_small, args.best_base, gpu_gb)
+    table = with_candidates(experiments(args.best_small, args.best_base, gpu_gb), shared)
     picks = (MODELS[args.best_small].agent, MODELS[args.best_base].agent)
     ids = args.ids or [eid for eid, exp in table.items() if not exp.blocked(gpu_gb)]
     for eid in ids:
@@ -474,6 +489,21 @@ def worker(args):
     if forward is not None:
         forward.terminate()
     log(f"{server['name']}: no experiment left")
+
+
+def serve_only(args):
+    """Serve experiment ID's models on the GPU host (through a tunnel while waiting for an ssh one) and leave them."""
+    cfg = config()
+    server = this_server(cfg, args.server)
+    table = with_candidates(experiments(args.best_small, args.best_base, server.get("gpu_gb", GPU_GB)),
+                            Path(cfg["agents"]["shared"]))
+    exp, ports = table[args.id], cfg["agents"]["ports"]
+    forward = tunnel(cfg, server)
+    try:
+        serve(cfg, server, {ports[0]: exp.local, **({ports[1]: exp.second} if exp.second else {})})
+    finally:
+        if forward is not None:
+            forward.terminate()
 
 
 def cell(item: Serve | None) -> str:
@@ -524,8 +554,11 @@ def main(argv=None):
     work.add_argument("--commit", help="the version sessions run (default: this checkout's HEAD)")
     work.add_argument("--keep", action="store_true", help="leave the model servers running at the end")
     work.add_argument("--server", help="the [agents] servers entry to drive (default: this machine's)")
+    only = sub.add_parser("serve")
+    only.add_argument("id")
+    only.add_argument("--server", help="the [agents] servers entry to drive (default: this machine's)")
     args = parser.parse_args(argv)
-    {"plan": plan, "summary": summary, "worker": worker}[args.command](args)
+    {"plan": plan, "summary": summary, "worker": worker, "serve": serve_only}[args.command](args)
 
 
 if __name__ == "__main__":

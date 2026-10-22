@@ -229,6 +229,13 @@ class Agent:
     local_image_labels: bool = True
     # extra guidance for the open models only (configs/prompts/open_models/<name>.md, comma separated; "" for none)
     local_notes: str = ""
+    # inline open-model texts, "" for none (the GEPA prompt optimisation's candidates, evolve/gepa_open.py):
+    # guidance after local_notes, the pointer composite's target note (its TARGET_NOTE when ""), and a line
+    # added to the pointer's question for a pick and for a placement
+    local_guidance: str = ""
+    local_target_note: str = ""
+    local_pick_note: str = ""
+    local_place_note: str = ""
     # open-model help (session/open_assist.py), off for every model by default: the pointer sees the head camera with
     # beyond-reach pixels greyed out; a place click beyond reach is moved within it; a repeat of the decision that
     # just failed is refused; the reach they assume

@@ -339,7 +339,8 @@ class Composite:
 
 class PlannerPointer(Composite):
     def decide(self, prompt, *, images, names, attempt, tick, cancelled):
-        decision = self.ask("planner", f"{prompt}\n\n{TARGET_NOTE}", images=images, names=names, attempt=attempt,
+        note = self.settings.local_target_note.strip() or TARGET_NOTE
+        decision = self.ask("planner", f"{prompt}\n\n{note}", images=images, names=names, attempt=attempt,
                             tick=tick, cancelled=cancelled)
         if POINT not in decision.arguments or not images:
             return decision
@@ -348,7 +349,8 @@ class PlannerPointer(Composite):
         endpoint = self.endpoints["pointer"]
         try:
             masked = images[0].with_name("rgb_masked.png")  # agent.local_reach_mask (session/open_assist.py)
-            answer, folder = self.query("pointer", POINTER_PROMPTS[endpoint.format].format(target=target),
+            answer, folder = self.query("pointer", pointer_question(endpoint.format, target, decision.skill,
+                                                                    self.settings),
                                         (masked if masked.is_file() else images[0],), attempt=attempt, tick=tick,
                                         cancelled=cancelled)
         except ProviderError:
@@ -363,6 +365,12 @@ class PlannerPointer(Composite):
         self.record("pointer", folder, target=target, answer=answer[:300], planner_point=own, pointer_point=point,
                     used="pointer")
         return replace(decision, arguments={**decision.arguments, POINT: point})
+
+
+def pointer_question(form: str, target: str, skill: str, settings: Agent) -> str:
+    """The pointer's own question for TARGET, with agent.local_pick_note or local_place_note after it."""
+    note = {"pick": settings.local_pick_note, "place": settings.local_place_note}.get(skill, "").strip()
+    return POINTER_PROMPTS[form].format(target=target) + (f" {note}" if note else "")
 
 
 class Cascade(Composite):

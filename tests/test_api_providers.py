@@ -305,3 +305,8 @@ def test_open_model_guidance_is_appended_only_when_named():
     assert text.startswith("p\n\nGuidance:\nPlacing:") and "Progress:" in text
     with pytest.raises(ProviderError, match="nosuch"):
         LocalVlm(Agent(model="qwen3vl-8b-vllm", local_notes="nosuch")).request("p", (), ("done",))
+    inline = LocalVlm(Agent(model="qwen3vl-8b-vllm", local_notes="claims", local_guidance="Be careful.")).request(
+        "p", (), ("done",))
+    assert inline["messages"][0]["content"][0]["text"].endswith("\nBe careful.")
+    alone = LocalVlm(Agent(model="qwen3vl-8b-vllm", local_guidance="Be careful.")).request("p", (), ("done",))
+    assert alone["messages"][0]["content"][0]["text"] == "p\n\nGuidance:\nBe careful."

@@ -128,12 +128,15 @@ class LocalVlm(OpenAiApi):
     NOTES = Path(__file__).resolve().parents[3] / "configs" / "prompts" / "open_models"
 
     def guidance(self) -> str:
-        """agent.local_notes: guidance sections given to the open models only, after the session's prompt."""
+        """agent.local_notes and agent.local_guidance: guidance given to the open models only, after the session's
+        prompt."""
         names = [name.strip() for name in self.settings.local_notes.split(",") if name.strip()]
         missing = [name for name in names if not (self.NOTES / f"{name}.md").is_file()]
         if missing:
             raise ProviderError(f"agent.local_notes names no file in {self.NOTES}: {', '.join(missing)}")
-        return "\n".join((self.NOTES / f"{name}.md").read_text().strip() for name in names)
+        sections = [(self.NOTES / f"{name}.md").read_text().strip() for name in names]
+        return "\n".join([*sections, self.settings.local_guidance.strip()] if self.settings.local_guidance.strip()
+                         else sections)
 
     def request(self, prompt: str, images: tuple[Path, ...], names: tuple[str, ...]) -> dict:
         if notes := self.guidance():

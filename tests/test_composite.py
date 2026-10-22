@@ -301,3 +301,16 @@ def test_a_nested_composite_of_local_models_is_recorded_as_free(tmp_path):
     outer.generate("Current task:\nan unrecorded task\n", **turn(tmp_path))
     routing = json.loads((tmp_path / "step-000" / "routing.json").read_text())
     assert inner.LOCAL and routing["calls"][0]["role"] == "base" and routing["calls"][0]["local"] is True
+
+
+def test_open_model_texts_replace_the_target_note_and_extend_the_pointers_question(tmp_path, image):
+    planner = Fake([Decision("pick. TARGET: the can", "pick", {"point_normalized_1000": [1, 2]}),
+                    Decision("place. TARGET: the shelf", "place", {"point_normalized_1000": [1, 2], "hand": "left"})])
+    pointer = FakeEndpoint("molmo", ['<point x="50" y="50">a</point>', '<point x="50" y="50">a</point>'])
+    settings = Agent(model="e7-qwen30b-molmo", local_target_note="Name the target.", local_pick_note="Pick note.",
+                     local_place_note="Place note.")
+    agent = Composite(settings, members={"planner": planner}, endpoints={"pointer": pointer})
+    agent.generate("prompt", **turn(tmp_path))
+    agent.generate("prompt", **turn(tmp_path, 1))
+    assert planner.prompts[0] == "prompt\n\nName the target."
+    assert pointer.prompts == ["Point to the can. Pick note.", "Point to the shelf. Place note."]
