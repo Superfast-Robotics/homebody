@@ -144,9 +144,11 @@ MODELS = {
 # "format": its point format, "server"}). Servers: local is agent.local_url, second is agent.second_url.
 MOLMO_ER = {"served": "molmo2-er", "format": "molmo", "server": "second"}
 # Sol's recorded first plans: the demo-pp and demo-wh baselines b002 (train and val tasks), and its live ones of the
-# open setup's rollouts on the warehouse test tasks and the G1 Dex3 harness suite (train, val, test)
+# open setup's rollouts on the warehouse test tasks, the G1 Dex3 harness suite and the move-variety tasks (train,
+# val, test; 22 move-variety wordings are shared by two scenes, whose generic plans then come from one of them)
 SOL_PLANS = ("configs/plans/sol_demo_pp_b002.json", "configs/plans/sol_demo_wh_b002.json",
-             "configs/plans/sol_demo_wh_test.json", "configs/plans/sol_g1_dex3.json")
+             "configs/plans/sol_demo_wh_test.json", "configs/plans/sol_g1_dex3.json",
+             "configs/plans/sol_move_variety.json")
 COMPOSITES = {
     "e7-qwen30b-molmo": {"kind": "pointer", "planner": {"model": "qwen3vl-30b-vllm"}, "pointer": MOLMO_ER},
     "e8-qwen30b-er1": {"kind": "pointer", "planner": {"model": "qwen3vl-30b-vllm"},

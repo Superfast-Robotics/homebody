@@ -1,0 +1,7063 @@
+{
+ "source": "GPT-6.1 Sol's live first plan per move-variety task, train, val and test (MSPR, 2026-10-22)",
+ "plans": [
+  {
+   "scenario": "mvtest_02_move_variety",
+   "task": "Carry the grey bottle to the teal tray on the other table.",
+   "text": "Both hands are free; I will approach the pick table, grasp the bottle, carry it to the other table, and place it in the teal tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to locate the grey bottle",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "goal",
+      "id": "g2",
+      "goal": "Pick the grey bottle with the right hand",
+      "check": {
+       "name": "holding",
+       "hand": "right"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g3",
+      "goal": "Carry the grey bottle to a placement stance beside the teal tray",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Place the grey bottle inside the teal tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtest_06_move_variety",
+   "task": "Carry the brown bottle to the green tray on the other table.",
+   "text": "The bottle and tray are out of view, so I will approach the pick table, grasp the bottle, carry it across, and place it in the tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to see the brown bottle",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the brown bottle with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the brown bottle with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the brown bottle to the green tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the brown bottle inside the green tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtest_07_move_variety",
+   "task": "Carry the teal box to the black tray on the other table.",
+   "text": "The robot is in front of the pick table with both hands free; I will approach, pick the teal box, carry it to the tray, and place it inside.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table and locate the teal box",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the teal box with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the teal box with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the teal box to a safe placement stance beside the black tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the teal box inside the black tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtest_09_move_variety",
+   "task": "Carry the red box to the teal tray on the other table.",
+   "text": "The pick table is ahead, but its top is not yet visible; I will approach, grasp the red box, carry it to the other table, and place it in the teal tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to see and reach the red box",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 4
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the red box with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 5
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the red box with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 5
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the red box to a reachable stance beside the teal tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the red box inside the teal tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 6
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtest_10_move_variety",
+   "task": "Carry the black bottle to the blue tray on the other table.",
+   "text": "The pick table is ahead; I will approach the bottle, grasp it, carry it to the other table, and place it in the blue tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the black bottle on the pick table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the black bottle with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the black bottle with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the black bottle to the blue tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the black bottle inside the blue tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 6
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtest_11_move_variety",
+   "task": "Carry the white bottle to the grey tray on the other table.",
+   "text": "The pick table is ahead; I will approach the bottle, grasp it, carry it to the other table, and place it in the grey tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the white bottle on the pick table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 6
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the white bottle with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the white bottle with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the white bottle to a reachable stance beside the grey tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 10
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the white bottle inside the grey tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtest_12_move_variety",
+   "task": "Carry the brown box to the pink tray on the other table.",
+   "text": "The pick table is ahead; I will approach the box, grasp it, carry it to the other table, and place it in the pink tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the brown box on the pick table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the brown box with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 5
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the brown box with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 5
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the brown box to a safe placement stance at the pink tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 10
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the brown box inside the pink tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 6
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtest_13_move_variety",
+   "task": "Carry the brown bottle to the black tray on the other table.",
+   "text": "I will approach the pick table, grasp the brown bottle, carry it to the other table, and place it inside the black tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to locate the brown bottle",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the brown bottle with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the brown bottle with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the brown bottle to a placement stance beside the black tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the brown bottle inside the black tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtest_14_move_variety",
+   "task": "Carry the grey box to the black tray on the other table.",
+   "text": "The robot is facing the pick table with both hands free; I will pick up the grey box, carry it to the other table, and place it in the black tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g1",
+        "goal": "Pick up the grey box with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 8
+       },
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick up the grey box with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 8
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g3",
+      "goal": "Carry the grey box to a placement stance beside the black tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 10
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Place the grey box inside the black tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtest_15_move_variety",
+   "task": "Carry the orange box to the purple tray on the other table.",
+   "text": "The pick table is ahead, but the box is not yet visible; I will approach, pick it up, carry it across, and place it in the purple tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to see and reach the orange box",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the orange box with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the orange box with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the orange box to the purple tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the orange box inside the purple tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtest_16_move_variety",
+   "task": "Carry the yellow box to the green tray on the other table.",
+   "text": "The pick table is ahead; I will approach it, pick the yellow box, carry it to the other table, and place it in the green tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to see the yellow box",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the yellow box with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the yellow box with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the yellow box to a placement stance beside the green tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the yellow box inside the green tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtest_18_move_variety",
+   "task": "Carry the green bottle to the brown tray on the other table.",
+   "text": "The pick table is ahead; I will approach the bottle, pick it up, carry it to the other table, and place it in the brown tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the green bottle on the pick table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "goal",
+      "id": "g2",
+      "goal": "Pick up the green bottle with the right hand",
+      "check": {
+       "name": "holding",
+       "hand": "right"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g3",
+      "goal": "Carry the green bottle to the brown tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Place the green bottle inside the brown tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtest_19_move_variety",
+   "task": "Carry the black box to the green tray on the other table.",
+   "text": "Both hands are free; I will approach the pick table, grasp the black box, carry it to the other table, and place it in the green tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to see and reach the black box",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the black box with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the black box with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the black box to a reachable stance beside the green tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the black box inside the green tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 6
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtest_20_move_variety",
+   "task": "Carry the red bottle to the white tray on the other table.",
+   "text": "The pick table is ahead; I will approach the bottle, grasp it, carry it to the other table, and place it in the white tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to see and reach the red bottle",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the red bottle with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the red bottle with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the red bottle to a safe placement stance at the white tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the red bottle inside the white tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtest_21_move_variety",
+   "task": "Carry the purple box to the brown tray on the other table.",
+   "text": "The robot faces the pick table; I will locate and pick up the purple box, carry it to the other table, and place it in the brown tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g1",
+        "goal": "Locate the purple box and pick it up with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 8
+       },
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Locate the purple box and pick it up with the left hand from a suitable stance",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 8
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g3",
+      "goal": "Carry the purple box to a reachable placement stance facing the brown tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Place the purple box inside the brown tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtest_22_move_variety",
+   "task": "Carry the grey bottle to the purple tray on the other table.",
+   "text": "The robot is facing the pick table; I will approach the bottle, grasp it, carry it around the obstacle, and place it in the purple tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table and locate the grey bottle",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the grey bottle with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 5
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the grey bottle with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 5
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the grey bottle to the purple tray on the other table, avoiding the floor obstacle",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the grey bottle inside the purple tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 6
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtest_23_move_variety",
+   "task": "Carry the purple box to the white tray on the other table.",
+   "text": "The robot is facing the pick table; I will approach, grasp the purple box, carry it to the other table, and place it in the white tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to see and reach the purple box",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the purple box with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the purple box with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the purple box to a reachable stance facing the white tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the purple box inside the white tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtest_25_move_variety",
+   "task": "Carry the yellow bottle to the red tray on the other table.",
+   "text": "The bottle is not yet visible above the nearby table, so I will approach, pick it, and carry it to the red tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to see and reach the yellow bottle",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the yellow bottle with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the yellow bottle with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the yellow bottle to a reachable stance at the red tray, avoiding the floor obstacle",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 10
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the yellow bottle inside the red tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtest_27_move_variety",
+   "task": "Carry the green bottle to the white tray on the other table.",
+   "text": "The pick table is ahead; I will locate and grasp the bottle, carry it to the other table, and place it in the white tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to see the green bottle",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "goal",
+      "id": "g2",
+      "goal": "Pick the green bottle with the right hand",
+      "check": {
+       "name": "holding",
+       "hand": "right"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g3",
+      "goal": "Carry the green bottle to a safe placement stance at the white tray",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 10
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Put the green bottle inside the white tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtest_28_move_variety",
+   "task": "Carry the yellow box to the brown tray on the other table.",
+   "text": "Both hands are free; I will approach and pick up the yellow box, carry it to the other table, and place it in the brown tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the yellow box on the pick table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 6
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick up the yellow box with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick up the yellow box with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the yellow box to a safe placement stance beside the brown tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 10
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the yellow box inside the brown tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtest_29_move_variety",
+   "task": "Carry the green bottle to the orange tray on the other table.",
+   "text": "The pick table is ahead, but the bottle is not yet visible, so I will approach it, pick the bottle, and carry it to the tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to see the green bottle",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the green bottle with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the green bottle with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the green bottle to a placement stance at the orange tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 10
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the green bottle inside the orange tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtest_30_move_variety",
+   "task": "Carry the purple bottle to the orange tray on the other table.",
+   "text": "The bottle is not yet visible, so I will approach the pick table, grasp it, carry it to the other table, and place it inside the orange tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to locate the purple bottle",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the purple bottle with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the purple bottle with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the purple bottle to the orange tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the purple bottle inside the orange tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 6
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtest_31_move_variety",
+   "task": "Carry the pink bottle to the teal tray on the other table.",
+   "text": "Both hands are free; I will pick up the pink bottle, carry it to the other table, and place it inside the teal tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Pick up the pink bottle with the right hand, approaching the pick table as needed.",
+      "check": {
+       "name": "holding",
+       "hand": "right"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g2",
+      "goal": "Carry the pink bottle to a reachable stance facing the inside of the teal tray on the other table.",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g3",
+      "goal": "Place the pink bottle inside the teal tray.",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtest_32_move_variety",
+   "task": "Carry the blue box to the white tray on the other table.",
+   "text": "The robot faces the pick table, and the mapped destination is the white tray on the other table.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to see the blue box",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the blue box with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the blue box with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the blue box to the white tray on the other table, avoiding floor obstacles",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the blue box inside the white tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtest_33_move_variety",
+   "task": "Carry the white box to the pink tray on the other table.",
+   "text": "The pick table is ahead, so I will approach the box, grasp it, carry it around the obstacle, and place it in the pink tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to locate the white box",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the white box with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the white box with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the white box around the floor obstacle to the pink tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 10
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the white box inside the pink tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtest_34_move_variety",
+   "task": "Carry the brown bottle to the grey tray on the other table.",
+   "text": "Both hands are free; I will pick up the brown bottle, carry it to the other table, and place it in the grey tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g1",
+        "goal": "Find and pick the brown bottle with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 8
+       },
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Find and pick the brown bottle with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 8
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g3",
+      "goal": "Carry the brown bottle to a placement stance at the grey tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Place the brown bottle inside the grey tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtest_36_move_variety",
+   "task": "Carry the purple box to the pink tray on the other table.",
+   "text": "The robot faces the pick table; I will approach the box, grasp it, carry it around the obstacles, and place it in the pink tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table and locate the purple box",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the purple box with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 5
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the purple box with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 5
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the purple box around the floor obstacles to the pink tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 10
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the purple box inside the pink tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtest_38_move_variety",
+   "task": "Carry the yellow box to the red tray on the other table.",
+   "text": "The yellow box is on the pick table ahead; I will pick it up, carry it to the other table, and place it in the red tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the yellow box on the pick table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "goal",
+      "id": "g2",
+      "goal": "Pick the yellow box with the right hand",
+      "check": {
+       "name": "holding",
+       "hand": "right"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g3",
+      "goal": "Carry the yellow box to a placement stance facing the red tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Place the yellow box inside the red tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtest_39_move_variety",
+   "task": "Carry the pink box to the purple tray on the other table.",
+   "text": "I will pick up the pink box, carry it to the other table, and place it inside the purple tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Pick up the pink box with the right hand, approaching the pick table as needed.",
+      "check": {
+       "name": "holding",
+       "hand": "right"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g2",
+      "goal": "Carry the pink box to a reachable placement stance facing the purple tray on the other table.",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 10
+     },
+     {
+      "type": "goal",
+      "id": "g3",
+      "goal": "Place the pink box inside the purple tray.",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_00_move_variety",
+   "task": "Carry the blue bottle to the white tray on the other table.",
+   "text": "Both hands are free, and I will approach the pick table, grasp the bottle, carry it to the other table, and place it in the tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to see the blue bottle",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the blue bottle with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the blue bottle with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the blue bottle to a safe placing stance beside the white tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the blue bottle inside the white tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_02_move_variety",
+   "task": "Carry the blue box to the green tray on the other table.",
+   "text": "The robot faces the pick table; I will approach the box, pick it up, carry it to the other table, and place it in the green tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to locate the blue box",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the blue box with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the blue box with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the blue box to a placement stance at the green tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the blue box inside the green tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_03_move_variety",
+   "task": "Carry the pink box to the grey tray on the other table.",
+   "text": "The pick table is ahead; I will approach the pink box, pick it up, carry it to the other table, and place it in the grey tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pink box on the pick table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the pink box with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the pink box with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the pink box to a placement stance beside the grey tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 12
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the pink box inside the grey tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_04_move_variety",
+   "task": "Carry the purple bottle to the red tray on the other table.",
+   "text": "The purple bottle is on the front table, and I will pick it up, carry it to the other table, and place it in the red tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Pick the purple bottle with the right hand",
+      "check": {
+       "name": "holding",
+       "hand": "right"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g2",
+      "goal": "Carry the purple bottle to a reachable stance at the red tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 12
+     },
+     {
+      "type": "goal",
+      "id": "g3",
+      "goal": "Place the purple bottle inside the red tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_05_move_variety",
+   "task": "Carry the orange bottle to the green tray on the other table.",
+   "text": "The pick table is ahead and an obstacle is to the left; I will approach, grasp the bottle, carry it to the tray, and place it inside.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to see the orange bottle",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the orange bottle with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the orange bottle with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the orange bottle to the green tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the orange bottle inside the green tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_06_move_variety",
+   "task": "Carry the black box to the yellow tray on the other table.",
+   "text": "The robot is near the pick table; I will approach the box, grasp it, carry it to the other table, and place it in the yellow tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to view and reach the black box",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the black box with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the black box with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the black box to a reachable stance beside the yellow tray without sweeping it into obstacles",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 12
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the black box inside the yellow tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_09_move_variety",
+   "task": "Carry the yellow box to the white tray on the other table.",
+   "text": "Both hands are free; I will approach the pick table, grasp the yellow box, carry it to the other table, and place it in the white tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to locate the yellow box",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "goal",
+      "id": "g2",
+      "goal": "Pick the yellow box with the right hand",
+      "check": {
+       "name": "holding",
+       "hand": "right"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g3",
+      "goal": "Carry the yellow box to a reachable stance facing the white tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 10
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Place the yellow box inside the white tray with the right hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_11_move_variety",
+   "task": "Carry the white bottle to the purple tray on the other table.",
+   "text": "Both hands are free; I will find and pick the white bottle, carry it to the other table, and place it in the purple tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table and locate the white bottle",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "goal",
+      "id": "g2",
+      "goal": "Pick the white bottle with the right hand",
+      "check": {
+       "name": "holding",
+       "hand": "right"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g3",
+      "goal": "Carry the white bottle to a placement stance beside the purple tray",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Place the white bottle inside the purple tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_12_move_variety",
+   "task": "Carry the pink box to the white tray on the other table.",
+   "text": "The robot is in front of the pick table with both hands free; I will approach the box, pick it up, carry it to the tray, and place it inside.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pink box on the pick table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the pink box with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 5
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the pink box with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 5
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the pink box to the white tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the pink box inside the white tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_13_move_variety",
+   "task": "Carry the purple bottle to the white tray on the other table.",
+   "text": "Both hands are free; I will approach the pick table, grasp the purple bottle, carry it to the other table, and place it in the white tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to see and reach the purple bottle",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the purple bottle with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 5
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the purple bottle with the left hand from a suitable stance",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 5
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the purple bottle to a safe placement stance beside the white tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the purple bottle inside the white tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 6
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_14_move_variety",
+   "task": "Carry the grey box to the pink tray on the other table.",
+   "text": "The pick table is ahead, but its top is not yet visible, so I will approach, pick the box, and carry it to the tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to locate the grey box",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the grey box with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the grey box with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the grey box to a placement stance beside the pink tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the grey box inside the pink tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_16_move_variety",
+   "task": "Carry the grey box to the purple tray on the other table.",
+   "text": "I will approach the pick table, grasp the grey box, carry it to the other table, and place it inside the purple tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to locate the grey box",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the grey box with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the grey box with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the grey box to a placement stance beside the purple tray",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the grey box inside the purple tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_17_move_variety",
+   "task": "Carry the orange bottle to the brown tray on the other table.",
+   "text": "Both hands are free, and I will approach the pick table before picking up the bottle and carrying it to the tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to see and reach the orange bottle",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the orange bottle with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 5
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the orange bottle with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 5
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the orange bottle to a reachable stance at the brown tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the orange bottle inside the brown tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 6
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_19_move_variety",
+   "task": "Carry the red box to the black tray on the other table.",
+   "text": "Both hands are free; I will approach the pick table, grasp the red box, carry it to the other table, and place it in the black tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to see the red box",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the red box with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the red box with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the red box to a placement stance at the black tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the red box inside the black tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_20_move_variety",
+   "task": "Carry the pink box to the teal tray on the other table.",
+   "text": "The pick table is ahead, so I will approach, grasp the pink box, carry it to the other table, and place it in the teal tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to locate the pink box",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the pink box with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the pink box with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the pink box to a placement stance beside the teal tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the pink box inside the teal tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_21_move_variety",
+   "task": "Carry the blue box to the green tray on the other table.",
+   "text": "The pick table is ahead; I will acquire the blue box, carry it to the other table, and place it in the green tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g1",
+        "goal": "Find and pick the blue box with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 8
+       },
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Find and pick the blue box with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 8
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g3",
+      "goal": "Carry the blue box to a placement stance at the green tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 10
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Put the blue box inside the green tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_22_move_variety",
+   "task": "Carry the purple bottle to the red tray on the other table.",
+   "text": "Both hands are free; I will pick up the purple bottle, carry it to the other table, and place it in the red tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g1",
+        "goal": "Pick the purple bottle with the right hand, approaching the pick table as needed",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 8
+       },
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the purple bottle with the left hand from an alternative stance",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 8
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g3",
+      "goal": "Carry the purple bottle to a placement stance facing the red tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Place the purple bottle inside the red tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_25_move_variety",
+   "task": "Carry the pink bottle to the purple tray on the other table.",
+   "text": "The pick table is ahead, so I will approach the bottle, grasp it, carry it to the other table, and place it in the purple tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to locate the pink bottle",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the pink bottle with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the pink bottle with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the pink bottle to a reachable stance beside the purple tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the pink bottle inside the purple tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_26_move_variety",
+   "task": "Carry the pink box to the yellow tray on the other table.",
+   "text": "The pick table is ahead; I will approach it, pick up the pink box, carry it to the other table, and place it inside the yellow tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to locate the pink box",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the pink box with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the pink box with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the pink box to a safe working stance at the yellow tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 10
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the pink box inside the yellow tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_27_move_variety",
+   "task": "Carry the brown bottle to the yellow tray on the other table.",
+   "text": "The pick table is ahead, so I will approach the bottle, grasp it, carry it to the other table, and place it in the yellow tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to see and reach the brown bottle",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the brown bottle with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the brown bottle with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the brown bottle to a reachable position beside the yellow tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 10
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the brown bottle inside the yellow tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_29_move_variety",
+   "task": "Carry the teal box to the white tray on the other table.",
+   "text": "The robot faces the pick table; I will approach the box, grasp it, carry it to the other table, and place it in the white tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to locate the teal box",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 4
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the teal box with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the teal box with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the teal box around the floor obstacles to the white tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the teal box inside the white tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 6
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_30_move_variety",
+   "task": "Carry the red bottle to the teal tray on the other table.",
+   "text": "I will approach the pick table, grasp the red bottle, carry it to the other table, and place it inside the teal tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the red bottle on the pick table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the red bottle with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 5
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the red bottle with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 5
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the red bottle to a reachable stance facing the teal tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the red bottle inside the teal tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 6
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_33_move_variety",
+   "task": "Carry the brown bottle to the purple tray on the other table.",
+   "text": "The robot is in front of the pick table; I will approach the bottle, pick it up, carry it to the other table, and place it in the purple tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the brown bottle on the pick table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the brown bottle with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the brown bottle with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the bottle to the purple tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the brown bottle inside the purple tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_34_move_variety",
+   "task": "Carry the pink bottle to the purple tray on the other table.",
+   "text": "The robot is facing the pick table with both hands free; I will approach the bottle, pick it up, carry it to the other table, and place it in the purple tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to locate the pink bottle",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the pink bottle with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the pink bottle with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the bottle to the purple tray on the other table, avoiding the floor obstacle",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the pink bottle inside the purple tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_36_move_variety",
+   "task": "Carry the white bottle to the red tray on the other table.",
+   "text": "The bottle and tray are outside the current view, so I will approach the pick table, grasp the bottle, and carry it to the tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table and locate the white bottle",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the white bottle with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the white bottle with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the white bottle to a reachable stance beside the red tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the white bottle inside the red tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 6
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_37_move_variety",
+   "task": "Carry the black bottle to the brown tray on the other table.",
+   "text": "The pick table is ahead; I will approach, grasp the bottle, carry it to the other table, and place it in the tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to see the black bottle",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "goal",
+      "id": "g2",
+      "goal": "Pick the black bottle with the right hand",
+      "check": {
+       "name": "holding",
+       "hand": "right"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g3",
+      "goal": "Carry the black bottle to a placement stance beside the brown tray",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Place the black bottle inside the brown tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_38_move_variety",
+   "task": "Carry the grey box to the green tray on the other table.",
+   "text": "The pick table is ahead; I will approach the box, grasp it, carry it to the other table, and place it in the green tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to locate the grey box",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the grey box with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the grey box with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the grey box to a reachable stance beside the green tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the grey box inside the green tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_39_move_variety",
+   "task": "Carry the black bottle to the red tray on the other table.",
+   "text": "The pick table is ahead; I will approach the bottle, grasp it, carry it to the other table, and place it in the red tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to see and reach the black bottle",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the black bottle with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the black bottle with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the black bottle to a reachable stance beside the red tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the black bottle inside the red tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_40_move_variety",
+   "task": "Carry the purple bottle to the white tray on the other table.",
+   "text": "Both hands are free; I will approach the pick table, grasp the bottle, carry it to the other table, and place it in the tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to see and reach the purple bottle",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the purple bottle with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the purple bottle with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the purple bottle to a reachable stance facing the white tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 10
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the purple bottle inside the white tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_42_move_variety",
+   "task": "Carry the red bottle to the white tray on the other table.",
+   "text": "I will approach the pick table, grasp the red bottle, carry it to the other table, and place it in the white tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the red bottle on the pick table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the red bottle with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 5
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the red bottle with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 5
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the red bottle to the white tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the red bottle inside the white tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_43_move_variety",
+   "task": "Carry the teal bottle to the blue tray on the other table.",
+   "text": "The pick table is ahead; I will approach the bottle, grasp it, carry it to the other table, and place it in the blue tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to see and reach the teal bottle",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the teal bottle with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the teal bottle with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the teal bottle to a reachable stance facing the blue tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 10
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the teal bottle inside the blue tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_46_move_variety",
+   "task": "Carry the purple box to the blue tray on the other table.",
+   "text": "The pick table is ahead and both hands are free; I will approach, pick up the purple box, carry it to the other table, and place it in the blue tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table and locate the purple box",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick up the purple box with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick up the purple box with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the purple box to a placement stance beside the blue tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the purple box inside the blue tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_47_move_variety",
+   "task": "Carry the blue bottle to the brown tray on the other table.",
+   "text": "The pick table is ahead; I will approach the bottle, grasp it, carry it to the other table, and place it in the brown tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the blue bottle on the pick table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the blue bottle with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 5
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the blue bottle with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 5
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the blue bottle to a placement stance at the brown tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the blue bottle inside the brown tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_48_move_variety",
+   "task": "Carry the green bottle to the brown tray on the other table.",
+   "text": "The pick table is ahead; I will approach, grasp the green bottle, carry it to the other table, and place it in the brown tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to locate the green bottle",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the green bottle with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the green bottle with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the green bottle to a reachable stance at the brown tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the green bottle inside the brown tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_49_move_variety",
+   "task": "Carry the orange box to the grey tray on the other table.",
+   "text": "I will approach the pick table, grasp the orange box, carry it to the other table, and place it in the grey tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to see and reach the orange box",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the orange box with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the orange box with the left hand from another suitable stance",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the orange box to a safe placement stance at the grey tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 10
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the orange box inside the grey tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_50_move_variety",
+   "task": "Carry the white bottle to the green tray on the other table.",
+   "text": "The bottle is not yet visible, so I will approach its table, pick it up, carry it to the green tray, and place it inside.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to see the white bottle",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "goal",
+      "id": "g2",
+      "goal": "Pick the white bottle with the right hand",
+      "check": {
+       "name": "holding",
+       "hand": "right"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g3",
+      "goal": "Carry the white bottle to a placement stance beside the green tray",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 10
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Place the white bottle inside the green tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_51_move_variety",
+   "task": "Carry the blue bottle to the yellow tray on the other table.",
+   "text": "Both hands are free, and I will approach the bottle, pick it up, carry it to the other table, and place it in the yellow tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to see and reach the blue bottle",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the blue bottle with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the blue bottle with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the blue bottle to a reachable position beside the yellow tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the blue bottle inside the yellow tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 6
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_53_move_variety",
+   "task": "Carry the grey bottle to the brown tray on the other table.",
+   "text": "The table is ahead; I will approach the bottle, pick it up, carry it to the other table, and place it in the tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the grey bottle on the pick table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the grey bottle with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 5
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the grey bottle with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 5
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the grey bottle to a placement stance by the brown tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the grey bottle inside the brown tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 6
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_54_move_variety",
+   "task": "Carry the red box to the teal tray on the other table.",
+   "text": "I will pick up the red box, carry it to the other table, and place it inside the teal tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g1",
+        "goal": "Pick up the red box with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 8
+       },
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick up the red box with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 8
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g3",
+      "goal": "Carry the red box to a placement stance at the teal tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Place the red box inside the teal tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_55_move_variety",
+   "task": "Carry the black box to the white tray on the other table.",
+   "text": "The pick table is ahead; I will approach the box, grasp it, carry it to the other table, and place it in the tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the black box on the pick table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the black box with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the black box with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the black box to the white tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the black box inside the white tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_56_move_variety",
+   "task": "Carry the orange box to the blue tray on the other table.",
+   "text": "The pick table is ahead; I will approach the box, grasp it, carry it to the other table, and place it in the blue tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the orange box on the pick table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "goal",
+      "id": "g2",
+      "goal": "Pick the orange box with the right hand, retrying from another stance if needed",
+      "check": {
+       "name": "holding",
+       "hand": "right"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g3",
+      "goal": "Carry the orange box to a placement stance at the blue tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Place the orange box inside the blue tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_57_move_variety",
+   "task": "Carry the brown box to the white tray on the other table.",
+   "text": "The pick table is ahead; I will approach the box, pick it up, carry it to the other table, and place it in the tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to see and reach the brown box",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the brown box with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the brown box with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the brown box to a reachable stance by the white tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the brown box inside the white tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_58_move_variety",
+   "task": "Carry the white box to the yellow tray on the other table.",
+   "text": "I will approach the pick table, grasp the white box, carry it to the other table, and place it in the yellow tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to see and reach the white box",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the white box with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the white box with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the white box to a reachable stance at the yellow tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the white box inside the yellow tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_59_move_variety",
+   "task": "Carry the brown bottle to the red tray on the other table.",
+   "text": "The bottle and tray are not yet visible, so I will approach the pick table, grasp the bottle, carry it across, and place it in the tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to locate the brown bottle",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the brown bottle with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 8
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the brown bottle with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 8
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the brown bottle to a placement stance beside the red tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 10
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the brown bottle inside the red tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_61_move_variety",
+   "task": "Carry the yellow bottle to the orange tray on the other table.",
+   "text": "The robot is facing the pick table; I will approach the bottle, grasp it, carry it to the other table, and place it inside the orange tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the yellow bottle on the pick table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the yellow bottle with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 5
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the yellow bottle with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 5
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the yellow bottle to a reachable stance beside the orange tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the yellow bottle inside the orange tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 6
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_62_move_variety",
+   "task": "Carry the purple box to the green tray on the other table.",
+   "text": "The pick table is ahead, so I will approach it, pick the purple box, carry it to the other table, and place it in the green tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table and locate the purple box",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the purple box with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the purple box with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the purple box to a reachable stance at the green tray, avoiding the floor obstacles",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the purple box inside the green tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_63_move_variety",
+   "task": "Carry the grey box to the red tray on the other table.",
+   "text": "The pick table is ahead, but the box is outside the current view, so I will approach, pick it up, carry it across, and place it in the tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to see and reach the grey box",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "goal",
+      "id": "g2",
+      "goal": "Pick up the grey box with the right hand",
+      "check": {
+       "name": "holding",
+       "hand": "right"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g3",
+      "goal": "Carry the grey box to a placement stance beside the red tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Place the grey box inside the red tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_64_move_variety",
+   "task": "Carry the green box to the pink tray on the other table.",
+   "text": "The robot is in front of the pick table; I will approach the box, grasp it, carry it to the other table, and place it in the pink tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the green box on the pick table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the green box with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 5
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the green box with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 5
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the green box to a reachable stance beside the pink tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the green box inside the pink tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_67_move_variety",
+   "task": "Carry the orange bottle to the red tray on the other table.",
+   "text": "The pick table is ahead; I will approach the bottle, pick it up, carry it to the other table, and place it inside the red tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the orange bottle on the pick table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the orange bottle with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 5
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the orange bottle with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 5
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the orange bottle to a reachable stance beside the red tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the orange bottle inside the red tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 6
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_68_move_variety",
+   "task": "Carry the yellow bottle to the purple tray on the other table.",
+   "text": "The robot is in front of the pick table; I will approach the bottle, grasp it, carry it to the other table, and place it in the purple tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the yellow bottle on the pick table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the yellow bottle with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the yellow bottle with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the yellow bottle to a placement stance at the purple tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the yellow bottle inside the purple tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_69_move_variety",
+   "task": "Carry the blue bottle to the pink tray on the other table.",
+   "text": "The bottle and tray are outside the current view, so I will approach the pick table, grasp the bottle, and carry it to the tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to locate the blue bottle",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the blue bottle with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the blue bottle with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the blue bottle to a reachable stance beside the pink tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the blue bottle inside the pink tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_70_move_variety",
+   "task": "Carry the brown box to the red tray on the other table.",
+   "text": "The robot faces the pick table; I will approach the box, grasp it, carry it to the other table, and place it in the red tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the brown box on the pick table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "goal",
+      "id": "g2",
+      "goal": "Pick the brown box with the right hand",
+      "check": {
+       "name": "holding",
+       "hand": "right"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g3",
+      "goal": "Carry the brown box to a placement stance at the red tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Place the brown box inside the red tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_71_move_variety",
+   "task": "Carry the red bottle to the blue tray on the other table.",
+   "text": "The robot is facing the pick table with both hands free; I will approach, pick up the bottle, carry it to the tray, and place it inside.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to locate the red bottle",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the red bottle with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the red bottle with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the red bottle to a safe placement stance by the blue tray",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the red bottle inside the blue tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_72_move_variety",
+   "task": "Carry the teal box to the purple tray on the other table.",
+   "text": "The pick table is ahead; I will approach, grasp the teal box, carry it around the obstacle, and place it in the purple tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to locate the teal box",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the teal box with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the teal box with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the teal box around the floor obstacle to the purple tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the teal box inside the purple tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_73_move_variety",
+   "task": "Carry the purple box to the yellow tray on the other table.",
+   "text": "The pick table is ahead; I will approach the box, grasp it, carry it to the other table, and place it in the yellow tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the purple box on the pick table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "goal",
+      "id": "g2",
+      "goal": "Pick the purple box with the right hand",
+      "check": {
+       "name": "holding",
+       "hand": "right"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g3",
+      "goal": "Carry the purple box to the yellow tray, avoiding the floor obstacles",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 10
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Place the purple box inside the yellow tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_74_move_variety",
+   "task": "Carry the grey bottle to the purple tray on the other table.",
+   "text": "Both hands are free; I will approach the bottle, pick it up, carry it to the other table, and place it in the purple tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the grey bottle on the pick table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the grey bottle with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the grey bottle with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the grey bottle to the purple tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the grey bottle inside the purple tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_76_move_variety",
+   "task": "Carry the white box to the blue tray on the other table.",
+   "text": "The pick table is ahead; I will approach the white box, grasp it, carry it to the other table, and place it in the blue tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the white box on the pick table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the white box with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the white box with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the white box to a placement stance beside the blue tray",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the white box inside the blue tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 6
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_77_move_variety",
+   "task": "Carry the green bottle to the red tray on the other table.",
+   "text": "Both hands are free, and I will approach the pick table, grasp the bottle, carry it to the other table, and place it in the red tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to locate the green bottle",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the green bottle with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the green bottle with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the green bottle to a placement stance by the red tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the green bottle inside the red tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvtrain_78_move_variety",
+   "task": "Carry the teal bottle to the purple tray on the other table.",
+   "text": "The teal bottle is on the near table; I will pick it up, carry it to the other table, and place it in the purple tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Pick the teal bottle with the right hand",
+      "check": {
+       "name": "holding",
+       "hand": "right"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g2",
+      "goal": "Carry the teal bottle to a placement stance beside the purple tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g3",
+      "goal": "Place the teal bottle inside the purple tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvval_00_move_variety",
+   "task": "Carry the blue box to the purple tray on the other table.",
+   "text": "The camera shows floor and table legs, so I will approach the blue box, pick it up, carry it to the other table, and place it in the purple tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to see and reach the blue box",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "goal",
+      "id": "g2",
+      "goal": "Pick up the blue box with the right hand",
+      "check": {
+       "name": "holding",
+       "hand": "right"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g3",
+      "goal": "Carry the blue box to a placement stance at the purple tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Place the blue box inside the purple tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvval_01_move_variety",
+   "task": "Carry the grey bottle to the white tray on the other table.",
+   "text": "The robot faces the pick table; I will approach the bottle, grasp it, carry it to the other table, and place it in the tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the grey bottle on the pick table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the grey bottle with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 5
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the grey bottle with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 5
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the grey bottle to the white tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the grey bottle inside the white tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 6
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvval_02_move_variety",
+   "task": "Carry the pink bottle to the green tray on the other table.",
+   "text": "Both hands are free; I will approach the pick table, grasp the pink bottle, carry it to the other table, and place it in the green tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to locate the pink bottle",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the pink bottle with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the pink bottle with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the pink bottle to a safe placement stance at the green tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the pink bottle inside the green tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvval_04_move_variety",
+   "task": "Carry the orange box to the teal tray on the other table.",
+   "text": "The robot is in front of the pick table with both hands free; I will find and pick the box, carry it to the other table, and place it in the teal tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to view and reach the orange box",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 4
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the orange box with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 5
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the orange box with the left hand from an alternative stance",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 5
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the orange box to a reachable stance at the teal tray on the other table, avoiding the floor obstacle",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the orange box inside the teal tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 6
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvval_05_move_variety",
+   "task": "Carry the black bottle to the green tray on the other table.",
+   "text": "Both hands are free; I will approach the pick table, grasp the bottle, carry it to the other table, and place it in the green tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to locate the black bottle",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 4
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the black bottle with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 5
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the black bottle with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 5
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the black bottle to a placement stance at the green tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the black bottle inside the green tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 6
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvval_06_move_variety",
+   "task": "Carry the white bottle to the brown tray on the other table.",
+   "text": "The pick table is ahead, and I will approach it, pick up the white bottle, carry it across, and place it in the brown tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to locate the white bottle",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the white bottle with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the white bottle with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the white bottle to the brown tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the white bottle inside the brown tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvval_07_move_variety",
+   "task": "Carry the black bottle to the orange tray on the other table.",
+   "text": "The robot is near the pick table with both hands free; I will approach the bottle, pick it up, carry it to the tray, and place it inside.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to see and reach the black bottle",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "goal",
+      "id": "g2",
+      "goal": "Pick the black bottle with the right hand",
+      "check": {
+       "name": "holding",
+       "hand": "right"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g3",
+      "goal": "Carry the black bottle to a reachable position beside the orange tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 10
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Place the black bottle inside the orange tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvval_08_move_variety",
+   "task": "Carry the white bottle to the pink tray on the other table.",
+   "text": "I will approach the pick table, grasp the white bottle, carry it to the other table, and place it in the pink tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to see and reach the white bottle",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the white bottle with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the white bottle with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the white bottle to a reachable stance facing the pink tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the white bottle inside the pink tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvval_09_move_variety",
+   "task": "Carry the grey box to the orange tray on the other table.",
+   "text": "Both hands are free; I will approach the grey box, pick it up, carry it to the orange tray, and place it inside.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to locate the grey box",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the grey box with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 5
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the grey box with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 5
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the grey box to a reachable stance beside the orange tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 10
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the grey box inside the orange tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvval_10_move_variety",
+   "task": "Carry the pink box to the black tray on the other table.",
+   "text": "The pick table is ahead; I will pick up the pink box, carry it to the other table, and place it in the black tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g1",
+        "goal": "Pick up the pink box with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 8
+       },
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick up the pink box with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 8
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g3",
+      "goal": "Carry the pink box to a safe placement stance at the black tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 10
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Place the pink box inside the black tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvval_12_move_variety",
+   "task": "Carry the grey box to the yellow tray on the other table.",
+   "text": "Both hands are free; I will approach the grey box, pick it up, carry it to the other table, and place it in the yellow tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the grey box on the pick table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the grey box with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 5
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the grey box with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 5
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the grey box to a placement stance at the yellow tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 10
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the grey box inside the yellow tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvval_13_move_variety",
+   "task": "Carry the purple box to the brown tray on the other table.",
+   "text": "Both hands are free; I will locate and pick the purple box, carry it to the other table, and place it in the brown tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table and locate the purple box",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the purple box with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the purple box with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the purple box to a safe placement stance beside the brown tray",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the purple box inside the brown tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 6
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvval_14_move_variety",
+   "task": "Carry the yellow bottle to the red tray on the other table.",
+   "text": "The bottle is on the near table, and the route to the tray must avoid the floor obstacles.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Pick the yellow bottle with the right hand, approaching the pick table as needed.",
+      "check": {
+       "name": "holding",
+       "hand": "right"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g2",
+      "goal": "Carry the yellow bottle to a reachable position facing the red tray on the other table, avoiding the floor obstacles.",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 10
+     },
+     {
+      "type": "goal",
+      "id": "g3",
+      "goal": "Place the yellow bottle inside the red tray.",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvval_15_move_variety",
+   "task": "Carry the white bottle to the red tray on the other table.",
+   "text": "The pick table is ahead; I will approach the bottle, pick it up, carry it to the other table, and place it in the red tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the white bottle on the pick table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 6
+     },
+     {
+      "type": "goal",
+      "id": "g2",
+      "goal": "Pick the white bottle with the right hand",
+      "check": {
+       "name": "holding",
+       "hand": "right"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g3",
+      "goal": "Carry the white bottle to a placement stance at the red tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 12
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Place the white bottle inside the red tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvval_16_move_variety",
+   "task": "Carry the yellow bottle to the teal tray on the other table.",
+   "text": "Both hands are free; I will approach the pick table, grasp the bottle, carry it to the other table, and place it in the teal tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table and locate the yellow bottle",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the yellow bottle with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the yellow bottle with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the yellow bottle to a placement stance beside the teal tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the yellow bottle inside the teal tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvval_17_move_variety",
+   "task": "Carry the orange box to the black tray on the other table.",
+   "text": "The pick table is ahead; I will approach the box, pick it up, carry it to the other table, and place it in the black tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the orange box on the pick table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the orange box with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 5
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the orange box with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 5
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the orange box to a placement stance at the black tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the orange box inside the black tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 6
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvval_18_move_variety",
+   "task": "Carry the grey box to the yellow tray on the other table.",
+   "text": "The robot faces the pick table with both hands free; I will approach the box, grasp it, carry it to the tray, and place it inside.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the grey box on the pick table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the grey box with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 5
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the grey box with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 5
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the grey box to the yellow tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the grey box inside the yellow tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 6
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvval_19_move_variety",
+   "task": "Carry the grey box to the red tray on the other table.",
+   "text": "Both hands are free; I will pick up the grey box, carry it to the other table, and place it in the red tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g1",
+        "goal": "Pick up the grey box with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 8
+       },
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick up the grey box with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 8
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g3",
+      "goal": "Carry the grey box to a working stance at the red tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Place the grey box inside the red tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvval_20_move_variety",
+   "task": "Carry the purple bottle to the orange tray on the other table.",
+   "text": "The pick table is ahead; I will approach the bottle, pick it up, carry it to the other table, and place it in the orange tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to locate the purple bottle",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the purple bottle with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 8
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the purple bottle with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 8
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the purple bottle around the obstacles to a working stance at the orange tray",
+      "check": null,
+      "budget": 15
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the purple bottle inside the orange tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvval_22_move_variety",
+   "task": "Carry the brown bottle to the blue tray on the other table.",
+   "text": "The pick table is ahead; I will approach the bottle, grasp it, carry it to the blue tray, and place it inside.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the brown bottle on the pick table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "goal",
+      "id": "g2",
+      "goal": "Pick the brown bottle with the right hand",
+      "check": {
+       "name": "holding",
+       "hand": "right"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g3",
+      "goal": "Carry the brown bottle to the blue tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Place the brown bottle inside the blue tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvval_23_move_variety",
+   "task": "Carry the orange bottle to the black tray on the other table.",
+   "text": "The robot is facing the pick table with both hands free; I will approach, grasp the bottle, carry it to the other table, and place it in the tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to see and reach the orange bottle",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the orange bottle with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 5
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the orange bottle with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 5
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the orange bottle to a reachable stance beside the black tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the orange bottle inside the black tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 6
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvval_24_move_variety",
+   "task": "Carry the blue bottle to the pink tray on the other table.",
+   "text": "The robot faces the pick table with both hands free; I will pick up the bottle, carry it to the tray, and place it inside.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g1",
+        "goal": "Find and pick the blue bottle with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 8
+       },
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Find and pick the blue bottle with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 8
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g3",
+      "goal": "Carry the blue bottle to a safe working stance at the pink tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 10
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Place the blue bottle inside the pink tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvval_25_move_variety",
+   "task": "Carry the orange bottle to the green tray on the other table.",
+   "text": "The pick table is ahead; I will pick up the bottle, carry it to the other table, and place it inside the green tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Pick up the orange bottle with the right hand, approaching the pick table as needed",
+      "check": {
+       "name": "holding",
+       "hand": "right"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g2",
+      "goal": "Carry the orange bottle to a safe working stance facing the green tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g3",
+      "goal": "Place the orange bottle inside the green tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvval_26_move_variety",
+   "task": "Carry the blue bottle to the orange tray on the other table.",
+   "text": "The tables are ahead and both hands are free; I will approach the bottle, pick it up, and carry it to the tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table and locate the blue bottle",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the blue bottle with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 5
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the blue bottle with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 5
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the blue bottle to the orange tray on the other table, avoiding the floor obstacle",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the blue bottle inside the orange tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 6
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvval_27_move_variety",
+   "task": "Carry the orange box to the green tray on the other table.",
+   "text": "The pick table is ahead; I will approach the orange box, grasp it, carry it to the other table, and place it in the green tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the orange box on the pick table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the orange box with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 5
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the orange box with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 5
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the orange box to the green tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the orange box inside the green tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 6
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvval_29_move_variety",
+   "task": "Carry the blue box to the purple tray on the other table.",
+   "text": "Both hands are free; I will approach the pick table, grasp the blue box, carry it to the other table, and place it in the purple tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to locate the blue box",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the blue box with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 5
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the blue box with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 5
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the blue box to a reachable stance beside the purple tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the blue box inside the purple tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 6
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvval_30_move_variety",
+   "task": "Carry the grey box to the red tray on the other table.",
+   "text": "The pick table is ahead; I will approach the box, grasp it, carry it to the other table, and place it in the red tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the grey box on the pick table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the grey box with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 5
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the grey box with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 5
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the grey box to a safe placement stance at the red tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the grey box inside the red tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 6
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvval_32_move_variety",
+   "task": "Carry the brown bottle to the black tray on the other table.",
+   "text": "The pick table is ahead; I will grasp the bottle, carry it around the obstacles, and place it inside the black tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g1",
+        "goal": "Approach and pick the brown bottle with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 8
+       },
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Approach and pick the brown bottle with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 8
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g3",
+      "goal": "Carry the bottle around the floor obstacles to a reachable stance facing the inside of the black tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 10
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Place the brown bottle inside the black tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvval_34_move_variety",
+   "task": "Carry the orange box to the green tray on the other table.",
+   "text": "The robot is in front of the pick table with both hands free; I will acquire the box, carry it to the other table, and place it in the tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to see and reach the orange box",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "goal",
+      "id": "g2",
+      "goal": "Pick up the orange box with the right hand",
+      "check": {
+       "name": "holding",
+       "hand": "right"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g3",
+      "goal": "Carry the orange box to a placement stance at the green tray, avoiding the floor obstacle",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Place the orange box inside the green tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvval_35_move_variety",
+   "task": "Carry the pink box to the black tray on the other table.",
+   "text": "The robot is facing the pick table; I will approach the pink box, pick it up, carry it to the other table, and place it in the black tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to see and reach the pink box",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick up the pink box with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick up the pink box with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the pink box to a reachable stance beside the black tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 10
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the pink box inside the black tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvval_36_move_variety",
+   "task": "Carry the green bottle to the teal tray on the other table.",
+   "text": "The robot is in front of the pick table with both hands free; I will pick up the bottle, carry it to the other table, and place it inside the teal tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to see and reach the green bottle",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "goal",
+      "id": "g2",
+      "goal": "Pick the green bottle with the right hand",
+      "check": {
+       "name": "holding",
+       "hand": "right"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g3",
+      "goal": "Carry the green bottle to a safe placement stance beside the teal tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Place the green bottle inside the teal tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvval_37_move_variety",
+   "task": "Carry the orange box to the black tray on the other table.",
+   "text": "Both hands are free; I will approach the orange box, pick it up, carry it to the other table, and place it in the black tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the orange box on the pick table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the orange box with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the orange box with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the orange box to a reachable stance by the black tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the orange box inside the black tray using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvval_38_move_variety",
+   "task": "Carry the grey box to the pink tray on the other table.",
+   "text": "Both hands are free; I will approach the pick table, grasp the grey box, carry it to the other table, and place it in the pink tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table to locate the grey box",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the grey box with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the grey box with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the grey box to a placement stance at the pink tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the grey box inside the pink tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 6
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "mvval_39_move_variety",
+   "task": "Carry the grey bottle to the pink tray on the other table.",
+   "text": "The pick table is ahead; I will approach it, pick the grey bottle, carry it to the other table, and place it in the pink tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pick table and locate the grey bottle",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the grey bottle with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the grey bottle with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the grey bottle to a placement stance at the pink tray on the other table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 10
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the grey bottle inside the pink tray",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  }
+ ]
+}
