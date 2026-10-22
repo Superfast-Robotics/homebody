@@ -28,6 +28,7 @@ import subprocess
 import sys
 import time
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -491,11 +492,12 @@ def worker(args):
         if table[eid].blocked(gpu_gb):
             raise SystemExit(f"{eid} is blocked: {table[eid].blocked(gpu_gb)}")
     commit = git("rev-parse", args.commit or "HEAD")
-    write_overlay(cfg, table, ids)
+    write_overlay(cfg, table, list(table))  # every profile: another worker's running loop keeps its own
     (shared / "rows").mkdir(parents=True, exist_ok=True)
     (shared / "failed").mkdir(parents=True, exist_ok=True)
     forward = tunnel(cfg, server)
-    while (eid := next_experiment(cfg, server, ids, table, shared)) is not None:
+
+    def one(eid):
         log(f"{server['name']} takes {eid}")
         try:
             row = run(cfg, server, eid, table[eid], picks, commit) | {"server": server["name"]}
@@ -504,6 +506,15 @@ def worker(args):
         except (RuntimeError, OSError, StopIteration, KeyError) as error:
             (shared / "failed" / f"{eid}.txt").write_text(f"{server['name']}: {error}\n")
             log(f"{eid} failed: {error}")
+
+    if args.concurrent:  # every claimable experiment at once, on the same model servers (the sessions share them)
+        claimed = []
+        while (eid := next_experiment(cfg, server, ids, table, shared)) is not None:
+            claimed.append(eid)
+        with ThreadPoolExecutor(max(1, len(claimed))) as pool:
+            list(pool.map(one, claimed))
+    while (eid := next_experiment(cfg, server, ids, table, shared)) is not None:
+        one(eid)
     if not args.keep:
         for port in cfg["agents"]["ports"]:
             if served(server, port):
@@ -575,6 +586,8 @@ def main(argv=None):
     work.add_argument("ids", nargs="*")
     work.add_argument("--commit", help="the version sessions run (default: this checkout's HEAD)")
     work.add_argument("--keep", action="store_true", help="leave the model servers running at the end")
+    work.add_argument("--concurrent", action="store_true",
+                      help="run every claimed experiment at once (they must share the same model servers)")
     work.add_argument("--server", help="the [agents] servers entry to drive (default: this machine's)")
     only = sub.add_parser("serve")
     only.add_argument("id")
