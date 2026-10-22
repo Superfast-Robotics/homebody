@@ -330,3 +330,21 @@ def test_a_first_planner_writes_the_first_plan_of_an_unrecorded_task(tmp_path):
     assert agent.generate(prompt.format("a new task"), **turn(tmp_path, 1)).text == "sol plan"
     assert agent.generate(prompt.format("a new task"), **turn(tmp_path, 2)).text == "rewrite"
     assert routing(tmp_path, 1)[0]["role"] == "first_planner" and sol.prompts and len(base.prompts) == 1
+
+
+def test_a_replanner_writes_every_rewrite(tmp_path):
+    spec = COMPOSITES["c-solall-q38-robobrain"]
+    assert spec["replanner"] == {"model": "sol61-litellm"}
+    entry = json.loads((composite.RecordedPlan.ROOT / spec["plans"][0]).read_text())["plans"][0]
+    prompt = "Current task:\n{}\n\nThis turn: write the plan (skill plan)."
+    sol = Fake([Decision("sol rewrite", "plan", {"tree": {}})])
+    base = Fake([Decision("go", "pick", {"point_normalized_1000": [5, 5]})])
+    agent = Composite(Agent(model="c-solall-q38-robobrain"),
+                      members={"base": base, "first_planner": Fake([]), "replanner": sol}, endpoints={})
+    agent.turn(("plan",))
+    assert agent.generate(prompt.format(entry["task"]), **turn(tmp_path, 0)).arguments["tree"] == entry["tree"]
+    agent.turn(("pick", "done"))
+    assert agent.generate("acting", **turn(tmp_path, 1)).skill == "pick"
+    agent.turn(("plan",))
+    assert agent.generate(prompt.format(entry["task"]), **turn(tmp_path, 2)).text == "sol rewrite"
+    assert routing(tmp_path, 2)[0]["role"] == "replanner" and len(base.prompts) == 1

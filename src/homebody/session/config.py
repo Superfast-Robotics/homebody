@@ -205,6 +205,9 @@ COMPOSITES = {
     # the same, with Sol writing the first plan of a task no file records (the held-out test tasks, a new scene)
     "c-solfirst-q38-robobrain": {"kind": "plans", "plans": SOL_PLANS, "base": {"model": "c-q38-robobrain"},
                                  "first_planner": {"model": "sol61-litellm"}},
+    # deployment and the final test: Sol writes every plan, the first (recorded or live) and each rewrite
+    "c-solall-q38-robobrain": {"kind": "plans", "plans": SOL_PLANS, "base": {"model": "c-q38-robobrain"},
+                               "first_planner": {"model": "sol61-litellm"}, "replanner": {"model": "sol61-litellm"}},
 }
 MODELS.update({name: ("composite", name, None) for name in COMPOSITES})
 

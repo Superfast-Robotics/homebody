@@ -427,7 +427,8 @@ class RecordedPlan(Composite):
     e.g. Sol's plans of a baseline run), matched by the prompt's current task; every other turn, a rewrite of the
     plan included, goes to the base model. No model is asked for a recorded plan. With a "first_planner" member,
     the first plan of a task no file records is that model's (Sol planning a task never recorded, as a deployment
-    would); without one it is the base model's."""
+    would); without one it is the base model's. With a "replanner" member, every later plan turn (a rewrite after
+    the tree failed) is that model's too."""
     ROOT = Path(__file__).resolve().parents[3]
 
     def __init__(self, *args, **kwargs):
@@ -447,7 +448,9 @@ class RecordedPlan(Composite):
             self.calls.append({"role": "recorded", "model": "recorded", "model_id": "recorded", "local": True,
                                "dir": "", "scenario": entry.get("scenario")})
             return Decision(entry["text"], "plan", {"tree": entry["tree"]})
-        role = "first_planner" if first and "first_planner" in self.members else "base"
+        role = ("first_planner" if first and "first_planner" in self.members
+                else "replanner" if self.allowed == PLAN_TURN and not first and "replanner" in self.members
+                else "base")
         return self.ask(role, prompt, images=images, names=names, attempt=attempt, tick=tick, cancelled=cancelled)
 
 
