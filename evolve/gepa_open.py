@@ -61,7 +61,7 @@ PERFECT = 1.0  # a minibatch the parent gets all right is skipped (gepa's perfec
 
 FAMILIES = {"guidance": ("choose", "judge", "recover", "navigate", "pick", "place"), "plan_guidance": ("plan",),
             "target_note": ("pick", "place"), "pick_note": ("pick",), "place_note": ("place",)}
-WORD_LIMIT = {"guidance": 230, "target_note": 70, "pick_note": 60, "place_note": 60, "plan_guidance": 160}
+WORD_LIMIT = {"guidance": 230, "target_note": 70, "pick_note": 60, "place_note": 60, "plan_guidance": 200}
 ROLES = {
     "plan_guidance": ("Guidance appended to the planner's prompt on plan turns only, when Qwen3.8 writes the task's "
                       "behaviour tree (goals with harness checks and skill-call budgets, in sequences and fallbacks) "
@@ -235,7 +235,7 @@ SCENE_WORDS = frozenset("""
 red orange yellow green blue teal purple pink brown black white grey gray silver gold
 allulose basil blueberry corn jam sauce spice sweetener tea cereal coffee sugar salt food foods fruit snack snacks
 bottle bottles box boxes cans jar jars mug mugs cup cups bowl bowls tin tins carton cartons packet packets lid lids
-product products item items tray trays tote totes crate crates bin bins basket baskets
+product products tray trays tote totes crate crates bin bins basket baskets
 shelf shelves bay bays rack racks lane lanes slot slots aisle aisles counter counters cabinet cabinets drawer drawers
 table tables kitchen warehouse restock fridge sink
 """.split())

@@ -158,6 +158,8 @@ def judge_case(case: Path, out: Path) -> dict | None:
             own, theirs = ("A", "B") if open_is_a else ("B", "A")
             verdicts.append({"open": verdict[own], "sol": verdict[theirs], "reason": verdict["reason"],
                              "preferred": {"tie": "tie", own: "open", theirs: "sol"}[verdict["preferred"]]})
+    if len(verdicts) < 2:  # a failed judge call (a usage limit, a timeout) is no verdict: never cached as one
+        raise RuntimeError(f"the judge failed on {case.name}: see {out / case.name}/judge-*.txt")
     result = {"case": case.name, "verdicts": verdicts,
               "preferred": (verdicts[0]["preferred"] if len(verdicts) == 2
                             and verdicts[0]["preferred"] == verdicts[1]["preferred"] else "tie")}

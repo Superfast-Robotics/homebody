@@ -27,3 +27,16 @@ def test_a_preference_counts_only_when_it_holds_in_both_orders(tmp_path, monkeyp
     result = plan_bench.judge_case(case, out)
     assert result["preferred"] == "tie"  # A both times means different plans: position bias, not a preference
     assert {v["preferred"] for v in result["verdicts"]} == {"open", "sol"}
+
+
+def test_a_failed_judge_call_stops_rather_than_scoring(tmp_path, monkeypatch):
+    import pytest
+    case = tmp_path / "cases" / "k1"
+    case.mkdir(parents=True)
+    (case / "case.json").write_text(json.dumps({"task": "t", "split": "val", "sol": {"tree": TREE}}))
+    (tmp_path / "out" / "k1").mkdir(parents=True)
+    (tmp_path / "out" / "k1" / "plan.json").write_text(json.dumps({"tree": TREE, "accepted": True}))
+    monkeypatch.setattr(plan_bench, "judge_once", lambda *a: {"error": "usage_limit_reached"})
+    with pytest.raises(RuntimeError, match="judge failed"):
+        plan_bench.judge_case(case, tmp_path / "out")
+    assert not (tmp_path / "out" / "k1" / "judge.json").exists()
