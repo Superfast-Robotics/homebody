@@ -56,9 +56,10 @@ def test_a_proposal_naming_the_scenes_or_too_long_is_refused():
     assert gepa_open.proposal("Here:\n```text\nNew text.\n```") == "New text."
 
 
-def test_scenario_words_are_those_the_general_prompts_never_use():
-    banned = gepa_open.banned_words(["Move the red jam jar to the middle bay, then place it on the shelf."])
-    assert {"jam", "red"} <= set(banned) and "place" not in banned and "the" not in banned
+def test_scenario_words_are_the_scene_words_the_tasks_use():
+    banned = gepa_open.banned_words(["Move the red jam jar to the middle bay, then the spice-jar; verify the front."])
+    assert banned == ["bay", "jam", "jar", "red", "spice"]
+    assert "spice" in gepa_open.lint("place_note", "Avoid the spice-jar.", banned)
 
 
 def test_the_front_keeps_every_candidate_best_somewhere(tmp_path):

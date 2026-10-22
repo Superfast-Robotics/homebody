@@ -26,7 +26,7 @@ import time
 import urllib.request
 from pathlib import Path
 
-from homebody.vlm.composite import POINTER_PROMPTS, TARGET_NOTE
+from homebody.vlm.composite import TARGET_NOTE
 from homebody.vlm.provider import streamed
 
 REPO = Path(__file__).resolve().parents[1]
@@ -167,15 +167,25 @@ def sample_val(rows: list[dict], size: int, rng: random.Random) -> list[str]:
     return chosen
 
 
+# words that name what a scene holds: colours, products, containers, furniture and its parts (a word of the
+# scenarios' tasks among these is refused; "can" and "case" stay free as ordinary words)
+SCENE_WORDS = frozenset("""
+red orange yellow green blue teal purple pink brown black white grey gray silver gold
+allulose basil blueberry corn jam sauce spice sweetener tea cereal coffee sugar salt food foods fruit snack snacks
+bottle bottles box boxes cans jar jars mug mugs cup cups bowl bowls tin tins carton cartons packet packets lid lids
+product products item items tray trays tote totes crate crates bin bins basket baskets
+shelf shelves bay bays rack racks lane lanes slot slots aisle aisles counter counters cabinet cabinets drawer drawers
+table tables kitchen warehouse restock fridge sink
+""".split())
+
+
 def vocabulary(text: str) -> set[str]:
-    return {w.lower() for w in re.findall(r"[A-Za-z][A-Za-z-]{2,}", text)}
+    return {w.lower() for w in re.findall(r"[A-Za-z]{3,}", text)}
 
 
 def banned_words(tasks: list[str]) -> list[str]:
-    """Words of the scenarios' tasks that the robot's general prompts never use: objects, colours, places."""
-    general = (REPO / "src" / "homebody" / "harness" / "agent_prompt.md").read_text()
-    general += " ".join(seed_texts().values()) + " ".join(POINTER_PROMPTS.values())
-    return sorted(vocabulary(" ".join(tasks)) - vocabulary(general))
+    """The scene words the scenarios' tasks use (SCENE_WORDS): objects, colours, containers and places."""
+    return sorted(vocabulary(" ".join(tasks)) & SCENE_WORDS)
 
 
 def init(args):
