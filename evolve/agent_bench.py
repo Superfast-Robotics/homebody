@@ -234,9 +234,10 @@ def run(args, kind: str, ask):
 
 def run_turns(args):
     settings = Agent(model=args.model, local_layout=args.layout, local_image_labels=not args.no_labels,
-                     local_temperature=args.temperature,
+                     local_temperature=args.temperature, local_notes=args.notes,
                      **{k: v for k, v in (("local_url", args.local_url), ("second_url", args.second_url)) if v})
-    args.label = args.label or f"{args.model} {args.layout}{' unlabelled' if args.no_labels else ''}"
+    args.label = args.label or (f"{args.model} {args.layout}{' unlabelled' if args.no_labels else ''}"
+                                f"{' notes ' + args.notes if args.notes else ''}")
     run(args, "turns", lambda case, out: ask_turn(settings, case, out))
 
 
@@ -325,6 +326,7 @@ def main(argv=None):
             r.add_argument("--layout", default="text-first", choices=("text-first", "images-first"))
             r.add_argument("--no-labels", action="store_true")
             r.add_argument("--temperature", type=float, default=0.0)
+            r.add_argument("--notes", default="", help="agent.local_notes: open-model guidance, comma separated")
         else:
             r.add_argument("--served", required=True, help="the server's --served-model-name")
             r.add_argument("--url", required=True)
