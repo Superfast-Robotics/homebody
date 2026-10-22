@@ -101,6 +101,7 @@ class Experiment:
     second: Serve | None = None
     quota: bool = False  # uses Sol: waits for the ChatGPT quota reset
     best: tuple[str, ...] = field(default=())  # the picks it takes: best-small, best-base
+    options: dict = field(default_factory=dict)  # more [agent] settings (the open-model options)
 
     def blocked(self, gpu_gb=GPU_GB):
         reasons = [MODELS[s.model].blocked for s in (self.local, self.second)
@@ -118,6 +119,12 @@ class Experiment:
 
 def single(model):
     return Serve(model, 0.90)
+
+
+# the option matrix's winners (evolve/agent_bench.py, agent_place.py): guidance notes, place clicks moved within reach,
+# the pointer's view masked beyond reach, the repeat guard
+OPEN_FIXES = {"local_notes": "reach,claims,recover", "local_place_reach": True, "local_reach_mask": True,
+              "local_repeat_guard": True}
 
 
 def experiments(best_small="robobrain2.5-8b", best_base="robobrain2.5-8b", gpu_gb=GPU_GB):
@@ -173,6 +180,11 @@ def experiments(best_small="robobrain2.5-8b", best_base="robobrain2.5-8b", gpu_g
         "SPM": Experiment("c-solplan-q38-mimo", Serve("qwen3.8-27b", 0.55, 16384), Serve("mimo-embodied-7b", 0.33, 8192)),
         "SPO": Experiment("c-solplan-q38-molmo", Serve("qwen3.8-27b", 0.55, 16384), Serve("molmo2-er", 0.33, 8192)),
         "SPQ": Experiment("c-solplan-q38", Serve("qwen3.8-27b", 0.90, 16384)),
+        # SPO v2: the option matrix's winners, for the open models only (Sol's setup is unchanged)
+        "SPR2": Experiment("c-solplan-q38-robobrain", Serve("qwen3.8-27b", 0.55, 16384),
+                           Serve("robobrain2.5-8b", 0.33, 8192), options=OPEN_FIXES),
+        "SPQ2": Experiment("c-solplan-q38", Serve("qwen3.8-27b", 0.90, 16384),
+                           options={**OPEN_FIXES, "local_reach_mask": False}),
     }
 
 
@@ -337,7 +349,8 @@ def write_settings(cfg, eid, exp, server, picks):
     local = f"http://{server['ip']}:{ports[0]}/v1"
     second = f"http://{server['ip']}:{ports[1]}/v1" if exp.second else local
     agent = (f'\n# {eid} (evolve/agent_experiments.py)\n[agent]\nmodel = "{exp.agent}"\nlocal_url = "{local}"\n'
-             f'second_url = "{second}"\nbest_small = "{picks[0]}"\nbest_base = "{picks[1]}"\n')
+             f'second_url = "{second}"\nbest_small = "{picks[0]}"\nbest_base = "{picks[1]}"\n'
+             + "".join(f"{key} = {toml(value)}\n" for key, value in exp.options.items()))
     lines, out, done = base.splitlines(), [], False
     for line in lines:  # the agent keys join the base's [agent] table
         out.append(line)

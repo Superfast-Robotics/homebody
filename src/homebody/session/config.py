@@ -195,6 +195,8 @@ COMPOSITES = {
                             "base": {"model": "c-q38-molmo"}},
     "c-solplan-q38": {"kind": "plans", "plans": "configs/plans/sol_demo_pp_b002.json",
                       "base": {"model": "qwen38-27b-vllm"}},
+    "c-solplan-q38-robobrain": {"kind": "plans", "plans": "configs/plans/sol_demo_pp_b002.json",
+                                "base": {"model": "c-q38-robobrain"}},
 }
 MODELS.update({name: ("composite", name, None) for name in COMPOSITES})
 

@@ -10,7 +10,7 @@ from homebody.session.config import COMPOSITES, MODELS
 
 def test_every_experiment_names_a_models_row_and_served_models():
     table = ax.experiments()
-    assert list(table) == [f"E{n}" for n in range(1, 21)] + ["Q38", "Q38R", "Q38M", "Q38L", "Q38O", "G4O", "SPM", "SPO", "SPQ"]
+    assert list(table) == [f"E{n}" for n in range(1, 21)] + ["Q38", "Q38R", "Q38M", "Q38L", "Q38O", "G4O", "SPM", "SPO", "SPQ", "SPR2", "SPQ2"]
     served = {name for name, model in ax.MODELS.items() if model.agent}
     for eid, exp in table.items():
         assert exp.agent in MODELS or exp.agent.endswith("-vllm"), eid
@@ -27,7 +27,7 @@ def test_blocked_and_runnable_experiments():
     blocked = {eid for eid, exp in table.items() if exp.blocked()}
     assert blocked == {"E3", "E6", "E9", "E11", "E12", "E13", "E14", "E15", "E16", "E18", "Q38", "Q38R", "Q38M",
                        "Q38L", "Q38O", "G4O", "SPM",
-                       "SPO", "SPQ"}  # the Qwen3.8 ones need loki-gh200's 96 GB and vLLM 0.32
+                       "SPO", "SPQ", "SPR2", "SPQ2"}  # the Qwen3.8 ones need loki-gh200's 96 GB and vLLM 0.32
     assert "quota" in table["E11"].blocked() and "4-bit" in table["E3"].blocked()
 
 
@@ -181,3 +181,13 @@ def test_a_remote_call_without_usage_is_unmetered(tmp_path):
 def test_a_single_model_decision_is_priced_as_before(tmp_path):
     usage(tmp_path / "decisions" / "step-000", 1_000_000, 0, 0)
     assert score_episode.cost(tmp_path, "sol61-litellm")["credits"] == 50.0
+
+
+def test_an_experiments_open_model_options_join_its_agent_settings(evolve_dir):
+    table = ax.experiments(gpu_gb=96)
+    ax.write_settings(cfg(), "SPR2", table["SPR2"], {"ip": "10.0.0.9"}, ("a", "b"))
+    agent = tomllib.loads((evolve_dir / "episode_settings_pp_SPR2.toml").read_text())["agent"]
+    assert agent["model"] == "c-solplan-q38-robobrain" and agent["local_notes"] == "reach,claims,recover"
+    assert agent["local_place_reach"] is True and agent["local_repeat_guard"] is True
+    from homebody.session.config import Agent
+    Agent(**{k: v for k, v in agent.items() if k != "max_steps"})  # every key is a real setting
