@@ -260,7 +260,15 @@ def init(args):
     state["banned"] = banned_words(sorted(set(tasks)))
     save(run, state)
     log(run, f"seed val {seed['val_mean']:.3f}; {len(state['banned'])} scenario words banned")
-    end_to_end(run, state, seed)
+    if not args.no_e2e:
+        end_to_end(run, state, seed)
+
+
+def seed_e2e(args):
+    """The seed end to end, when init ran without it (every test task's plan recorded first)."""
+    run = RUNS / args.name
+    state = load(run)
+    end_to_end(run, state, state["candidates"][0])
 
 
 def episodes(workdir: str) -> list[dict]:
@@ -522,6 +530,8 @@ def main(argv=None):
     i = sub.add_parser("init")
     i.add_argument("name")
     i.add_argument("--sol-val", type=int, default=100, help="Sol's recorded val turns beside the own rollouts'")
+    i.add_argument("--no-e2e", action="store_true", help="leave the seed's end-to-end check to `seed-e2e`")
+    sub.add_parser("seed-e2e").add_argument("name")
     r = sub.add_parser("run")
     r.add_argument("name")
     r.add_argument("--iterations", type=int, default=40)
@@ -529,7 +539,7 @@ def main(argv=None):
     r.add_argument("--e2e-every", type=int, default=10)
     sub.add_parser("status").add_argument("name")
     args = parser.parse_args(argv)
-    {"init": init, "run": run_loop, "status": status}[args.command](args)
+    {"init": init, "run": run_loop, "status": status, "seed-e2e": seed_e2e}[args.command](args)
 
 
 if __name__ == "__main__":

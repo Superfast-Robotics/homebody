@@ -1,0 +1,1455 @@
+{
+ "source": "GPT-6.1 Sol's live first plan per G1 Dex3 harness task, train, val and test (GSPR, 2026-10-22)",
+ "plans": [
+  {
+   "scenario": "cafe",
+   "task": "Return two empty cups, a plate, and a tray to the designated return shelves.",
+   "text": "The return shelves are visible; I will return the cups one at a time, then the plate and tray.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Find and pick the empty cup initially on the tray with the right hand, approaching the counter as needed.",
+      "check": {
+       "name": "holding",
+       "hand": "right"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g2",
+      "goal": "Carry the first cup to a stance facing the top return shelf.",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 6
+     },
+     {
+      "type": "goal",
+      "id": "g3",
+      "goal": "Place the first cup securely inside the top return shelf.",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Find and pick the other empty cup with the right hand, approaching the counter as needed.",
+      "check": {
+       "name": "holding",
+       "hand": "right"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Carry the second cup to a stance facing a clear spot on the top return shelf without disturbing the first cup.",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 6
+     },
+     {
+      "type": "goal",
+      "id": "g6",
+      "goal": "Place the second cup securely inside the top return shelf beside the first cup.",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g7",
+      "goal": "Find and pick the white round plate with the right hand, approaching the counter as needed.",
+      "check": {
+       "name": "holding",
+       "hand": "right"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g8",
+      "goal": "Carry the plate to a stance facing the middle return shelf.",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 6
+     },
+     {
+      "type": "goal",
+      "id": "g9",
+      "goal": "Place the plate securely inside the middle return shelf.",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g10",
+      "goal": "Find and pick the now-empty serving tray with the right hand, approaching the counter as needed.",
+      "check": {
+       "name": "holding",
+       "hand": "right"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g11",
+      "goal": "Carry the tray to a stance facing the bottom return shelf.",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 6
+     },
+     {
+      "type": "goal",
+      "id": "g12",
+      "goal": "Place the tray securely inside the bottom return shelf.",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "heldout_00_bin_to_carton",
+   "task": "Put the teal box from the purple bin into the open carton.",
+   "text": "The table is ahead, but its containers are not yet visible, so I will approach, pick the teal box, and place it inside the carton.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the purple bin to see the teal box",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the teal box from the purple bin with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the teal box from the purple bin with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the teal box to a placement stance facing the open carton",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 6
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the teal box inside the open carton",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "heldout_01_shelf_return",
+   "task": "Return the white cup to the bottom return shelf.",
+   "text": "Both hands are free; I will locate the white cup, pick it up, and return it to the bottom shelf.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the counter to locate the white cup",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "goal",
+      "id": "g2",
+      "goal": "Pick up the white cup with the right hand",
+      "check": {
+       "name": "holding",
+       "hand": "right"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g3",
+      "goal": "Carry the white cup to the bottom return shelf",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 6
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Place the white cup on the bottom return shelf",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "heldout_02_counter_clutter",
+   "task": "Put the orange bottle from the counter into the red basket.",
+   "text": "The bottle and basket are not yet visible, so I will approach the counter, pick the orange bottle, and carry it to the basket.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the counter to locate the orange bottle",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "goal",
+      "id": "g2",
+      "goal": "Pick the orange bottle with the right hand",
+      "check": {
+       "name": "holding",
+       "hand": "right"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g3",
+      "goal": "Carry the orange bottle to the red basket on the side table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 6
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Put the orange bottle into the red basket",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "heldout_03_bin_to_carton",
+   "task": "Put the red box from the orange bin into the open carton.",
+   "text": "The robot is away from the table, so I will approach the bin, pick the red box, and transfer it into the carton.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the orange bin to see and reach the red box",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the red box from the orange bin with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the red box from the orange bin with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the red box to a safe placement stance at the open carton",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 6
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Put the red box inside the open carton using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 6
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "heldout_04_shelf_return",
+   "task": "Return the green cup to the lower return shelf.",
+   "text": "The cup is not yet visible, so I will approach the counter, pick it up, and return it to the lower shelf.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the counter to locate the green cup",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the green cup with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the green cup with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the green cup to the lower return shelf",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 6
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the green cup on the lower return shelf",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 6
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "heldout_05_counter_clutter",
+   "task": "Put the red box from the counter into the pink basket.",
+   "text": "Both hands are free; I will approach the counter, pick the red box, carry it to the basket, and place it inside.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the counter to see and reach the red box",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 4
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the red box with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 5
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the red box with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 5
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the red box to a placement stance at the pink basket",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 6
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the red box inside the pink basket using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 6
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "packing",
+   "task": "Load the cookie mix, pasta, vanilla bottle, and seasoning jar from the yellow basket into the pre-opened carton.",
+   "text": "The yellow basket and open carton are on the table; I will transfer each item separately with the right hand.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Pick the cookie mix box from the yellow basket with the right hand, approaching for a clear view as needed.",
+      "check": {
+       "name": "holding",
+       "hand": "right"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g2",
+      "goal": "Carry the cookie mix box to a safe placement stance facing the carton interior.",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 6
+     },
+     {
+      "type": "goal",
+      "id": "g3",
+      "goal": "Put the cookie mix box inside the carton.",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Return to the basket and pick the blue pasta box with the right hand.",
+      "check": {
+       "name": "holding",
+       "hand": "right"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Carry the pasta box to the carton without disturbing the cookie mix.",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 6
+     },
+     {
+      "type": "goal",
+      "id": "g6",
+      "goal": "Put the pasta box inside the carton in an available spot.",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g7",
+      "goal": "Return to the basket and pick the vanilla bottle with the right hand.",
+      "check": {
+       "name": "holding",
+       "hand": "right"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g8",
+      "goal": "Carry the vanilla bottle to a safe placement stance at the carton.",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 6
+     },
+     {
+      "type": "goal",
+      "id": "g9",
+      "goal": "Put the vanilla bottle inside the carton in an available spot.",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g10",
+      "goal": "Return to the basket and pick the seasoning jar with the right hand.",
+      "check": {
+       "name": "holding",
+       "hand": "right"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g11",
+      "goal": "Carry the seasoning jar to a safe placement stance at the carton.",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 6
+     },
+     {
+      "type": "goal",
+      "id": "g12",
+      "goal": "Put the seasoning jar inside the carton in an available spot.",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "src_kitchen",
+   "task": "Put the coffee bags on the island and throw away the used cartons.",
+   "text": "A brown wrapped bag is visible on the back counter; I will move both coffee bags to the island, then discard both used cartons.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Pick coffee bag A from the refrigerator-to-corner counter with the right hand, using another stance or hand if needed.",
+      "check": {
+       "name": "holding",
+       "hand": "right"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g2",
+      "goal": "Carry coffee bag A to the island and place it on a clear, solid part of the worktop away from the sinks and edges.",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 10
+     },
+     {
+      "type": "goal",
+      "id": "g3",
+      "goal": "Find and pick coffee bag B from the corner-to-range counter with the right hand.",
+      "check": {
+       "name": "holding",
+       "hand": "right"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry coffee bag B to the island and place it beside bag A without stacking or pushing it.",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 10
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Find and pick the used orange-juice carton from the refrigerator-wall counter with the right hand.",
+      "check": {
+       "name": "holding",
+       "hand": "right"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g6",
+      "goal": "Carry the orange-juice carton to the sorting cabinet, identify the appropriate carton disposal opening, and release it inside.",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 12
+     },
+     {
+      "type": "goal",
+      "id": "g7",
+      "goal": "Find and pick the used red-and-white carton from the glass-side counter with the right hand.",
+      "check": {
+       "name": "holding",
+       "hand": "right"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g8",
+      "goal": "Carry the red-and-white carton to the appropriate sorting-cabinet disposal opening and release it inside.",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 12
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "train_00_bin_to_carton",
+   "task": "Put the yellow bottle from the pink bin into the open carton.",
+   "text": "The robot faces the work table, but the bottle and carton are not yet visible, so I will approach, pick the bottle, and transfer it into the carton.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the pink bin to locate the yellow bottle",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "goal",
+      "id": "g2",
+      "goal": "Pick the yellow bottle with the right hand",
+      "check": {
+       "name": "holding",
+       "hand": "right"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g3",
+      "goal": "Carry the yellow bottle to a placement stance at the open carton",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 6
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Put the yellow bottle inside the open carton",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "train_01_shelf_return",
+   "task": "Return the yellow cup to the bottom return shelf.",
+   "text": "Both hands are free; I will find and pick the yellow cup, carry it to the return shelf, and place it on the bottom level.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the counter and locate the yellow cup",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "goal",
+      "id": "g2",
+      "goal": "Pick the yellow cup with the right hand",
+      "check": {
+       "name": "holding",
+       "hand": "right"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g3",
+      "goal": "Carry the yellow cup to the bottom return shelf",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 6
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Place the yellow cup on the bottom return shelf",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "train_02_counter_clutter",
+   "task": "Put the red bottle from the counter into the teal basket.",
+   "text": "The robot is facing the counter with both hands free; I will approach, pick the red bottle, carry it to the basket, and place it inside.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the counter to locate the red bottle",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 4
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the red bottle with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the red bottle with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the red bottle to the teal basket on the side table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 6
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the red bottle inside the teal basket using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 6
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "train_03_bin_to_carton",
+   "task": "Put the brown box from the purple bin into the open carton.",
+   "text": "The tabletop objects are not yet visible, so I will approach the bin, pick the brown box, and transfer it into the carton.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the purple bin to locate the brown box",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 4
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the brown box from the purple bin with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the brown box from the purple bin with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the brown box to the open carton",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the brown box inside the open carton",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 6
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "train_04_shelf_return",
+   "task": "Return the red cup to the lower return shelf.",
+   "text": "The cup is not yet visible, so I will approach the counter, pick it up, and return it to the lower shelf.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the counter to locate the red cup",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 4
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the red cup with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 5
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the red cup with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 5
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the red cup to the lower return shelf",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 6
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the red cup on the lower return shelf",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 6
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "train_05_counter_clutter",
+   "task": "Put the black bottle from the counter into the grey basket.",
+   "text": "Both hands are free; I will approach the counter, pick the black bottle, and carry it to the grey basket for placement.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the counter to see and reach the black bottle",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the black bottle with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 5
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the black bottle with the left hand from an alternative stance",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 5
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the black bottle to the grey basket on the side table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 6
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the black bottle inside the grey basket using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 6
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "train_06_bin_to_carton",
+   "task": "Put the black box from the teal bin into the open carton.",
+   "text": "The table is ahead, but the bin and carton are not yet visible, so I will approach before picking and transferring the black box.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the teal bin to locate the black box",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 4
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the black box from the teal bin with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 6
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the black box from the teal bin with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the black box to the open carton",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the black box inside the open carton",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 6
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "train_07_shelf_return",
+   "task": "Return the brown cup to the middle return shelf.",
+   "text": "The robot faces the counter with both hands free; I will approach the cup, pick it up, and return it to the middle shelf.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the brown cup on the counter",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 4
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the brown cup with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 5
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the brown cup with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 5
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the brown cup to the middle return shelf",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 6
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the brown cup on the middle return shelf using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 6
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "train_08_counter_clutter",
+   "task": "Put the teal bottle from the counter into the purple basket.",
+   "text": "Both hands are free; I will approach the counter, pick the teal bottle, carry it to the purple basket, and place it inside.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the teal bottle on the counter",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 4
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the teal bottle with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 5
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the teal bottle with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 5
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the teal bottle to the purple basket on the side table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 6
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the teal bottle inside the purple basket using the holding hand",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 6
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "val_00_bin_to_carton",
+   "task": "Put the brown bottle from the blue bin into the open carton.",
+   "text": "The robot is still away from the table, so I will approach the bin, pick the brown bottle, and transfer it into the carton.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the blue bin to see and reach the brown bottle",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "goal",
+      "id": "g2",
+      "goal": "Pick the brown bottle from the blue bin with the right hand",
+      "check": {
+       "name": "holding",
+       "hand": "right"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g3",
+      "goal": "Carry the brown bottle to a placement stance at the open carton",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 6
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Place the brown bottle inside the open carton",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "val_01_shelf_return",
+   "task": "Return the pink cup to the top return shelf.",
+   "text": "The counter is ahead; I will approach it, pick up the pink cup, and return it to the top shelf.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the counter to locate the pink cup",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "goal",
+      "id": "g2",
+      "goal": "Pick up the pink cup with the right hand",
+      "check": {
+       "name": "holding",
+       "hand": "right"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g3",
+      "goal": "Carry the pink cup to a stance facing the top return shelf",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 8
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Place the pink cup on the top return shelf",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 8
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "val_02_counter_clutter",
+   "task": "Put the purple box from the counter into the orange basket.",
+   "text": "The counter is ahead, so I will approach it, pick the purple box, carry it to the basket, and place it inside.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Approach the counter to locate the purple box",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 5
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "goal",
+        "id": "g2",
+        "goal": "Pick the purple box with the right hand",
+        "check": {
+         "name": "holding",
+         "hand": "right"
+        },
+        "budget": 5
+       },
+       {
+        "type": "goal",
+        "id": "g3",
+        "goal": "Pick the purple box with the left hand",
+        "check": {
+         "name": "holding",
+         "hand": "left"
+        },
+        "budget": 5
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Carry the purple box to the orange basket on the side table",
+      "check": {
+       "name": "arrived"
+      },
+      "budget": 6
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "Place the purple box inside the orange basket",
+      "check": {
+       "name": "placed"
+      },
+      "budget": 6
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "warehouse_shelf",
+   "task": "Test picking one item from each product group in left-to-right order: first the front-left sweet corn can, then a front blueberry jam jar, then the front wrapped food tray, then a front steel bowl. After each successful pick place it on the empty adjoining shelf to the left. Keep all other products in place. If a product cannot be picked after two reasonable attempts, record that failure and continue to the next group. Finish only after attempting all four kinds. Report actual outcomes, including failed grasps.",
+   "text": "The corn and jam are visible on the product shelf; I will test all four groups in order and move only successfully picked items to the adjoining left shelf.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "goal",
+      "id": "g1",
+      "goal": "Test picking the front-left sweet corn can, using at most two reasonable pick attempts with a changed stance or hand on retry; record any failed grasps and whether the can is held.",
+      "check": null,
+      "budget": 6
+     },
+     {
+      "type": "goal",
+      "id": "g2",
+      "goal": "If the corn can is held, carry it to the empty adjoining left shelf without disturbing other products; otherwise skip this transport.",
+      "check": null,
+      "budget": 5
+     },
+     {
+      "type": "goal",
+      "id": "g3",
+      "goal": "If holding the corn can, place it securely inside the adjoining left shelf and record the outcome; otherwise record that its transfer was skipped.",
+      "check": null,
+      "budget": 5
+     },
+     {
+      "type": "goal",
+      "id": "g4",
+      "goal": "Test picking a front blueberry jam jar, using at most two reasonable pick attempts with a changed stance or hand on retry; record any failed grasps and whether the jar is held.",
+      "check": null,
+      "budget": 6
+     },
+     {
+      "type": "goal",
+      "id": "g5",
+      "goal": "If the jam jar is held, carry it to the adjoining left shelf without disturbing products or the transferred can; otherwise skip this transport.",
+      "check": null,
+      "budget": 5
+     },
+     {
+      "type": "goal",
+      "id": "g6",
+      "goal": "If holding the jam jar, place it securely on a separate clear spot inside the adjoining left shelf and record the outcome; otherwise record that its transfer was skipped.",
+      "check": null,
+      "budget": 5
+     },
+     {
+      "type": "goal",
+      "id": "g7",
+      "goal": "Test picking the front wrapped food tray, using at most two reasonable pick attempts with a changed stance or hand on retry; record any failed grasps and whether the tray is held.",
+      "check": null,
+      "budget": 6
+     },
+     {
+      "type": "goal",
+      "id": "g8",
+      "goal": "If the food tray is held, carry it to the adjoining left shelf without disturbing other products or transferred items; otherwise skip this transport.",
+      "check": null,
+      "budget": 5
+     },
+     {
+      "type": "goal",
+      "id": "g9",
+      "goal": "If holding the food tray, place it securely on a separate clear spot inside the adjoining left shelf and record the outcome; otherwise record that its transfer was skipped.",
+      "check": null,
+      "budget": 5
+     },
+     {
+      "type": "goal",
+      "id": "g10",
+      "goal": "Test picking a front steel bowl, using at most two reasonable pick attempts with a changed stance or hand on retry; record any failed grasps and whether the bowl is held.",
+      "check": null,
+      "budget": 6
+     },
+     {
+      "type": "goal",
+      "id": "g11",
+      "goal": "If the steel bowl is held, carry it to the adjoining left shelf without disturbing other products or transferred items; otherwise skip this transport.",
+      "check": null,
+      "budget": 5
+     },
+     {
+      "type": "goal",
+      "id": "g12",
+      "goal": "If holding the steel bowl, place it securely on a separate clear spot inside the adjoining left shelf; otherwise record that its transfer was skipped. Consolidate actual outcomes for all four groups, including failed grasps, for the final report.",
+      "check": null,
+      "budget": 5
+     }
+    ]
+   }
+  }
+ ]
+}

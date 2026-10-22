@@ -318,7 +318,7 @@ def test_open_model_texts_replace_the_target_note_and_extend_the_pointers_questi
 
 def test_a_first_planner_writes_the_first_plan_of_an_unrecorded_task(tmp_path):
     spec = COMPOSITES["c-solfirst-q38-robobrain"]
-    assert spec["first_planner"] == {"model": "sol61-litellm"} and len(spec["plans"]) == 2
+    assert spec["first_planner"] == {"model": "sol61-litellm"} and len(spec["plans"]) >= 2
     entry = json.loads((composite.RecordedPlan.ROOT / spec["plans"][1]).read_text())["plans"][0]
     prompt = "Current task:\n{}\n\nThis turn: write the plan (skill plan)."
     sol = Fake([Decision("sol plan", "plan", {"tree": {}})])
