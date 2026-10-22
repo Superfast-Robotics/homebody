@@ -61,7 +61,9 @@ PERFECT = 1.0  # a minibatch the parent gets all right is skipped (gepa's perfec
 
 FAMILIES = {"guidance": ("choose", "judge", "recover", "navigate", "pick", "place"), "plan_guidance": ("plan",),
             "target_note": ("pick", "place"), "pick_note": ("pick",), "place_note": ("place",)}
-WORD_LIMIT = {"guidance": 230, "target_note": 70, "pick_note": 60, "place_note": 60, "plan_guidance": 200}
+# words per text: room for general rules (the scene-word lint and the val and end-to-end checks keep them general);
+# the pointer notes stay short, as the pointing model is trained on short questions
+WORD_LIMIT = {"guidance": 400, "target_note": 100, "pick_note": 60, "place_note": 60, "plan_guidance": 350}
 ROLES = {
     "plan_guidance": ("Guidance appended to the planner's prompt on plan turns only, when Qwen3.8 writes the task's "
                       "behaviour tree (goals with harness checks and skill-call budgets, in sequences and fallbacks) "
