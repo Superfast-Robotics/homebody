@@ -423,26 +423,32 @@ class Verifier(Composite):
 
 
 class RecordedPlan(Composite):
-    """A task's first plan is a recorded one (spec "plans": a JSON file of {"task", "text", "tree"} under the repo,
+    """A task's first plan is a recorded one (spec "plans": JSON files of {"task", "text", "tree"} under the repo,
     e.g. Sol's plans of a baseline run), matched by the prompt's current task; every other turn, a rewrite of the
-    plan included, goes to the base model. No model is asked for a recorded plan."""
+    plan included, goes to the base model. No model is asked for a recorded plan. With a "first_planner" member,
+    the first plan of a task no file records is that model's (Sol planning a task never recorded, as a deployment
+    would); without one it is the base model's."""
     ROOT = Path(__file__).resolve().parents[3]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        recorded = json.loads((self.ROOT / self.spec["plans"]).read_text())["plans"]
-        self.recorded = {entry["task"]: entry for entry in recorded}
+        files = [self.spec["plans"]] if isinstance(self.spec["plans"], str) else self.spec["plans"]
+        self.recorded = {entry["task"]: entry for name in files
+                         for entry in json.loads((self.ROOT / name).read_text())["plans"]}
         self.planned: set[str] = set()
 
     def decide(self, prompt, *, images, names, attempt, tick, cancelled):
         task = section(prompt, "Current task:")
         entry = self.recorded.get(task)
-        if self.allowed == PLAN_TURN and entry and task not in self.planned:
+        first = self.allowed == PLAN_TURN and task not in self.planned
+        if first:
             self.planned.add(task)
-            self.calls.append({"role": "recorded", "model": "recorded", "model_id": self.spec["plans"], "local": True,
+        if first and entry:
+            self.calls.append({"role": "recorded", "model": "recorded", "model_id": "recorded", "local": True,
                                "dir": "", "scenario": entry.get("scenario")})
             return Decision(entry["text"], "plan", {"tree": entry["tree"]})
-        return self.ask("base", prompt, images=images, names=names, attempt=attempt, tick=tick, cancelled=cancelled)
+        role = "first_planner" if first and "first_planner" in self.members else "base"
+        return self.ask(role, prompt, images=images, names=names, attempt=attempt, tick=tick, cancelled=cancelled)
 
 
 KINDS = {"pointer": PlannerPointer, "cascade": Cascade, "router": PlanRouter, "verifier": Verifier,

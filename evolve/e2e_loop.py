@@ -829,6 +829,7 @@ class E2EMixin:
         entry = next(e for e in reversed(self.archive()) if e["id"] == cid)
         path = self.loop.worktree(self.cand(cid), entry["commit"])
         result = self.evaluate(cid, path, splits=(split,))[split]
+        (self.archive_path.parent / f"{split}-{cid}.json").write_text(json.dumps(result, indent=1))
         self.log(f"{cid} on {split}: placed {result['placed']:.3f}, value {result['value']:.3f}, success "
                  f"{result['success_rate']:.2f}, disturbed {result['disturbed']}, by layout "
                  f"{result.get('placed_by_layout')}, {result['credits']} credits and {result['minutes']} min per session")

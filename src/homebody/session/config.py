@@ -143,6 +143,8 @@ MODELS = {
 # for a pointer or verifier, a model on our vLLM servers asked in its own words ({"served": its --served-model-name,
 # "format": its point format, "server"}). Servers: local is agent.local_url, second is agent.second_url.
 MOLMO_ER = {"served": "molmo2-er", "format": "molmo", "server": "second"}
+# Sol's recorded first plans: the demo-pp and demo-wh baselines b002 (train and val tasks)
+SOL_PLANS = ("configs/plans/sol_demo_pp_b002.json", "configs/plans/sol_demo_wh_b002.json")
 COMPOSITES = {
     "e7-qwen30b-molmo": {"kind": "pointer", "planner": {"model": "qwen3vl-30b-vllm"}, "pointer": MOLMO_ER},
     "e8-qwen30b-er1": {"kind": "pointer", "planner": {"model": "qwen3vl-30b-vllm"},
@@ -195,8 +197,10 @@ COMPOSITES = {
                             "base": {"model": "c-q38-molmo"}},
     "c-solplan-q38": {"kind": "plans", "plans": "configs/plans/sol_demo_pp_b002.json",
                       "base": {"model": "qwen38-27b-vllm"}},
-    "c-solplan-q38-robobrain": {"kind": "plans", "plans": "configs/plans/sol_demo_pp_b002.json",
-                                "base": {"model": "c-q38-robobrain"}},
+    "c-solplan-q38-robobrain": {"kind": "plans", "plans": SOL_PLANS, "base": {"model": "c-q38-robobrain"}},
+    # the same, with Sol writing the first plan of a task no file records (the held-out test tasks, a new scene)
+    "c-solfirst-q38-robobrain": {"kind": "plans", "plans": SOL_PLANS, "base": {"model": "c-q38-robobrain"},
+                                 "first_planner": {"model": "sol61-litellm"}},
 }
 MODELS.update({name: ("composite", name, None) for name in COMPOSITES})
 

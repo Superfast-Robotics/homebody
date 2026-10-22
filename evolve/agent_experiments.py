@@ -28,7 +28,7 @@ import subprocess
 import sys
 import time
 import urllib.request
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from .loop import HERE, LOCAL_CONFIG, REPO, config, git
@@ -106,6 +106,8 @@ class Experiment:
     quota: bool = False  # uses Sol: waits for the ChatGPT quota reset
     best: tuple[str, ...] = field(default=())  # the picks it takes: best-small, best-base
     options: dict = field(default_factory=dict)  # more [agent] settings (the open-model options)
+    profile: str = "demo-pp"  # the e2e profile whose suite, settings and keys it runs with
+    test: bool = False  # after the baseline (train and val), the profile's test tasks too
 
     def blocked(self, gpu_gb=GPU_GB):
         reasons = [MODELS[s.model].blocked for s in (self.local, self.second)
@@ -197,6 +199,10 @@ def experiments(best_small="robobrain2.5-8b", best_base="robobrain2.5-8b", gpu_g
                             Serve("robobrain2.5-8b", 0.33, 8192), options=OPEN_FIXES),
         "Q38M3": Experiment("c-q38-mimo", Serve("qwen3.8-27b", 0.55, 16384),
                             Serve("mimo-embodied-7b", 0.33, 8192), options=OPEN_FIXES),
+        # the best open setup's own rollouts for the GEPA data (Sol's recorded first plans; Sol plans live a task
+        # no file records): the warehouse suite's train and val tasks
+        "WSPR": Experiment("c-solfirst-q38-robobrain", Serve("qwen3.8-27b", 0.55, 16384),
+                           Serve("robobrain2.5-8b", 0.33, 8192), options=OPEN_FIXES, profile="demo-wh"),
     }
 
 
@@ -206,8 +212,8 @@ def with_candidates(table, shared: Path):
     for path in sorted((shared / "gepa").glob("*.json")):
         spec = json.loads(path.read_text())
         base = table[spec["base"]]
-        extra[spec["id"]] = Experiment(base.agent, base.local, base.second, base.quota, base.best,
-                                       {**base.options, **spec["options"]})
+        extra[spec["id"]] = replace(base, options={**base.options, **spec["options"]},
+                                    **{k: spec[k] for k in ("profile", "test", "agent") if k in spec})
     return {**table, **extra}
 
 
@@ -357,8 +363,8 @@ def serve(cfg, server, wanted):
 
 
 # --- profiles and runs ---
-def profile_name(eid):
-    return f"demo-pp-{eid}"
+def profile_name(eid, base="demo-pp"):
+    return f"{base}-{eid}"
 
 
 def settings_name(eid):
@@ -366,8 +372,8 @@ def settings_name(eid):
 
 
 def write_settings(cfg, eid, exp, server, picks):
-    """The experiment's episode settings: the demo-pp ones with its agent and model servers."""
-    base = (HERE / cfg["e2e"][cfg["agents"]["base_profile"]]["settings"]).read_text()
+    """The experiment's episode settings: its profile's, with its agent and model servers."""
+    base = (HERE / cfg["e2e"][exp.profile]["settings"]).read_text()
     ports = client_ports(cfg, server)
     local = f"http://{server['ip']}:{ports[0]}/v1"
     second = f"http://{server['ip']}:{ports[1]}/v1" if exp.second else local
@@ -393,23 +399,25 @@ def toml(value):
 
 
 def write_overlay(cfg, table, ids):
-    """evolve/config.local.toml: this machine's work folder and a demo-pp-<id> profile per experiment (demo-pp's
-    keys with its own workdir, settings, agent and sessions per host)."""
-    agents, base = cfg["agents"], cfg["e2e"][cfg["agents"]["base_profile"]]
+    """evolve/config.local.toml: this machine's work folder and a <profile>-<id> profile per experiment (its base
+    profile's keys with its own workdir, settings, agent and sessions per host)."""
+    agents = cfg["agents"]
     lines = ["# written by evolve/agent_experiments.py: this machine's loop work folder and experiment profiles",
              "[local]", f"work = {toml(expand(agents['work']))}", 'proxy = ""', ""]
     for eid in ids:
-        own = {"workdir": profile_name(eid), "settings": settings_name(eid), "agent_model": table[eid].agent,
+        base, name = cfg["e2e"][table[eid].profile], profile_name(eid, table[eid].profile)
+        own = {"workdir": name, "settings": settings_name(eid), "agent_model": table[eid].agent,
                "parallel": agents["parallel"]}
         keys = {k: v for k, v in base.items() if k != "suite"} | own
-        lines += [f"[e2e.{profile_name(eid)}]", *(f"{k} = {toml(v)}" for k, v in keys.items()), "",
-                  f"[e2e.{profile_name(eid)}.suite]", *(f"{k} = {toml(v)}" for k, v in base["suite"].items()), ""]
+        lines += [f"[e2e.{name}]", *(f"{k} = {toml(v)}" for k, v in keys.items()), "",
+                  f"[e2e.{name}.suite]", *(f"{k} = {toml(v)}" for k, v in base["suite"].items()), ""]
     (HERE / LOCAL_CONFIG).write_text("\n".join(lines))
 
 
 def summary_row(eid, exp, work):
-    """The experiment's row from its baseline's archive entry."""
-    entry = next(json.loads(line) for line in (work / "e2e" / profile_name(eid) / "archive.jsonl").read_text()
+    """The experiment's row from its baseline's archive entry (and its test result when it ran one)."""
+    folder = work / "e2e" / profile_name(eid, exp.profile)
+    entry = next(json.loads(line) for line in (folder / "archive.jsonl").read_text()
                  .splitlines() if line.strip() and json.loads(line)["status"] == "baseline")
     row = {"id": eid, "agent": exp.agent, "commit": entry["commit"]}
     placed = total = 0
@@ -422,6 +430,10 @@ def summary_row(eid, exp, work):
             got, out_of = (int(n) for n in layout.split("/"))
             placed, total = placed + got, total + out_of
     row["all_placed"] = round(placed / total, 3) if total else 0.0
+    if (folder / "test-b000.json").is_file():
+        test = json.loads((folder / "test-b000.json").read_text())
+        row |= {"test_placed": test["placed"], "test_success": test["success_rate"], "test_credits": test["credits"],
+                "test_placed_by_layout": test["placed_by_layout"]}
     return row
 
 
@@ -430,10 +442,12 @@ def run(cfg, server, eid, exp, picks, commit):
     serve(cfg, server, wanted)
     write_settings(cfg, eid, exp, server, picks)
     log(f"{eid}: baseline of {exp.agent} at {commit[:10]}")
-    result = subprocess.run([sys.executable, "-m", "evolve.e2e_loop", "--profile", profile_name(eid), "baseline",
-                             commit, "--id", "b000"], cwd=REPO, check=False)
+    loop = [sys.executable, "-m", "evolve.e2e_loop", "--profile", profile_name(eid, exp.profile)]
+    result = subprocess.run([*loop, "baseline", commit, "--id", "b000"], cwd=REPO, check=False)
     if result.returncode:
         raise RuntimeError(f"{eid}: the baseline exited {result.returncode}")
+    if exp.test and subprocess.run([*loop, "test", "b000"], cwd=REPO, check=False).returncode:
+        raise RuntimeError(f"{eid}: the test run failed")
     return summary_row(eid, exp, Path(expand(cfg["agents"]["work"])))
 
 

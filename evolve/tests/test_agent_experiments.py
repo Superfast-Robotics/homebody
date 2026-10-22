@@ -10,7 +10,7 @@ from homebody.session.config import COMPOSITES, MODELS
 
 def test_every_experiment_names_a_models_row_and_served_models():
     table = ax.experiments()
-    assert list(table) == [f"E{n}" for n in range(1, 21)] + ["Q38", "Q38R", "Q38M", "Q38L", "Q38O", "G4O", "SPM", "SPO", "SPQ", "SPR2", "SPQ2", "SPR3", "Q38R3", "Q38M3"]
+    assert list(table) == [f"E{n}" for n in range(1, 21)] + ["Q38", "Q38R", "Q38M", "Q38L", "Q38O", "G4O", "SPM", "SPO", "SPQ", "SPR2", "SPQ2", "SPR3", "Q38R3", "Q38M3", "WSPR"]
     served = {name for name, model in ax.MODELS.items() if model.agent}
     for eid, exp in table.items():
         assert exp.agent in MODELS or exp.agent.endswith("-vllm"), eid
@@ -28,7 +28,7 @@ def test_blocked_and_runnable_experiments():
     assert blocked == {"E3", "E6", "E9", "E11", "E12", "E13", "E14", "E15", "E16", "E18", "Q38", "Q38R", "Q38M",
                        "Q38L", "Q38O", "G4O", "SPM",
                        "SPO", "SPQ", "SPR2", "SPQ2", "SPR3", "Q38R3",
-                       "Q38M3"}  # the Qwen3.8 ones need loki-gh200's 96 GB and vLLM 0.32
+                       "Q38M3", "WSPR"}  # the Qwen3.8 ones need loki-gh200's 96 GB and vLLM 0.32
     assert "quota" in table["E11"].blocked() and "4-bit" in table["E3"].blocked()
 
 
@@ -94,7 +94,9 @@ def evolve_dir(tmp_path, monkeypatch):
 def cfg():
     return {"agents": {"ports": [8000, 8001], "work": "~/w", "parallel": 6, "base_profile": "demo-pp"},
             "e2e": {"demo-pp": {"name": "dex1-pickplace", "settings": "base.toml", "parallel": 12, "clusters": {},
-                                "services": ["start"], "suite": {"train": ["a/*"], "val": ["b/*"]}}}}
+                                "services": ["start"], "suite": {"train": ["a/*"], "val": ["b/*"]}, "repeats": 1},
+                    "demo-wh": {"name": "dex1-warehouse", "settings": "base.toml", "repeats": 3,
+                                "suite": {"train": ["x/warehouse_suite/train/wh_*"], "val": ["y/*"]}}}}
 
 
 def test_settings_add_the_agent_and_its_servers(evolve_dir):
@@ -204,3 +206,12 @@ def test_gepa_candidates_are_experiments_on_their_bases_servers(tmp_path, evolve
     ax.write_settings(cfg(), "G01", table["G01"], {"ip": "10.0.0.9"}, ("a", "b"))
     agent = tomllib.loads((evolve_dir / "episode_settings_pp_G01.toml").read_text())["agent"]
     assert agent["local_guidance"] == texts["local_guidance"]  # multi-line text survives as TOML
+
+
+def test_an_experiment_runs_with_its_own_profile(evolve_dir):
+    table = ax.experiments(gpu_gb=96)
+    ax.write_overlay(cfg(), table, ["WSPR", "SPR3"])
+    overlay = tomllib.loads((evolve_dir / loop.LOCAL_CONFIG).read_text())["e2e"]
+    assert overlay["demo-wh-WSPR"]["suite"]["train"][0].endswith("warehouse_suite/train/wh_*")
+    assert overlay["demo-wh-WSPR"]["repeats"] == 3 and overlay["demo-pp-SPR3"]["repeats"] == 1
+    assert overlay["demo-wh-WSPR"]["agent_model"] == "c-solfirst-q38-robobrain"

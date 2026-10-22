@@ -314,3 +314,19 @@ def test_open_model_texts_replace_the_target_note_and_extend_the_pointers_questi
     agent.generate("prompt", **turn(tmp_path, 1))
     assert planner.prompts[0] == "prompt\n\nName the target."
     assert pointer.prompts == ["Point to the can. Pick note.", "Point to the shelf. Place note."]
+
+
+def test_a_first_planner_writes_the_first_plan_of_an_unrecorded_task(tmp_path):
+    spec = COMPOSITES["c-solfirst-q38-robobrain"]
+    assert spec["first_planner"] == {"model": "sol61-litellm"} and len(spec["plans"]) == 2
+    entry = json.loads((composite.RecordedPlan.ROOT / spec["plans"][1]).read_text())["plans"][0]
+    prompt = "Current task:\n{}\n\nThis turn: write the plan (skill plan)."
+    sol = Fake([Decision("sol plan", "plan", {"tree": {}})])
+    base = Fake([Decision("rewrite", "plan", {"tree": {}})])
+    agent = Composite(Agent(model="c-solfirst-q38-robobrain"), members={"base": base, "first_planner": sol},
+                      endpoints={})
+    agent.turn(("plan",))
+    assert agent.generate(prompt.format(entry["task"]), **turn(tmp_path, 0)).arguments["tree"] == entry["tree"]
+    assert agent.generate(prompt.format("a new task"), **turn(tmp_path, 1)).text == "sol plan"
+    assert agent.generate(prompt.format("a new task"), **turn(tmp_path, 2)).text == "rewrite"
+    assert routing(tmp_path, 1)[0]["role"] == "first_planner" and sol.prompts and len(base.prompts) == 1
