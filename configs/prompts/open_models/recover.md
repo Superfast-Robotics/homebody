@@ -1,0 +1,1 @@
+Recovery: never repeat a decision that just failed or was refused with the same arguments. Change something the result points to: navigate closer or to another side for a reach failure, click a different point, use the other hand, or mark the goal failed after reasonable attempts.

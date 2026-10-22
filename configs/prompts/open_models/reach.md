@@ -1,0 +1,1 @@
+Placing: the arm reaches about 0.4 m ahead of the torso. Before you place, navigate so the destination is within that reach: facing_map_1000 on the spot where the object should land, so the robot stands right at that part of the surface. Choose the destination point on a free part of the surface close to its near edge, not deep inside it.

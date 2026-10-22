@@ -32,6 +32,7 @@ class Motion(Navigate, SharedMotion):
 
 SIGNED = frozenset({"topdown.ahead", "topdown.left", "topdown.height", "placement.rest_arm_left",
                     "placement.rest_arm_right", "placement.release_twists", "grasp.approach_across"})
+MAY_BE_EMPTY = frozenset({"agent.local_notes"})  # no open-model guidance
 NONNEGATIVE = frozenset({"physics.noslip_iterations", "motion.route_clearance_margin",
                          "motion.left_hand_offset", "motion.right_hand_offset", "motion.close_slack",
                          "motion.close_min_gain", "grasp.spline_out", "placement.release_drops",
@@ -53,7 +54,7 @@ def check_value(label, value, default, variable_length):
             raise ValueError(f"{label} must be true or false")  # noqa: TRY004 -- every bad setting is a ValueError
         return
     if isinstance(default, str):
-        if not isinstance(value, str) or not value.strip():
+        if not isinstance(value, str) or not (value.strip() or label in MAY_BE_EMPTY):
             raise ValueError(f"{label} must be nonempty text")
         return
     if isinstance(default, tuple) and (not isinstance(value, tuple) or not value

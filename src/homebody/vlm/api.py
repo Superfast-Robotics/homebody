@@ -125,7 +125,19 @@ class LocalVlm(OpenAiApi):
     def thinking(self) -> bool:
         return self.settings.effort == "think"
 
+    NOTES = Path(__file__).resolve().parents[3] / "configs" / "prompts" / "open_models"
+
+    def guidance(self) -> str:
+        """agent.local_notes: guidance sections given to the open models only, after the session's prompt."""
+        names = [name.strip() for name in self.settings.local_notes.split(",") if name.strip()]
+        missing = [name for name in names if not (self.NOTES / f"{name}.md").is_file()]
+        if missing:
+            raise ProviderError(f"agent.local_notes names no file in {self.NOTES}: {', '.join(missing)}")
+        return "\n".join((self.NOTES / f"{name}.md").read_text().strip() for name in names)
+
     def request(self, prompt: str, images: tuple[Path, ...], names: tuple[str, ...]) -> dict:
+        if notes := self.guidance():
+            prompt = f"{prompt}\n\nGuidance:\n{notes}"
         offered = tuple(n for n in names if n in self.allowed) or names
         pictures = []
         for number, image in enumerate(images, 1):

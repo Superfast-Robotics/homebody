@@ -225,6 +225,8 @@ class Agent:
     local_temperature: float = 0.0
     local_layout: str = "text-first"
     local_image_labels: bool = True
+    # extra guidance for the open models only (configs/prompts/open_models/<name>.md, comma separated; "" for none)
+    local_notes: str = ""
 
     def __post_init__(self):
         if self.service_tier not in ("default", "fast", "flex"):

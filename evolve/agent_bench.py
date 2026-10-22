@@ -6,6 +6,7 @@ scores them).
     python3 -m evolve.agent_bench turns CASES OUT --model M [--local-url U] [--layout L] [--no-labels] [--limit N]
     python3 -m evolve.agent_bench point CASES OUT --served S --format F --url U   object pointing asked alone
     python3 -m evolve.agent_bench verify CASES OUT --served S --url U            goal checks asked as yes/no
+    python3 -m evolve.agent_bench place CASES OUT --served S --format F --url U [--variant V]   place pointing
     python3 -m evolve.agent_bench score OUT...                  one row per run, one column per capability
     python3 -m evolve.agent_bench report OUT...                 one row per model (its runs merged), in percent
     python3 -m evolve.agent_bench template CASES --model M --local-url U   the text the server renders for one case
@@ -36,6 +37,7 @@ from homebody.vlm.composite import POINTER_PROMPTS, VERIFY_PROMPTS, Endpoint, to
 from homebody.vlm.provider import ProviderError
 
 from .agent_capabilities import pixel, score_run
+from .agent_place import VARIANTS, ask_place
 
 IMAGES = ("rgb.png", "depth_preview.png", "map.png", "topdown.png")
 PLAN_DECISIONS = (PLAN, GOAL_DONE, GOAL_FAILED)
@@ -104,6 +106,11 @@ def collect_session(session: Path, scenario: str, out: Path) -> int:
         for name in IMAGES:
             shutil.copy(frame / name, case / name)
         np.savez_compressed(case / "labels.npz", labels=labels)
+        sensors = np.load(frame / "sensors.npz")  # the view's geometry: reach and depth masking need it
+        if {"depth", "intrinsics", "world_camera", "world_torso"} <= set(sensors.files):
+            np.savez_compressed(case / "geometry.npz", depth=sensors["depth"].astype(np.float16),
+                                intrinsics=sensors["intrinsics"], world_camera=sensors["world_camera"],
+                                world_torso=sensors["world_torso"])
         (case / "prompt.txt").write_text(prompt)
         goal, observation = ACTIVE_GOAL.search(prompt), OBSERVATION.search(prompt)
         (case / "case.json").write_text(json.dumps({
@@ -234,8 +241,8 @@ def run_turns(args):
 
 
 def run_endpoint(args, kind, ask):
-    endpoint = Endpoint(args.served, args.format if kind == "point" else "yesno", args.url, 300.0)
-    args.label = args.label or f"{args.served} ({endpoint.format})"
+    endpoint = Endpoint(args.served, args.format if kind in ("point", "place") else "yesno", args.url, 300.0)
+    args.label = args.label or f"{args.served} ({endpoint.format}{', ' + args.variant if kind == 'place' else ''})"
     run(args, kind, lambda case, out: ask(endpoint, case, out))
 
 
@@ -255,7 +262,8 @@ COLUMNS = (("format", "format.parsed"), ("args", "format.args_ok"), ("plan", "pl
            ("pick hit", "pick.hit"), ("place support", "place.same_support"),
            ("nav goal <0.5 m", "navigate.goal_within"), ("nav facing <0.5 m", "navigate.facing_within"),
            ("point hit", "point.hit"), ("verify acc", "verify.accuracy"), ("verify recall", "verify.recall"),
-           ("verify spec", "verify.specificity"))
+           ("verify spec", "verify.specificity"), ("place on support", "place.on_support"),
+           ("place in reach", "place.in_reach"), ("place both", "place.both"))
 
 
 def percent(value) -> str:
@@ -303,7 +311,7 @@ def main(argv=None):
     c = sub.add_parser("collect")
     c.add_argument("out")
     c.add_argument("sessions", nargs="+", help="folders holding <split>/<scenario>/r<k>/session/<session>/")
-    for name in ("turns", "point", "verify"):
+    for name in ("turns", "point", "verify", "place"):
         r = sub.add_parser(name)
         r.add_argument("cases")
         r.add_argument("out")
@@ -324,6 +332,9 @@ def main(argv=None):
                 r.add_argument("--format", required=True, choices=sorted(POINTER_PROMPTS))
             if name == "verify":
                 r.add_argument("--prompt", default="plain", choices=sorted(VERIFY_PROMPTS))
+            if name == "place":
+                r.add_argument("--format", required=True, choices=sorted(POINTER_PROMPTS))
+                r.add_argument("--variant", default="plain", choices=VARIANTS)
     for name in ("score", "report"):
         sub.add_parser(name).add_argument("outs", nargs="+")
     t = sub.add_parser("template")
@@ -333,7 +344,8 @@ def main(argv=None):
     args = parser.parse_args(argv)
     commands = {"collect": collect, "score": score, "report": report, "template": template, "turns": run_turns,
                 "point": lambda a: run_endpoint(a, "point", ask_point),
-                "verify": lambda a: run_endpoint(a, "verify", lambda e, c, o: ask_verify(e, c, o, a.prompt))}
+                "verify": lambda a: run_endpoint(a, "verify", lambda e, c, o: ask_verify(e, c, o, a.prompt)),
+                "place": lambda a: run_endpoint(a, "place", lambda e, c, o: ask_place(e, c, o, a.variant, save))}
     commands[args.command](args)
 
 

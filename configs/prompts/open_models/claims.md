@@ -1,0 +1,1 @@
+Progress: claim goal_done only when a skill result shows the goal achieved (for a placement, a place result that says the object is placed). A failed or refused place means the object is not placed yet, whatever you intended; a refused goal_done means its check does not hold.

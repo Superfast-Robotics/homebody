@@ -295,3 +295,13 @@ def test_a_request_with_text_only_messages_is_recorded():
     body = {"messages": [{"role": "system", "content": "think"}, {"role": "user", "content": [{"type": "text", "text": "p"}]},
                          {"role": "assistant", "content": "<think>\n"}]}
     assert api.redact(body, ()) == body
+
+
+def test_open_model_guidance_is_appended_only_when_named():
+    plain = LocalVlm(Agent(model="qwen3vl-8b-vllm")).request("p", (), ("done",))
+    assert plain["messages"][0]["content"][0]["text"] == "p"
+    noted = LocalVlm(Agent(model="qwen3vl-8b-vllm", local_notes="reach, claims")).request("p", (), ("done",))
+    text = noted["messages"][0]["content"][0]["text"]
+    assert text.startswith("p\n\nGuidance:\nPlacing:") and "Progress:" in text
+    with pytest.raises(ProviderError, match="nosuch"):
+        LocalVlm(Agent(model="qwen3vl-8b-vllm", local_notes="nosuch")).request("p", (), ("done",))

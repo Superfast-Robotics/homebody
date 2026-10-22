@@ -193,7 +193,13 @@ def score_verify(rows, _cases: Path) -> dict:
 def score_run(out: Path) -> dict:
     run = json.loads((out / "run.json").read_text())
     rows = [json.loads(p.read_text()) for p in sorted(out.glob("*/bench.json"))]
-    scorer = {"turns": score_turns, "point": score_point, "verify": score_verify}[run["kind"]]
+    if run["kind"] == "place":
+        from .agent_place import score_place  # noqa: PLC0415 -- agent_place imports the bench's helpers
+
+        def scorer(rows, cases):
+            return score_place(rows, cases, Tally())
+    else:
+        scorer = {"turns": score_turns, "point": score_point, "verify": score_verify}[run["kind"]]
     seconds = [r["seconds"] for r in rows]
     return {"model": run["model"], "kind": run["kind"], "cases": len(rows),
             "seconds": round(statistics.mean(seconds), 1) if seconds else "-",
