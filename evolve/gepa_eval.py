@@ -206,7 +206,10 @@ def evaluate(case: Path, out: Path, settings: Agent) -> dict:
     if (case / "geometry.npz").is_file() and not (case / "rgb_masked.png").is_file():
         masked(case, case)  # agent.local_reach_mask: the pointer takes rgb_masked.png beside rgb.png
     (out / case.name / "bench.json").unlink(missing_ok=True)
-    row = ask_turn(settings, case, out)
+    try:
+        row = ask_turn(settings, case, out)
+    except FileExistsError:  # a request folder left by an interrupted ask of the same case: ask it afresh
+        row = ask_turn(settings, case, out)
     record = score_case(case, row, out) | {"seconds": row["seconds"]}
     done.write_text(json.dumps(record, indent=1))
     return record
