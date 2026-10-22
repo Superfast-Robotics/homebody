@@ -454,7 +454,7 @@ def reflection_prompt(component: str, text: str, batch: list[dict], sessions: li
         "Rules for the new text: it must work in any scene, building or task the robot meets, not only these: "
         "describe the robot and how to decide, never these scenes' objects, products, colours, furniture, shelf "
         "levels or bays, and no numbers except the robot's own facts (the arm reaches about 0.4 m ahead of the "
-        f"torso; clicks are normalised 0-1000). At most {WORD_LIMIT[component]} words; plain sentences, no "
+        f"torso; clicks are normalised 0-1000). At most {word_limit(component, text)} words; plain sentences, no "
         "markdown headings. Return only the new text inside one ``` block.")
     return "\n\n".join(parts)
 
@@ -464,11 +464,19 @@ def proposal(answer: str) -> str:
     return (block[1] if block else answer).strip()
 
 
-def lint(component: str, text: str, banned: list[str]) -> str | None:
+def word_limit(component: str, parent_text: str = "") -> int:
+    """The words a proposal may use: the text's limit, or for an edit of a long parent its length plus room for two
+    rules (an edit near the limit would otherwise have to condense, which the edit rule refuses), at most 1.2 times
+    the limit."""
+    limit = WORD_LIMIT[component]
+    return min(max(limit, len(parent_text.split()) + 80), int(limit * 1.2)) if parent_text.strip() else limit
+
+
+def lint(component: str, text: str, banned: list[str], limit: int | None = None) -> str | None:
     """Why TEXT is refused, or None."""
-    words = len(text.split())
-    if words > WORD_LIMIT[component]:
-        return f"{words} words, over the limit of {WORD_LIMIT[component]}"
+    words, limit = len(text.split()), limit or WORD_LIMIT[component]
+    if words > limit:
+        return f"{words} words, over the limit of {limit}"
     named = sorted(vocabulary(text) & set(banned))
     if named:
         return f"names words of these scenarios: {', '.join(named)}"
@@ -564,7 +572,7 @@ def propose(run: Path, state: dict, name: str, component: str, parent_text: str,
         answer, cost = critic(prompt, name)
         state["credits"] += cost
         text = proposal(answer)
-        refused = lint(component, text, state["banned"])
+        refused = lint(component, text, state["banned"], word_limit(component, parent_text))
         if not refused and parent_text.strip() and difflib.SequenceMatcher(None, parent_text, text).ratio() < EDIT_RATIO:
             refused = "it rewrote the text; keep every sentence that is not about these failures word for word"
         if not refused:
