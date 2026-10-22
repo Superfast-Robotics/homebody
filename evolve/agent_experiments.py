@@ -133,6 +133,12 @@ OPEN_FIXES = {"local_notes": "reach,claims,recover", "local_place_reach": True, 
               "local_repeat_guard": True}
 
 
+def spr_on(profile):
+    """SPR3's setup on PROFILE's train, val and test tasks, Sol writing the first plan of a task no file records."""
+    return Experiment("c-solfirst-q38-robobrain", Serve("qwen3.8-27b", 0.55, 16384), Serve("robobrain2.5-8b", 0.33, 8192),
+                      options=OPEN_FIXES, profile=profile, test=True)
+
+
 def experiments(best_small="robobrain2.5-8b", best_base="robobrain2.5-8b", gpu_gb=GPU_GB):
     """E1-E20 with the Phase-1 8B pick (best_small) and the verifier experiments' base (best_base, one 8B: a
     composite base would need its own servers beside the verifier's). On a BIG_GB GPU a 32B beside an 8B is
@@ -199,10 +205,12 @@ def experiments(best_small="robobrain2.5-8b", best_base="robobrain2.5-8b", gpu_g
                             Serve("robobrain2.5-8b", 0.33, 8192), options=OPEN_FIXES),
         "Q38M3": Experiment("c-q38-mimo", Serve("qwen3.8-27b", 0.55, 16384),
                             Serve("mimo-embodied-7b", 0.33, 8192), options=OPEN_FIXES),
-        # the best open setup's own rollouts for the GEPA data (Sol's recorded first plans; Sol plans live a task
-        # no file records): the warehouse suite's train and val tasks
-        "WSPR": Experiment("c-solfirst-q38-robobrain", Serve("qwen3.8-27b", 0.55, 16384),
-                           Serve("robobrain2.5-8b", 0.33, 8192), options=OPEN_FIXES, profile="demo-wh"),
+        # the best open setup's own rollouts for the GEPA data, train, val and test (Sol's recorded first plans; Sol
+        # plans live a task no file records, and those plans are recorded for every later run): the warehouse
+        # suite, the G1 harness suite with its Dex3 hands and the move-variety tasks
+        "WSPR": spr_on("demo-wh"),
+        "GSPR": spr_on("g1-dex3"),
+        "MSPR": spr_on("move-var"),
     }
 
 

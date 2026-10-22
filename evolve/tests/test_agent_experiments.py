@@ -10,7 +10,7 @@ from homebody.session.config import COMPOSITES, MODELS
 
 def test_every_experiment_names_a_models_row_and_served_models():
     table = ax.experiments()
-    assert list(table) == [f"E{n}" for n in range(1, 21)] + ["Q38", "Q38R", "Q38M", "Q38L", "Q38O", "G4O", "SPM", "SPO", "SPQ", "SPR2", "SPQ2", "SPR3", "Q38R3", "Q38M3", "WSPR"]
+    assert list(table) == [f"E{n}" for n in range(1, 21)] + ["Q38", "Q38R", "Q38M", "Q38L", "Q38O", "G4O", "SPM", "SPO", "SPQ", "SPR2", "SPQ2", "SPR3", "Q38R3", "Q38M3", "WSPR", "GSPR", "MSPR"]
     served = {name for name, model in ax.MODELS.items() if model.agent}
     for eid, exp in table.items():
         assert exp.agent in MODELS or exp.agent.endswith("-vllm"), eid
@@ -28,7 +28,7 @@ def test_blocked_and_runnable_experiments():
     assert blocked == {"E3", "E6", "E9", "E11", "E12", "E13", "E14", "E15", "E16", "E18", "Q38", "Q38R", "Q38M",
                        "Q38L", "Q38O", "G4O", "SPM",
                        "SPO", "SPQ", "SPR2", "SPQ2", "SPR3", "Q38R3",
-                       "Q38M3", "WSPR"}  # the Qwen3.8 ones need loki-gh200's 96 GB and vLLM 0.32
+                       "Q38M3", "WSPR", "GSPR", "MSPR"}  # the Qwen3.8 ones need loki-gh200's 96 GB and vLLM 0.32
     assert "quota" in table["E11"].blocked() and "4-bit" in table["E3"].blocked()
 
 
@@ -215,3 +215,4 @@ def test_an_experiment_runs_with_its_own_profile(evolve_dir):
     assert overlay["demo-wh-WSPR"]["suite"]["train"][0].endswith("warehouse_suite/train/wh_*")
     assert overlay["demo-wh-WSPR"]["repeats"] == 3 and overlay["demo-pp-SPR3"]["repeats"] == 1
     assert overlay["demo-wh-WSPR"]["agent_model"] == "c-solfirst-q38-robobrain"
+    assert table["WSPR"].test and table["GSPR"].profile == "g1-dex3"

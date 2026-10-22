@@ -1,0 +1,23 @@
+# episode_settings_dex1_rt.toml for the G1 with its own Dex3-1 hands (robot.hands defaults to dex3): the G1
+# harness suite and the move-variety tasks the open setup's GEPA data adds (2026-10-22).
+[agent]
+reasoning_effort = "medium"
+max_steps = 60
+# Physics runs in real time while the model thinks (2026-10-21, feature analysis): a pause hides slip and holding
+# costs during inference and differs from the HomeBody baseline branch, which always runs in real time.
+pause_while_thinking = false
+
+[coder]
+# Off (2026-10-21): on the pick-and-place scenarios 26 coder calls took ~80 min for about 5-7 real recoveries, 2 of
+# them objects the HomeBody baseline missed. calls = 0 removes it from the prompt, the schema and auto mode.
+auto = false
+tries = 3
+rescues = 1
+calls = 0
+
+[plan]
+enabled = true  # the agent writes a behavior-tree plan and works through it goal by goal (session/planned.py)
+replans = 2
+
+[recording]
+keyframes = false  # per-stage keyframes only feed the coder (session/trace.py), which is off
