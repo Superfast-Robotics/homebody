@@ -5,7 +5,7 @@ placed on (its label), and on reach: the clicked point's horizontal distance fro
 
 Variants: "plain" asks as the composite pointer does; "reach" adds that the spot is near the surface's front edge
 within reach; "mask" greys out the pixels whose point lies beyond reach before the pointer sees the image; "clamp"
-moves a click beyond reach toward the robot until it is within reach, on the same support."""
+moves a click beyond reach toward the robot until it is within reach, on the same support; "mask+clamp" does both."""
 import json
 import time
 from pathlib import Path
@@ -18,7 +18,7 @@ from homebody.vlm.provider import ProviderError
 
 REACH_M = 0.42  # the palm reaches about this far ahead of the torso (the place skill's prompt line)
 SCORE_REACH_M = 0.45
-VARIANTS = ("plain", "reach", "mask", "clamp")
+VARIANTS = ("plain", "reach", "mask", "clamp", "mask+clamp")
 REACH_NOTE = (" The spot must be a free part of that surface near its front edge, close to the robot: within about "
               "0.4 m of it.")
 
@@ -104,14 +104,14 @@ def ask_place(endpoint: Endpoint, case: Path, out: Path, variant: str, save) -> 
     started = time.monotonic()
     words = f"the spot to set the carried object down in this robot step: {wanted}"
     prompt = POINTER_PROMPTS[endpoint.format].format(target=words) + (REACH_NOTE if variant == "reach" else "")
-    image = masked(case, out / case.name) if variant == "mask" else case / "rgb.png"
+    image = masked(case, out / case.name) if variant.startswith("mask") else case / "rgb.png"
     try:
         answer = endpoint.ask(prompt, (image,), attempt=out / case.name / "request", tick=lambda: None,
                               cancelled=lambda: False)
         point = to_1000(answer, endpoint.format, case / "rgb.png")
     except ProviderError as error:
         return save(out, case, {"error": str(error)[:300]}, started)
-    final = clamped(point, case) if variant == "clamp" else point
+    final = clamped(point, case) if variant.endswith("clamp") else point
     return save(out, case, {"answer": answer[:300], "raw_point": point, "point": final}, started)
 
 
