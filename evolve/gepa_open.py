@@ -31,6 +31,8 @@ from pathlib import Path
 from homebody.vlm.composite import TARGET_NOTE
 from homebody.vlm.provider import streamed
 
+from .gepa_groups import GROUPS, evaluate_planning, evaluate_pointer
+
 REPO = Path(__file__).resolve().parents[1]
 RUNS = REPO.parent / "astra-evolve" / "gepa"
 GPU_HOST, GPU_REPO, GPU_PY = "loki-gh200", "~/hb-bench", "~/vllm-venv/bin/python"
@@ -57,11 +59,13 @@ RATES = {"input": 50.0, "cached": 2.5, "output": 250.0}  # credits per 1M tokens
 MINIBATCH, VAL_SIZE = 40, 240
 PERFECT = 1.0  # a minibatch the parent gets all right is skipped (gepa's perfect_score)
 
-TEXTS = ("guidance", "target_note", "pick_note", "place_note")
-FAMILIES = {"guidance": ("choose", "judge", "recover", "navigate", "pick", "place"),
+FAMILIES = {"guidance": ("choose", "judge", "recover", "navigate", "pick", "place"), "plan_guidance": ("plan",),
             "target_note": ("pick", "place"), "pick_note": ("pick",), "place_note": ("place",)}
-WORD_LIMIT = {"guidance": 230, "target_note": 70, "pick_note": 60, "place_note": 60}
+WORD_LIMIT = {"guidance": 230, "target_note": 70, "pick_note": 60, "place_note": 60, "plan_guidance": 160}
 ROLES = {
+    "plan_guidance": ("Guidance appended to the planner's prompt on plan turns only, when Qwen3.8 writes the task's "
+                      "behaviour tree (goals with harness checks and skill-call budgets, in sequences and fallbacks) "
+                      "that it then works through."),
     "guidance": ("Guidance appended (after 'Guidance:') to every decision prompt of the planner, Qwen3.8-27B, an "
                  "open-weight vision-language model that drives a humanoid robot with two grippers through skills "
                  "(navigate, pick, place, goal_done, goal_failed, done) while it works through a plan of goals. The "
@@ -151,13 +155,19 @@ def evaluate(run: Path, state: dict, cid: str, names: list[str]) -> dict:
     known = records(run, cid)
     missing = [n for n in names if n not in known]
     if missing:
-        executors = [e for e in EXECUTORS if e["host"] in state.get("executors", [EXECUTORS[0]["host"]])]
         texts = next(c for c in state["candidates"] if c["id"] == cid)["texts"]
-        shares = {e["host"]: [n for n in missing if executor_of(n, executors) is e] for e in executors}
         started = time.monotonic()
-        with ThreadPoolExecutor(len(executors)) as pool:
-            fetched = list(pool.map(lambda e: ask_on(run, e, cid, texts, shares[e["host"]]) if shares[e["host"]]
-                                    else "", executors))
+        group = state.get("group", "planner")
+        if group == "pointer":
+            fetched = [evaluate_pointer(run, cid, texts, missing, ssh)]
+        elif group == "planning":
+            fetched = [evaluate_planning(run, cid, texts, missing, ssh)]
+        else:
+            executors = [e for e in EXECUTORS if e["host"] in state.get("executors", [EXECUTORS[0]["host"]])]
+            shares = {e["host"]: [n for n in missing if executor_of(n, executors) is e] for e in executors}
+            with ThreadPoolExecutor(len(executors)) as pool:
+                fetched = list(pool.map(lambda e: ask_on(run, e, cid, texts, shares[e["host"]])
+                                        if shares[e["host"]] else "", executors))
         with (run / "records" / f"{cid}.jsonl").open("a") as out:
             out.write("".join(fetched))
         log(run, f"{cid}: {len(missing)} cases asked in {time.monotonic() - started:.0f} s")
@@ -191,7 +201,7 @@ def mean(rows) -> float:
 def seed_texts() -> dict:
     notes = REPO / "configs" / "prompts" / "open_models"
     return {"guidance": "\n".join((notes / f"{n}.md").read_text().strip() for n in ("reach", "claims", "recover")),
-            "target_note": TARGET_NOTE, "pick_note": "", "place_note": ""}
+            "target_note": TARGET_NOTE, "pick_note": "", "place_note": "", "plan_guidance": ""}
 
 
 def split_of(scenario: str) -> str | None:
@@ -272,6 +282,56 @@ def init(args):
         end_to_end(run, state, seed)
 
 
+PLAN_VAL = 24  # judged plan tasks per val pass: two Opus calls each
+
+
+def init_group(args):
+    """A group's run (evolve/gepa_groups.py) on the cases and scene-word list of SOURCE (an `init` run): planner
+    keeps its train and val cases and the seed's records; pointer freezes the seed's planner turns that pick or place
+    (the planner asked first where a train case has none) and asks only the pointer again; planning takes the plan
+    tasks (astra-evolve/gepa-plan-cases) and judges PLAN_VAL val tasks a pass."""
+    source, run = RUNS / args.source, RUNS / args.name
+    src = load(source)
+    (run / "records").mkdir(parents=True, exist_ok=True)
+    seed = {"id": "c000", "parent": None, "component": None, "texts": seed_texts(), "iteration": 0}
+    state = {"group": args.group, "candidates": [seed], "iteration": 0, "credits": 0.0, "e2e_runs": 0,
+             "episodes": {}, "banned": src["banned"], "executors": src.get("executors", [])}
+    if args.group == "planner":
+        state |= {"train": src["train"], "val": src["val"]}
+        (run / "records" / "c000.jsonl").write_text((source / "records" / "c000.jsonl").read_text())
+        (run / "plans_ready").touch()  # every end-to-end task's Sol plan is recorded (configs/plans)
+    elif args.group == "pointer":
+        clicks = {c: [f for f in fams if f in ("pick", "place")] for c, fams in src["train"].items()}
+        names = [c for c, f in clicks.items() if f] + [n for n in src["val"] if n not in clicks]
+        frozen = {n: r for n, r in evaluate(source, src, "c000", names).items()
+                  if r["decision"].get("skill") in ("pick", "place") and r["decision"]["skill"] in r["families"]
+                  and (r.get("pointer") or {}).get("target")}
+        ssh(GPU_HOST, f"mkdir -p {GPU_RUNS}/{run.name} && cat > {GPU_RUNS}/{run.name}/frozen.jsonl",
+            "".join(json.dumps(r) + "\n" for r in frozen.values()))
+        state |= {"train": {n: [r["decision"]["skill"]] for n, r in frozen.items() if n in src["train"]},
+                  "val": [n for n in src["val"] if n in frozen]}
+    else:
+        cases = REPO.parent / "astra-evolve" / "gepa-plan-cases"
+        metas = {p.parent.name: json.loads(p.read_text()) for p in sorted(cases.glob("*/case.json"))}
+        val = sorted(n for n, m in metas.items() if m["split"] == "val")
+        rng = random.Random(7)
+        rng.shuffle(val)
+        by_suite: dict[str, list[str]] = {}
+        for n in val:
+            by_suite.setdefault(n[:2], []).append(n)
+        picked = []
+        while len(picked) < PLAN_VAL and any(by_suite.values()):
+            for group in by_suite.values():
+                if group and len(picked) < PLAN_VAL:
+                    picked.append(group.pop())
+        state |= {"train": {n: ["plan"] for n, m in metas.items() if m["split"] == "train"}, "val": picked}
+    save(run, state)
+    log(run, f"{args.group} group: {len(state['train'])} train, {len(state['val'])} val cases")
+    seed["val_mean"] = round(mean(evaluate(run, state, "c000", state["val"]).values()), 4)
+    save(run, state)
+    log(run, f"seed val {seed['val_mean']:.3f}")
+
+
 def seed_e2e(args):
     """The seed end to end, when init ran without it (every test task's plan recorded first)."""
     run = RUNS / args.name
@@ -307,6 +367,10 @@ def critic(prompt: str) -> tuple[str, float]:
 
 
 def example(record: dict) -> str:
+    if "plan" in record:  # the planning group: the model's tree, the reference's, the judge's verdict
+        return (f"Task: {record['task']}\nThe model's plan:\n{record['plan']['open'][:1800]}\nA strong reference "
+                f"model's plan:\n{record['plan']['sol'][:1800]}\nScore {record['score'] or 0:.2f}. Judge: "
+                f"{record['feedback']}")
     decision = record["decision"]
     lines = [f"Task: {record['task']}", f"Active goal: {record['goal'] or '(none)'}",
              f"Last result: {record['previous']}", f"Allowed decisions: {', '.join(record['allowed'])}",
@@ -336,11 +400,15 @@ def reflection_prompt(component: str, text: str, batch: list[dict], sessions: li
         "You improve one text of a robot agent's prompt.",
         f"What the text is: {ROLES[component]}",
         f"The current text (between the lines; empty means none):\n---\n{text}\n---",
-        "Below are decision turns from recorded sessions where the agent with this text was scored against a strong "
-        "reference model and the scene's ground truth, with feedback. Diagnose the general behaviour that causes the "
-        "failures and write an improved text that fixes it while keeping what already works.",
-        "Failed turns:\n\n" + "\n\n".join(example(r) for r in failures),
-        "Turns it got right:\n\n" + "\n\n".join(example(r) for r in passes)]
+        ("Below are plans the model wrote with this text for real tasks, beside a strong reference model's plan "
+         "for the same task, with an independent judge's rubric scores (coverage, feasibility, verifiable checks, "
+         "recovery, no invention; 0-10) and reasons." if component == "plan_guidance" else
+         "Below are decision turns from recorded sessions where the agent with this text was scored against a "
+         "strong reference model and the scene's ground truth, with feedback.")
+        + " Diagnose the general behaviour that causes the failures and write an improved text that fixes it while "
+          "keeping what already works.",
+        "Weak cases:\n\n" + "\n\n".join(example(r) for r in failures),
+        "Cases it got right:\n\n" + "\n\n".join(example(r) for r in passes)]
     if component == "guidance" and sessions:
         parts.append("Whole sessions of the same agent in simulation (failed or refused steps with their messages; "
                      "'placed' counts the task's objects placed):\n" + episode_text(sessions))
@@ -442,7 +510,8 @@ def iterate(run: Path, state: dict, rng: random.Random):
     ids = sorted(counts)
     parent_id = rng.choices(ids, weights=[counts[i] for i in ids])[0]
     parent = next(c for c in state["candidates"] if c["id"] == parent_id)
-    component = TEXTS[parent.get("next_text", 0)]  # gepa's round robin: a pointer per candidate
+    texts = GROUPS[state.get("group", "planner")]["texts"]
+    component = texts[parent.get("next_text", 0) % len(texts)]  # gepa's round robin: a pointer per candidate
     state["iteration"] += 1
     names = minibatch(state, component, rng)
     batch = list(evaluate(run, state, parent_id, names).values())
@@ -450,7 +519,7 @@ def iterate(run: Path, state: dict, rng: random.Random):
         log(run, f"iteration {state['iteration']}: {component} of {parent_id} perfect on its minibatch, skipped")
         save(run, state)
         return
-    parent["next_text"] = (parent.get("next_text", 0) + 1) % len(TEXTS)
+    parent["next_text"] = (parent.get("next_text", 0) + 1) % len(texts)
     sessions = state["episodes"].get(parent_id) or state["episodes"]["c000"]
     prompt = reflection_prompt(component, parent["texts"][component], batch, sessions, state["banned"])
     refused, text = "no proposal", ""
@@ -560,9 +629,10 @@ def run_loop(args):
     last = state["iteration"] + args.iterations
     while state["iteration"] < last and state["credits"] < args.credits:
         iterate(run, state, rng)
-        if state["iteration"] % args.e2e_every == 0:
+        if GROUPS[state.get("group", "planner")]["e2e"] and state["iteration"] % args.e2e_every == 0:
             end_to_end(run, state)
-    end_to_end(run, state)
+    if GROUPS[state.get("group", "planner")]["e2e"]:
+        end_to_end(run, state)
     log(run, f"stopped at iteration {state['iteration']}, {state['credits']:.1f} credits")
 
 
@@ -588,6 +658,10 @@ def main(argv=None):
     i.add_argument("--sol-val", type=int, default=100, help="Sol's recorded val turns beside the own rollouts'")
     i.add_argument("--no-e2e", action="store_true", help="leave the seed's end-to-end check to `seed-e2e`")
     sub.add_parser("seed-e2e").add_argument("name")
+    g = sub.add_parser("init-group")
+    g.add_argument("name")
+    g.add_argument("--group", required=True, choices=sorted(GROUPS))
+    g.add_argument("--source", default="own1", help="the `init` run whose cases and seed records it starts from")
     r = sub.add_parser("run")
     r.add_argument("name")
     r.add_argument("--iterations", type=int, default=40)
@@ -595,7 +669,7 @@ def main(argv=None):
     r.add_argument("--e2e-every", type=int, default=10)
     sub.add_parser("status").add_argument("name")
     args = parser.parse_args(argv)
-    {"init": init, "run": run_loop, "status": status, "seed-e2e": seed_e2e}[args.command](args)
+    {"init": init, "run": run_loop, "status": status, "seed-e2e": seed_e2e, "init-group": init_group}[args.command](args)
 
 
 if __name__ == "__main__":

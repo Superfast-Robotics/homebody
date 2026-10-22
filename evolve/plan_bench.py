@@ -105,8 +105,13 @@ def ask_one(case: Path, out: Path, settings: Agent) -> dict:
 
 
 def run_ask(args):
-    settings = Agent(model=args.model, local_url=args.local_url, local_notes=NOTES)
-    cases, out = sorted(p.parent for p in Path(args.cases).glob("*/case.json")), Path(args.out)
+    guidance = Path(args.plan_guidance).read_text().strip() if args.plan_guidance else ""
+    settings = Agent(model=args.model, local_url=args.local_url, local_notes=NOTES, local_plan_guidance=guidance)
+    cases = sorted(p.parent for p in Path(args.cases).glob("*/case.json"))
+    if args.list:
+        wanted = set(Path(args.list).read_text().split())
+        cases = [c for c in cases if c.name in wanted]
+    out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     (out / "run.json").write_text(json.dumps({"model": args.model}))
     with ThreadPoolExecutor(args.jobs) as pool:
@@ -202,6 +207,8 @@ def main(argv=None):
     a.add_argument("--model", required=True)
     a.add_argument("--local-url", default="http://127.0.0.1:8000/v1")
     a.add_argument("--jobs", type=int, default=8)
+    a.add_argument("--plan-guidance", help="a file whose text joins plan turns (agent.local_plan_guidance)")
+    a.add_argument("--list", help="only these case names, one per line")
     j = sub.add_parser("judge")
     j.add_argument("cases")
     j.add_argument("out")

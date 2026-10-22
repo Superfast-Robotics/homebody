@@ -139,7 +139,10 @@ class LocalVlm(OpenAiApi):
                          else sections)
 
     def request(self, prompt: str, images: tuple[Path, ...], names: tuple[str, ...]) -> dict:
-        if notes := self.guidance():
+        notes = self.guidance()
+        if self.allowed == ("plan",) and self.settings.local_plan_guidance.strip():  # agent.local_plan_guidance
+            notes = "\n".join(n for n in (notes, self.settings.local_plan_guidance.strip()) if n)
+        if notes:
             prompt = f"{prompt}\n\nGuidance:\n{notes}"
         offered = tuple(n for n in names if n in self.allowed) or names
         pictures = []

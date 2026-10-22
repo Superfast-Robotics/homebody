@@ -115,3 +115,51 @@ def test_domination_keeps_a_best_candidate_on_every_case():
     fronts = {"a": {"x", "y"}, "b": {"y"}, "c": {"x", "z"}}
     kept = gepa_open.dominated_removed(fronts, {"x": 0.5, "y": 0.6, "z": 0.4})
     assert all(kept[k] for k in fronts) and kept["c"] == {"x"} and "z" not in kept["c"]
+
+
+def test_the_pointer_group_asks_only_the_pointer_on_a_frozen_planner_turn(tmp_path, monkeypatch):
+    import numpy as np
+    from evolve import gepa_eval
+    case = tmp_path / "cases" / "k1"
+    case.mkdir(parents=True)
+    labels = np.zeros((101, 101), dtype=np.int32)
+    labels[40:60, 40:60] = 3
+    np.savez_compressed(case / "labels.npz", labels=labels)
+    (case / "prompt.txt").write_text("Current task:\nMove the can.\n")
+    meta = {"scenario": "pp_x", "goal": "Pick the can.", "observation": None, "previous": None, "target": 3,
+            "result": "OK", "allowed": ["pick"],
+            "reference": {"skill": "pick", "text": "can", "arguments": {"point_normalized_1000": [500, 500]}}}
+    (case / "case.json").write_text(json.dumps(meta))
+    from PIL import Image
+    Image.new("RGB", (101, 101)).save(case / "rgb.png")
+    asked = []
+
+    class Pointer:
+        format = "robobrain"
+
+        def ask(self, question, images, **kwargs):
+            asked.append(question)
+            return "[(500, 500)]"
+
+    frozen = {"decision": {"skill": "pick", "text": "t", "arguments": {"point_normalized_1000": [10, 10]}},
+              "pointer": {"target": "the can's body"}}
+    record = gepa_eval.point_case(case, frozen, {"pick_note": "Aim at the centre."}, Pointer(), tmp_path / "out")
+    assert record["score"] == 1.0 and record["families"] == ["pick"]
+    assert asked[0].startswith("the can's body.") and asked[0].endswith(" Aim at the centre.")
+
+
+def test_a_plan_scores_its_mean_rubric_over_both_orders_and_names_weak_criteria():
+    from evolve import gepa_groups
+    verdict = {"open": {"coverage": 8, "feasibility": 6, "verifiable_checks": 9, "recovery": 2, "no_invention": 9},
+               "sol": {}, "preferred": "sol", "reason": "no fallbacks"}
+    judged = {"verdicts": [verdict, verdict], "preferred": "sol"}
+    assert gepa_groups.plan_score(judged) == 0.68
+    assert "weak on recovery" in gepa_groups.plan_feedback(judged)
+    assert gepa_groups.plan_score({"verdicts": []}) is None
+
+
+def test_each_group_rewrites_only_its_own_texts():
+    from evolve import gepa_groups
+    texts = [t for g in gepa_groups.GROUPS.values() for t in g["texts"]]
+    assert sorted(texts) == sorted(gepa_open.seed_texts()) and len(texts) == len(set(texts))
+    assert [g for g, spec in gepa_groups.GROUPS.items() if spec["e2e"]] == ["planner"]

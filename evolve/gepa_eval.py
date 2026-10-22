@@ -29,7 +29,8 @@ import numpy as np
 
 from homebody.session.config import Agent
 from homebody.session.planned import GOAL_DONE
-from homebody.vlm.composite import section
+from homebody.vlm.composite import POINTER_PROMPTS, Endpoint, section, to_1000
+from homebody.vlm.provider import ProviderError
 
 from .agent_bench import ask_turn
 from .agent_capabilities import NEAR_M, judged, label_at, map_click, metres
@@ -215,6 +216,56 @@ def evaluate(case: Path, out: Path, settings: Agent) -> dict:
     return record
 
 
+# --- the pointer group: RoboBrain asked again on frozen planner turns ---
+POINTER = ("robobrain2.5-8b", "robobrain")
+
+
+def point_case(case: Path, frozen: dict, notes: dict, endpoint, out: Path) -> dict:
+    """FROZEN (a seed record: the planner's pick or place and its target words) with the pointer asked again under
+    NOTES; scored on that skill only."""
+    done = out / case.name / "gepa.json"
+    if done.is_file():
+        return json.loads(done.read_text())
+    decision, target = frozen["decision"], frozen["pointer"]["target"]
+    skill = decision["skill"]
+    note = notes.get(f"{skill}_note", "").strip()
+    question = POINTER_PROMPTS[endpoint.format].format(target=target) + (f" {note}" if note else "")
+    image = case / "rgb_masked.png" if (case / "rgb_masked.png").is_file() else case / "rgb.png"
+    try:
+        answer = endpoint.ask(question, (image,), attempt=out / case.name / "request", tick=lambda: None,
+                              cancelled=lambda: False)
+        point = to_1000(answer, endpoint.format, case / "rgb.png")
+        row = {"skill": skill, "text": decision.get("text"),
+               "arguments": {**decision["arguments"], "point_normalized_1000": point}}
+    except ProviderError as error:
+        answer, row = str(error), {"error": str(error)[:300]}
+    meta = json.loads((case / "case.json").read_text())
+    if "error" in row:
+        score, text = 0.0, f"the pointer's answer gave no click ({row['error'][:160]})."
+    else:
+        score, text = {"pick": score_pick, "place": score_place}[skill](meta, row, case)
+    record = score_case(case, row, out) | {"families": [skill], "scores": {skill: score}, "score": score,
+                                           "feedback": f"{skill}: {text or 'correct.'}",
+                                           "pointer": {"target": target, "answer": answer[:300]}}
+    done.parent.mkdir(parents=True, exist_ok=True)
+    done.write_text(json.dumps(record, indent=1))
+    return record
+
+
+def point(args):
+    notes = json.loads(Path(args.candidate).read_text())
+    frozen = {r["case"]: r for r in (json.loads(line) for line in Path(args.frozen).read_text().splitlines()
+                                     if line.strip())}
+    endpoint = Endpoint(*POINTER, args.second_url, 120.0)
+    cases, out = Path(args.cases), Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    names = [n.strip() for n in Path(args.list).read_text().splitlines() if n.strip()]
+    with ThreadPoolExecutor(args.jobs) as pool:
+        records = list(pool.map(lambda n: point_case(cases / n, frozen[n], notes, endpoint, out), names))
+    (out / "results.jsonl").write_text("".join(json.dumps(r) + "\n" for r in records))
+    print(f"{len(records)} pointer cases, mean {sum(r['score'] or 0 for r in records) / max(len(records), 1):.3f}")
+
+
 def index(cases: Path):
     for case in sorted(p.parent for p in cases.glob("*/case.json")):
         meta = json.loads((case / "case.json").read_text())
@@ -266,11 +317,19 @@ def main(argv=None):
     a.add_argument("--jobs", type=int, default=16)
     a.add_argument("--local-url", default="http://127.0.0.1:8000/v1")
     a.add_argument("--second-url", default="http://127.0.0.1:8001/v1")
+    pt = sub.add_parser("point")
+    pt.add_argument("candidate")
+    pt.add_argument("cases")
+    pt.add_argument("out")
+    pt.add_argument("--list", required=True)
+    pt.add_argument("--frozen", required=True, help="the seed's records (JSON lines): planner decisions and targets")
+    pt.add_argument("--jobs", type=int, default=16)
+    pt.add_argument("--second-url", default="http://127.0.0.1:8001/v1")
     sub.add_parser("index").add_argument("cases")
     sub.add_parser("episodes").add_argument("workdir")
     args = parser.parse_args(argv)
-    if args.command == "ask":
-        ask(args)
+    if args.command in ("ask", "point"):
+        {"ask": ask, "point": point}[args.command](args)
     else:
         {"index": index, "episodes": episodes}[args.command](Path(args.cases if args.command == "index"
                                                                   else args.workdir))

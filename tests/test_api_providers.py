@@ -310,3 +310,11 @@ def test_open_model_guidance_is_appended_only_when_named():
     assert inline["messages"][0]["content"][0]["text"].endswith("\nBe careful.")
     alone = LocalVlm(Agent(model="qwen3vl-8b-vllm", local_guidance="Be careful.")).request("p", (), ("done",))
     assert alone["messages"][0]["content"][0]["text"] == "p\n\nGuidance:\nBe careful."
+
+
+def test_plan_guidance_reaches_plan_turns_only():
+    vlm = LocalVlm(Agent(model="qwen3vl-8b-vllm", local_guidance="G.", local_plan_guidance="Wrap each object."))
+    vlm.turn(("pick", "done"))
+    assert vlm.request("p", (), ("pick", "done"))["messages"][0]["content"][0]["text"] == "p\n\nGuidance:\nG."
+    vlm.turn(("plan",))
+    assert vlm.request("p", (), ("plan",))["messages"][0]["content"][0]["text"] == "p\n\nGuidance:\nG.\nWrap each object."

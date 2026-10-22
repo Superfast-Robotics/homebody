@@ -247,6 +247,9 @@ class Agent:
     local_target_note: str = ""
     local_pick_note: str = ""
     local_place_note: str = ""
+    # open-model guidance on plan turns only (a first plan or a rewrite), after local_guidance: the GEPA planning
+    # group's text (evolve/gepa_open.py); "" for none
+    local_plan_guidance: str = ""
     # open-model help (session/open_assist.py), off for every model by default: the pointer sees the head camera with
     # beyond-reach pixels greyed out; a place click beyond reach is moved within it; a repeat of the decision that
     # just failed is refused; the reach they assume
