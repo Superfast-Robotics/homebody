@@ -90,3 +90,11 @@ def test_a_pointer_note_child_inherits_its_parents_turns_of_other_skills(tmp_pat
     assert set(gepa_open.records(tmp_path, "c001")) == {"a"}
     gepa_open.inherit(tmp_path, "c002", "c000", "guidance", ["a", "b", "c"])
     assert gepa_open.records(tmp_path, "c002") == {}
+
+
+def test_cases_go_to_executors_in_proportion_to_their_weights_and_always_the_same():
+    executors = ({"host": "a", "weight": 3}, {"host": "b", "weight": 1})
+    names = [f"case-{i}" for i in range(4000)]
+    share = sum(gepa_open.executor_of(n, executors)["host"] == "a" for n in names) / len(names)
+    assert 0.72 < share < 0.78
+    assert gepa_open.executor_of("case-7", executors) is gepa_open.executor_of("case-7", executors)

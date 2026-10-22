@@ -37,14 +37,15 @@ GPU_HOST, GPU_REPO, GPU_PY = "loki-gh200", "~/hb-bench", "~/vllm-venv/bin/python
 GPU_CASES, GPU_RUNS = "~/bench/gepa-cases", "~/bench/gepa"
 # where capability turns are asked: the GH200 against its own servers, and loki-a100 against its Qwen3.8 replica
 # (port 8100) with the GH200's pointer through a tunnel (9101). A case always goes to the same one (by its name), so
-# two candidates are compared on the same hardware's numbers.
+# two candidates are compared on the same hardware's numbers; three in four go to the GH200 (it is about 3 times
+# faster: 32 batched requests against the replica's ~5).
 EXECUTORS = (
     {"host": "loki-gh200", "repo": "~/hb-bench", "py": "~/vllm-venv/bin/python", "cases": "~/bench/gepa-cases-v2",
-     "urls": "", "jobs": 24},
+     "urls": "", "jobs": 24, "weight": 3},
     {"host": "loki-a100", "repo": "~/gepa-data-code",
      "py": "/lambda/nfs/group-volume/workcell-sim/homebody-baseline/homebody-astra/.venv/bin/python",
      "cases": "~/bench/gepa-cases-v2",
-     "urls": "--local-url http://10.19.89.218:8100/v1 --second-url http://10.19.89.218:9101/v1", "jobs": 6},
+     "urls": "--local-url http://10.19.89.218:8100/v1 --second-url http://10.19.89.218:9101/v1", "jobs": 6, "weight": 1},
 )
 E2E_HOST, E2E_REPO = "loki-a100", "~/hb-agents"
 SHARED = "/lambda/nfs/group-volume/workcell-sim/homebody-baseline/agent-experiments"
@@ -122,7 +123,13 @@ def records(run: Path, cid: str) -> dict:
 
 
 def executor_of(name: str, executors) -> dict:
-    return executors[zlib.crc32(name.encode()) % len(executors)]
+    """The executor a case always goes to: by its name's hash, in proportion to the executors' weights."""
+    slot = zlib.crc32(name.encode()) % sum(e["weight"] for e in executors)
+    for executor in executors:
+        if slot < executor["weight"]:
+            return executor
+        slot -= executor["weight"]
+    raise AssertionError("weights cover every slot")
 
 
 def ask_on(run: Path, executor: dict, cid: str, texts: dict, names: list[str]) -> str:
