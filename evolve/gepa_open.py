@@ -672,10 +672,10 @@ def run_loop(args):
         iterate(run, state, rng)
         due = state["iteration"] % args.e2e_every == 0 or (
             state.get("e2e_due") and (run / "seed_e2e.json").exists())
-        if GROUPS[state.get("group", "planner")]["e2e"] and due:
+        if GROUPS[state.get("group", "planner")]["e2e"] and due and not args.no_e2e:
             state["e2e_due"] = False
             end_to_end(run, state)
-    if GROUPS[state.get("group", "planner")]["e2e"]:
+    if GROUPS[state.get("group", "planner")]["e2e"] and not args.no_e2e:
         end_to_end(run, state)
     log(run, f"stopped at iteration {state['iteration']}, {state['credits']:.1f} credits")
 
@@ -714,6 +714,7 @@ def main(argv=None):
     r.add_argument("--iterations", type=int, default=40)
     r.add_argument("--credits", type=float, default=400.0, help="stop before Sol's reflections pass this")
     r.add_argument("--e2e-every", type=int, default=10)
+    r.add_argument("--no-e2e", action="store_true", help="no end-to-end checks: optimise on the val score alone")
     sub.add_parser("status").add_argument("name")
     args = parser.parse_args(argv)
     {"init": init, "run": run_loop, "status": status, "seed-e2e": seed_e2e, "init-group": init_group,
