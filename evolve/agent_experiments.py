@@ -185,6 +185,9 @@ def experiments(best_small="robobrain2.5-8b", best_base="robobrain2.5-8b", gpu_g
                            Serve("robobrain2.5-8b", 0.33, 8192), options=OPEN_FIXES),
         "SPQ2": Experiment("c-solplan-q38", Serve("qwen3.8-27b", 0.90, 16384),
                            options={**OPEN_FIXES, "local_reach_mask": False}),
+        # SPO v3: SPR2 with the repeat guard letting retryable failures (stall, uncertain hold) be retried
+        "SPR3": Experiment("c-solplan-q38-robobrain", Serve("qwen3.8-27b", 0.55, 16384),
+                           Serve("robobrain2.5-8b", 0.33, 8192), options=OPEN_FIXES),
     }
 
 
