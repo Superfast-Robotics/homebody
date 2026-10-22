@@ -23,8 +23,9 @@ def first_plan(session: Path) -> dict | None:
     if decision is None:
         return None
     result = next((e for e in rows if e["kind"] == "result" and e["step"] == decision["step"]), None)
-    prompt = session / "tasks" / "task-000" / "decisions" / f"step-{decision['step']:03d}" / "prompt.txt"
-    task = TASK.search(prompt.read_text()) if prompt.is_file() else None
+    step = session / "tasks" / "task-000" / "decisions" / f"step-{decision['step']:03d}"
+    prompts = sorted(step.rglob("prompt.txt"), key=lambda p: len(p.parts))  # a composite's: in its sub-attempt
+    task = TASK.search(prompts[0].read_text()) if prompts else None
     if result is None or result["result"].get("code") != "OK" or task is None:
         return None
     return {"task": task[1].strip(), "text": decision["decision"]["text"], "tree": decision["decision"]["arguments"]["tree"]}

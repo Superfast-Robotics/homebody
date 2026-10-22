@@ -13,6 +13,15 @@ def session(root, split, scenario, task, code="OK"):
     (folder / "events.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events))
 
 
+def test_a_composites_plan_prompt_is_found_in_its_sub_attempt(tmp_path):
+    session(tmp_path, "test", "cafe", "Clear the cafe table.")
+    folder = next(tmp_path.glob("test/cafe/r0/session/s1"))
+    step = folder / "tasks" / "task-000" / "decisions" / "step-000"
+    (step / "01-first_planner").mkdir()
+    (step / "prompt.txt").rename(step / "01-first_planner" / "prompt.txt")
+    assert record_plans.first_plan(folder)["task"] == "Clear the cafe table."
+
+
 def test_accepted_first_plans_are_recorded_once_per_scenario(tmp_path, capsys):
     results = tmp_path / "b000"
     session(results, "train", "mv_a", "Move the bottle.")

@@ -1,0 +1,603 @@
+{
+ "source": "GPT-6.1 Sol's live first plan per demo-wh test task (WSPR, 2026-10-22)",
+ "plans": [
+  {
+   "scenario": "wh_proc_test_00",
+   "task": "Pick one product of each kind from the left bay's shelf at level 2, in left-to-right order: first the front-left brown sauce bottle, then the front-left purple jam jar. After each pick, place it on the empty shelf of the adjoining bay to the right. Keep all other products in place. If a product cannot be picked after two reasonable attempts, record that failure and continue to the next kind. Finish only after attempting all 2 kinds. Report actual outcomes, including failed grasps.",
+   "text": "The adjoining shelf appears empty; I will transfer the sauce bottle first, then the jam jar, allowing at most two reasonable grasp attempts per product.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "sequence",
+        "children": [
+         {
+          "type": "goal",
+          "id": "g1",
+          "goal": "Approach the left bay level-2 shelf and pick the front-left brown sauce bottle with the right hand, leaving other products in place; make at most two reasonable grasp attempts, adjusting stance or click after a refusal.",
+          "check": {
+           "name": "holding",
+           "hand": "right"
+          },
+          "budget": 6
+         },
+         {
+          "type": "goal",
+          "id": "g2",
+          "goal": "Carry the brown sauce bottle to the adjoining right bay's empty level-2 shelf without sweeping into other products.",
+          "check": {
+           "name": "arrived"
+          },
+          "budget": 4
+         },
+         {
+          "type": "goal",
+          "id": "g3",
+          "goal": "Place the brown sauce bottle securely inside the right bay's level-2 shelf, leaving room for the jam jar.",
+          "check": {
+           "name": "placed"
+          },
+          "budget": 4
+         }
+        ]
+       },
+       {
+        "type": "goal",
+        "id": "g4",
+        "goal": "Record the sauce bottle's actual outcome and any failed grasps; if two reasonable picks failed, record it as unpicked and continue to jam; resolve any held bottle safely before continuing.",
+        "check": null,
+        "budget": 4
+       }
+      ]
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "sequence",
+        "children": [
+         {
+          "type": "goal",
+          "id": "g5",
+          "goal": "Return to the left bay level-2 shelf and pick the front-left purple jam jar with the right hand, keeping the remaining products in place; make at most two reasonable grasp attempts, adjusting stance or click after a refusal.",
+          "check": {
+           "name": "holding",
+           "hand": "right"
+          },
+          "budget": 6
+         },
+         {
+          "type": "goal",
+          "id": "g6",
+          "goal": "Carry the purple jam jar to the right bay's level-2 shelf, approaching clear space without disturbing any placed bottle.",
+          "check": {
+           "name": "arrived"
+          },
+          "budget": 4
+         },
+         {
+          "type": "goal",
+          "id": "g7",
+          "goal": "Place the purple jam jar securely on clear space inside the right bay's level-2 shelf, separate from the sauce bottle.",
+          "check": {
+           "name": "placed"
+          },
+          "budget": 4
+         }
+        ]
+       },
+       {
+        "type": "goal",
+        "id": "g8",
+        "goal": "Record the jam jar's actual outcome and all failed grasps; after two reasonable failed picks record it as unpicked, and safely resolve any held object before finishing.",
+        "check": null,
+        "budget": 4
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "wh_proc_test_01",
+   "task": "Pick one product of each kind from the right bay's shelf at level 2, in left-to-right order: first the front-left green food can, then the front-left white spice jar. After each pick, place it on the empty shelf of the adjoining bay to the left. Keep all other products in place. If a product cannot be picked after two reasonable attempts, record that failure and continue to the next kind. Finish only after attempting all 2 kinds. Report actual outcomes, including failed grasps.",
+   "text": "The adjoining middle shelf is empty; I will transfer the front-left can first, then the front-left spice jar, allowing two grasp attempts per product.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "sequence",
+        "children": [
+         {
+          "type": "goal",
+          "id": "g1",
+          "goal": "Approach the right bay and pick the front-left green food can with the right hand, making at most two reasonable grasp attempts with an adjusted click or stance if needed; leave all other products in place.",
+          "check": {
+           "name": "holding",
+           "hand": "right"
+          },
+          "budget": 6
+         },
+         {
+          "type": "goal",
+          "id": "g2",
+          "goal": "Carry the green food can to the adjoining middle bay's empty level-2 shelf without disturbing other products.",
+          "check": {
+           "name": "arrived"
+          },
+          "budget": 4
+         },
+         {
+          "type": "goal",
+          "id": "g3",
+          "goal": "Place the green food can securely on the middle bay's level-2 shelf, leaving room for the spice jar.",
+          "check": {
+           "name": "placed"
+          },
+          "budget": 4
+         }
+        ]
+       },
+       {
+        "type": "goal",
+        "id": "g4",
+        "goal": "Record the actual can outcome, including any failed grasps; if two grasp attempts failed, record that failure and continue to the spice jar. Resolve any held can safely before continuing.",
+        "check": null,
+        "budget": 5
+       }
+      ]
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "sequence",
+        "children": [
+         {
+          "type": "goal",
+          "id": "g5",
+          "goal": "Approach the right bay and pick the front-left white spice jar with the right hand, making at most two reasonable grasp attempts with an adjusted click or stance if needed; leave all other products in place.",
+          "check": {
+           "name": "holding",
+           "hand": "right"
+          },
+          "budget": 6
+         },
+         {
+          "type": "goal",
+          "id": "g6",
+          "goal": "Carry the white spice jar to the middle bay's level-2 shelf, approaching a clear location away from any transferred can.",
+          "check": {
+           "name": "arrived"
+          },
+          "budget": 4
+         },
+         {
+          "type": "goal",
+          "id": "g7",
+          "goal": "Place the white spice jar securely on the middle bay's level-2 shelf without disturbing the can or other products.",
+          "check": {
+           "name": "placed"
+          },
+          "budget": 4
+         }
+        ]
+       },
+       {
+        "type": "goal",
+        "id": "g8",
+        "goal": "Record the actual spice-jar outcome, including failed grasps and any failure after two attempts; resolve any held object safely and preserve the outcome for the final report.",
+        "check": null,
+        "budget": 5
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "wh_proc_test_02",
+   "task": "Pick one product of each kind from the middle bay's shelf at level 2, in left-to-right order: first the front-left black tea box, then the front-left brown spice jar. After each pick, place it on the empty shelf of the adjoining bay to the right. Keep all other products in place. If a product cannot be picked after two reasonable attempts, record that failure and continue to the next kind. Finish only after attempting all 2 kinds. Report actual outcomes, including failed grasps.",
+   "text": "The tea boxes are left of the spice jars; I will attempt the front-left product of each kind in order and move each successfully grasped item to the right bay.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "sequence",
+        "children": [
+         {
+          "type": "goal",
+          "id": "g1",
+          "goal": "Pick the front-left black tea box with the right hand, using at most two reasonable grasp attempts and leaving other products in place.",
+          "check": {
+           "name": "holding",
+           "hand": "right"
+          },
+          "budget": 6
+         },
+         {
+          "type": "goal",
+          "id": "g2",
+          "goal": "Carry the black tea box to a clear placement position at the adjoining right bay's level-2 shelf.",
+          "check": {
+           "name": "arrived"
+          },
+          "budget": 4
+         },
+         {
+          "type": "goal",
+          "id": "g3",
+          "goal": "Place the black tea box securely on the right bay's level-2 shelf.",
+          "check": {
+           "name": "placed"
+          },
+          "budget": 4
+         }
+        ]
+       },
+       {
+        "type": "goal",
+        "id": "g4",
+        "goal": "Record the actual tea-box outcome, including each failed grasp and any transfer failure, before continuing to the spice jar.",
+        "check": null,
+        "budget": 2
+       }
+      ]
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "sequence",
+        "children": [
+         {
+          "type": "goal",
+          "id": "g5",
+          "goal": "Pick the front-left brown spice jar with a free hand, using at most two reasonable grasp attempts and leaving other products in place.",
+          "check": null,
+          "budget": 6
+         },
+         {
+          "type": "goal",
+          "id": "g6",
+          "goal": "Carry the brown spice jar to the adjoining right bay's level-2 shelf without disturbing the tea box or other products.",
+          "check": {
+           "name": "arrived"
+          },
+          "budget": 4
+         },
+         {
+          "type": "goal",
+          "id": "g7",
+          "goal": "Place the brown spice jar securely on a clear part of the right bay's level-2 shelf, separate from any placed tea box.",
+          "check": {
+           "name": "placed"
+          },
+          "budget": 4
+         }
+        ]
+       },
+       {
+        "type": "goal",
+        "id": "g8",
+        "goal": "Record the actual spice-jar outcome, including each failed grasp and any transfer failure.",
+        "check": null,
+        "budget": 2
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "wh_proc_test_03",
+   "task": "Pick one product of each kind from the left bay's shelf at level 2, in left-to-right order: first the front-left green tea box, then the front-left red jam jar. After each pick, place it on the empty shelf of the adjoining bay to the right. Keep all other products in place. If a product cannot be picked after two reasonable attempts, record that failure and continue to the next kind. Finish only after attempting all 2 kinds. Report actual outcomes, including failed grasps.",
+   "text": "The adjoining shelf is visible; I will handle the tea first, then the jam, allowing at most two grasp attempts per product and recording any failures.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "sequence",
+        "children": [
+         {
+          "type": "goal",
+          "id": "g1",
+          "goal": "Approach and pick the front-left green tea box from the left bay's level-2 shelf with the right hand, leaving other products in place; make at most two reasonable grasp attempts, adjusting stance or hand if needed.",
+          "check": null,
+          "budget": 6
+         },
+         {
+          "type": "goal",
+          "id": "g2",
+          "goal": "Carry the held green tea box to the adjoining middle bay's level-2 shelf without disturbing other products.",
+          "check": {
+           "name": "arrived"
+          },
+          "budget": 5
+         },
+         {
+          "type": "goal",
+          "id": "g3",
+          "goal": "Place the green tea box securely inside the middle bay's level-2 shelf, leaving room for the jam jar.",
+          "check": {
+           "name": "placed"
+          },
+          "budget": 5
+         }
+        ]
+       },
+       {
+        "type": "goal",
+        "id": "g4",
+        "goal": "Record the actual tea outcome, including each failed grasp and any transport or placement failure; if still holding the tea, safely set it down before proceeding to the jam.",
+        "check": null,
+        "budget": 6
+       }
+      ]
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "sequence",
+        "children": [
+         {
+          "type": "goal",
+          "id": "g5",
+          "goal": "Approach and pick the front-left red jam jar from the left bay's level-2 shelf with a free hand, leaving other products in place; make at most two reasonable grasp attempts, adjusting stance or hand if needed.",
+          "check": null,
+          "budget": 6
+         },
+         {
+          "type": "goal",
+          "id": "g6",
+          "goal": "Carry the held red jam jar to the adjoining middle bay's level-2 shelf, approaching a clear spot without disturbing the tea or other products.",
+          "check": {
+           "name": "arrived"
+          },
+          "budget": 5
+         },
+         {
+          "type": "goal",
+          "id": "g7",
+          "goal": "Place the red jam jar securely on a clear spot inside the middle bay's level-2 shelf beside, not on, the tea if present.",
+          "check": {
+           "name": "placed"
+          },
+          "budget": 5
+         }
+        ]
+       },
+       {
+        "type": "goal",
+        "id": "g8",
+        "goal": "Record the actual jam outcome, including each failed grasp and any transport or placement failure; safely set down any still-held jar if possible.",
+        "check": null,
+        "budget": 6
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "wh_shelf_test_00",
+   "task": "Pick these products from the product shelf in this order: first the front-left sweet corn can, then the front-right blueberry jam jar. After each pick, place it on the empty shelf at the same height in the adjoining bay to the right. Keep all other products in place. If a product cannot be picked after two reasonable attempts, record that failure and continue to the next one. Finish only after attempting both products. Report actual outcomes, including failed grasps.",
+   "text": "I will handle the corn first and the jam second, allowing two reasonable grasp attempts per product and recording actual outcomes.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "sequence",
+        "children": [
+         {
+          "type": "goal",
+          "id": "g1",
+          "goal": "Pick the front-left sweet corn can, initially at [-0.74,-0.20], with the right hand; approach as needed, make at most two reasonable grasp attempts, and leave all other products in place.",
+          "check": {
+           "name": "holding",
+           "hand": "right"
+          },
+          "budget": 6
+         },
+         {
+          "type": "goal",
+          "id": "g2",
+          "goal": "Carry the corn to a clear part of the same-height shelf in the adjoining bay to the right, choosing an approach clear of the boxes and other products.",
+          "check": {
+           "name": "arrived"
+          },
+          "budget": 5
+         },
+         {
+          "type": "goal",
+          "id": "g3",
+          "goal": "Place the corn securely inside the empty same-height shelf in the adjoining right bay; an OK placement counts even if the arm does not return.",
+          "check": {
+           "name": "placed"
+          },
+          "budget": 4
+         }
+        ]
+       },
+       {
+        "type": "goal",
+        "id": "g4",
+        "goal": "Record the actual corn outcome, including each failed grasp; if two reasonable picks failed, mark it unpicked and continue to the jam. Resolve any held corn safely before continuing.",
+        "check": null,
+        "budget": 5
+       }
+      ]
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "sequence",
+        "children": [
+         {
+          "type": "goal",
+          "id": "g5",
+          "goal": "Approach and pick the front-right blueberry jam jar, initially at [-0.21,-0.23], with the right hand; make at most two reasonable grasp attempts and leave all other products in place.",
+          "check": {
+           "name": "holding",
+           "hand": "right"
+          },
+          "budget": 6
+         },
+         {
+          "type": "goal",
+          "id": "g6",
+          "goal": "Carry the jam to the same-height shelf in the adjoining right bay, avoiding boxes and any corn already placed there.",
+          "check": {
+           "name": "arrived"
+          },
+          "budget": 5
+         },
+         {
+          "type": "goal",
+          "id": "g7",
+          "goal": "Place the jam securely on a clear part of the adjoining right bay's same-height shelf, separate from the corn; count OK placement even if arm return fails.",
+          "check": {
+           "name": "placed"
+          },
+          "budget": 4
+         }
+        ]
+       },
+       {
+        "type": "goal",
+        "id": "g8",
+        "goal": "Record the actual jam outcome, including each failed grasp; after two reasonable failed picks mark it unpicked. Resolve any held jam safely and preserve the actual placement outcome.",
+        "check": null,
+        "budget": 5
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "scenario": "wh_shelf_test_01",
+   "task": "Pick these products from the product shelf in this order: first the front-right sweet corn can, then the front-left blueberry jam jar. After each pick, place it on the empty shelf at the same height at the far left end of the adjoining bay to the left. Keep all other products in place. If a product cannot be picked after two reasonable attempts, record that failure and continue to the next one. Finish only after attempting all two products. Report actual outcomes, including failed grasps.",
+   "text": "The corn cans and jam jars are on the product shelf; I will handle the requested can first, then the jar, allowing at most two grasp attempts per product.",
+   "tree": {
+    "type": "sequence",
+    "children": [
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "sequence",
+        "children": [
+         {
+          "type": "goal",
+          "id": "g1",
+          "goal": "Approach and pick the front-right sweet corn can at approximately [-0.58,-0.20], preferably with the right hand, without disturbing other products; make at most two reasonable grasp attempts, adjusting stance or hand after a refusal.",
+          "check": {
+           "name": "holding",
+           "hand": "right"
+          },
+          "budget": 6
+         },
+         {
+          "type": "goal",
+          "id": "g2",
+          "goal": "Carry the sweet corn can to the far left end of the adjoining bay to the left, facing clear shelf space at the product shelf height and avoiding contact with other products.",
+          "check": {
+           "name": "arrived"
+          },
+          "budget": 5
+         },
+         {
+          "type": "goal",
+          "id": "g3",
+          "goal": "Place the sweet corn can on the empty shelf at the far left end of the adjoining left bay, safely inside its edges; an OK placement counts even if the arm cannot return.",
+          "check": {
+           "name": "placed"
+          },
+          "budget": 5
+         }
+        ]
+       },
+       {
+        "type": "goal",
+        "id": "g4",
+        "goal": "Record the actual corn outcome, including each failed grasp and whether it was placed; if two grasp attempts failed, mark it unpicked and continue to the jam. Resolve any held can safely before proceeding.",
+        "check": null,
+        "budget": 5
+       }
+      ]
+     },
+     {
+      "type": "fallback",
+      "children": [
+       {
+        "type": "sequence",
+        "children": [
+         {
+          "type": "goal",
+          "id": "g5",
+          "goal": "Approach and pick the front-left blueberry jam jar at approximately [-0.34,-0.21] with the right hand, keeping all other products in place; make at most two reasonable grasp attempts with a corrected stance or click after a refusal.",
+          "check": {
+           "name": "holding",
+           "hand": "right"
+          },
+          "budget": 6
+         },
+         {
+          "type": "goal",
+          "id": "g6",
+          "goal": "Carry the blueberry jam jar to the far left end of the adjoining left bay, facing an empty landing spot beside, not on top of, any relocated corn can.",
+          "check": {
+           "name": "arrived"
+          },
+          "budget": 5
+         },
+         {
+          "type": "goal",
+          "id": "g7",
+          "goal": "Place the blueberry jam jar on clear shelf space at the same height at the far left end of the adjoining left bay, safely separated from the corn can and shelf edges.",
+          "check": {
+           "name": "placed"
+          },
+          "budget": 5
+         }
+        ]
+       },
+       {
+        "type": "goal",
+        "id": "g8",
+        "goal": "Record the actual jam outcome, including failed grasps and whether it was placed; after two unsuccessful grasp attempts mark it unpicked, and resolve any held jar safely.",
+        "check": null,
+        "budget": 5
+       }
+      ]
+     },
+     {
+      "type": "goal",
+      "id": "g9",
+      "goal": "Confirm both requested products were attempted in order and compile actual placement outcomes and all failed grasp attempts for the final report.",
+      "check": null,
+      "budget": 1
+     }
+    ]
+   }
+  }
+ ]
+}
