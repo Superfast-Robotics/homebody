@@ -3,8 +3,9 @@
 # (127.0.0.1:$PORT) and run the capability bench on it (evolve/agent_bench.py): full decision turns as AGENT_MODEL
 # (a session/config.py MODELS name, "-" for a pointer that is no agent), pointing in POINT_FORMAT, yes/no checks.
 # Cases are ~/bench/cases-all (every recorded turn); results go to ~/bench/runs/NAME-*. The server stops at the end.
-# SUITES (default "turns point verify") picks the benches, TURN_ARGS adds turns flags, LAUNCH replaces the vLLM
-# command with another server's (it must serve SERVED on 127.0.0.1:$PORT), STRUCTURED replaces the JSON grammar
+# SUITES (default "turns point verify"; also "place", with PLACE_VARIANTS) picks the benches, TURN_ARGS adds turns
+# flags, LAUNCH replaces the vLLM command with another server's (it must serve SERVED on 127.0.0.1:$PORT),
+# STRUCTURED replaces the JSON grammar
 # config (Cosmos3 needs its whitespace); a run resumes where it stopped.
 set -u
 NAME=$1 REPO=$2 SERVED=$3 FORMAT=$4 AGENT=$5 VENV=$6
@@ -49,5 +50,11 @@ fi
 # shellcheck disable=SC2086 # VERIFY_ARGS: extra agent_bench verify flags (--prompt evidence)
 [[ " $SUITES " == *" verify "* ]] && bench verify "$CASES" "$RUNS/$NAME-verify" --served "$SERVED" --url "$URL" --label "$NAME" \
   ${VERIFY_ARGS:-} > "$RUNS/$NAME-verify.log" 2>&1
+if [[ " $SUITES " == *" place "* ]]; then  # PLACE_VARIANTS: agent_place variants, each its own run
+  for variant in ${PLACE_VARIANTS:-plain}; do
+    bench place "$CASES" "$RUNS/$NAME-place-$variant" --served "$SERVED" --format "$FORMAT" --url "$URL" \
+      --variant "$variant" --label "$NAME place $variant" > "$RUNS/$NAME-place-$variant.log" 2>&1
+  done
+fi
 stop_server
 echo "$NAME: done"
