@@ -218,7 +218,8 @@ def evaluate(case: Path, out: Path, settings: Agent) -> dict:
 def index(cases: Path):
     for case in sorted(p.parent for p in cases.glob("*/case.json")):
         meta = json.loads((case / "case.json").read_text())
-        print(json.dumps({"case": case.name, "scenario": meta["scenario"], "families": families(meta)}))
+        print(json.dumps({"case": case.name, "scenario": meta["scenario"], "families": families(meta),
+                          "split": meta.get("split"), "source": meta.get("labeller", "recorded")}))
 
 
 def episodes(workdir: Path):

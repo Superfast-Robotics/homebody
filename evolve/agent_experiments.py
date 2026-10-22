@@ -134,6 +134,9 @@ OPEN_FIXES = {"local_notes": "reach,claims,recover", "local_place_reach": True, 
               "local_repeat_guard": True}
 
 
+A100_REPLICA = "http://10.19.89.218:8100/v1"  # Qwen3.8-27B on loki-a100 (~/bench/a100_qwen.sh)
+
+
 def spr_on(profile):
     """SPR3's setup on PROFILE's train, val and test tasks, Sol writing the first plan of a task no file records."""
     return Experiment("c-solfirst-q38-robobrain", Serve("qwen3.8-27b", 0.55, 16384), Serve("robobrain2.5-8b", 0.33, 8192),
@@ -212,6 +215,13 @@ def experiments(best_small="robobrain2.5-8b", best_base="robobrain2.5-8b", gpu_g
         "WSPR": spr_on("demo-wh"),
         "GSPR": spr_on("g1-dex3"),
         "MSPR": spr_on("move-var"),
+        # GEPA's end-to-end checks (evolve/gepa_open.py; a candidate's texts join these options): Sol's recorded
+        # plans only; the Dex3 one's planner is the Qwen3.8 replica on loki-a100's A100, spreading the load
+        "GD1": Experiment("c-solplan-q38-robobrain", Serve("qwen3.8-27b", 0.55, 16384),
+                          Serve("robobrain2.5-8b", 0.33, 8192), options=OPEN_FIXES, profile="gepa-dex1", test=True),
+        "GD3": Experiment("c-solplan-q38-robobrain", Serve("qwen3.8-27b", 0.55, 16384),
+                          Serve("robobrain2.5-8b", 0.33, 8192),
+                          options={**OPEN_FIXES, "local_url": A100_REPLICA}, profile="gepa-dex3", test=True),
     }
 
 
@@ -386,8 +396,11 @@ def write_settings(cfg, eid, exp, server, picks):
     ports = client_ports(cfg, server)
     local = f"http://{server['ip']}:{ports[0]}/v1"
     second = f"http://{server['ip']}:{ports[1]}/v1" if exp.second else local
-    agent = (f'\n# {eid} (evolve/agent_experiments.py)\n[agent]\nmodel = "{exp.agent}"\nlocal_url = "{local}"\n'
-             f'second_url = "{second}"\nbest_small = "{picks[0]}"\nbest_base = "{picks[1]}"\n'
+    # an option's local_url (a replica of the planner on another GPU) replaces the experiment server's
+    urls = {"local_url": local, "second_url": second}
+    agent = (f'\n# {eid} (evolve/agent_experiments.py)\n[agent]\nmodel = "{exp.agent}"\n'
+             + "".join(f'{key} = "{url}"\n' for key, url in urls.items() if key not in exp.options)
+             + f'best_small = "{picks[0]}"\nbest_base = "{picks[1]}"\n'
              + "".join(f"{key} = {toml(value)}\n" for key, value in exp.options.items()))
     lines, out, done = base.splitlines(), [], False
     for line in lines:  # the agent keys join the base's [agent] table

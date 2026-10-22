@@ -24,6 +24,8 @@ import subprocess
 import sys
 import time
 import urllib.request
+import zlib
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from homebody.vlm.composite import TARGET_NOTE
@@ -33,11 +35,21 @@ REPO = Path(__file__).resolve().parents[1]
 RUNS = REPO.parent / "astra-evolve" / "gepa"
 GPU_HOST, GPU_REPO, GPU_PY = "loki-gh200", "~/hb-bench", "~/vllm-venv/bin/python"
 GPU_CASES, GPU_RUNS = "~/bench/gepa-cases", "~/bench/gepa"
+# where capability turns are asked: the GH200 against its own servers, and loki-a100 against its Qwen3.8 replica
+# (port 8100) with the GH200's pointer through a tunnel (9101). A case always goes to the same one (by its name), so
+# two candidates are compared on the same hardware's numbers.
+EXECUTORS = (
+    {"host": "loki-gh200", "repo": "~/hb-bench", "py": "~/vllm-venv/bin/python", "cases": "~/bench/gepa-cases-v2",
+     "urls": ""},
+    {"host": "loki-a100", "repo": "~/gepa-data-code",
+     "py": "/lambda/nfs/group-volume/workcell-sim/homebody-baseline/homebody-astra/.venv/bin/python",
+     "cases": "~/bench/gepa-cases-v2",
+     "urls": "--local-url http://10.19.89.218:8100/v1 --second-url http://10.19.89.218:9101/v1"},
+)
 E2E_HOST, E2E_REPO = "loki-a100", "~/hb-agents"
 SHARED = "/lambda/nfs/group-volume/workcell-sim/homebody-baseline/agent-experiments"
 E2E_WORK = "~/hb-agents-work/e2e"
-BASE_EXPERIMENT, SEED_RUNS = "SPR3", ("SPR2", "SPR3")
-E2E_MARGIN = 3 / 36  # a candidate placing three objects (of 36) fewer than the seed's mean is dropped
+E2E_MARGIN = 0.06  # a candidate whose val placed share is this far below the seed's is dropped
 PROXY = "http://127.0.0.1:4000/v1/responses"
 CRITIC = "gpt-6.1-sol"
 RATES = {"input": 50.0, "cached": 2.5, "output": 250.0}  # credits per 1M tokens (evolve/score_episode.py)
@@ -109,22 +121,37 @@ def records(run: Path, cid: str) -> dict:
     return {r["case"]: r for r in (json.loads(line) for line in path.read_text().splitlines() if line.strip())}
 
 
+def executor_of(name: str, executors) -> dict:
+    return executors[zlib.crc32(name.encode()) % len(executors)]
+
+
+def ask_on(run: Path, executor: dict, cid: str, texts: dict, names: list[str]) -> str:
+    """CID's records of NAMES asked on EXECUTOR, as JSON lines."""
+    remote = f"{GPU_RUNS}/{run.name}"
+    listed = f"{remote}/lists/{cid}-{zlib.crc32(''.join(names).encode()):08x}.txt"
+    ssh(executor["host"], f"mkdir -p {remote}/lists {remote}/cands && cat > {remote}/cands/{cid}.json",
+        json.dumps(texts))
+    ssh(executor["host"], f"cat > {listed}", "\n".join(names))
+    ssh(executor["host"], f"cd {executor['repo']} && export VLLM_API_KEY=$(cat ~/vlm/api_key) && PYTHONPATH=src:. "
+                          f"{executor['py']} -m evolve.gepa_eval ask {remote}/cands/{cid}.json {executor['cases']} "
+                          f"{remote}/out/{cid} --list {listed} --jobs 16 {executor['urls']}")
+    return ssh(executor["host"], f"cat {remote}/out/{cid}/results.jsonl")
+
+
 def evaluate(run: Path, state: dict, cid: str, names: list[str]) -> dict:
-    """CID's records of NAMES, asked on the GH200 where not yet known."""
+    """CID's records of NAMES, asked where not yet known, each case on its executor (all at once)."""
     known = records(run, cid)
     missing = [n for n in names if n not in known]
     if missing:
-        remote = f"{GPU_RUNS}/{run.name}"
-        candidate = next(c for c in state["candidates"] if c["id"] == cid)
-        listed = f"{remote}/lists/{cid}-{len(known)}.txt"
-        ssh(GPU_HOST, f"mkdir -p {remote}/lists {remote}/cands && cat > {remote}/cands/{cid}.json",
-            json.dumps(candidate["texts"]))
-        ssh(GPU_HOST, f"cat > {listed}", "\n".join(missing))
+        executors = [e for e in EXECUTORS if e["host"] in state.get("executors", [EXECUTORS[0]["host"]])]
+        texts = next(c for c in state["candidates"] if c["id"] == cid)["texts"]
+        shares = {e["host"]: [n for n in missing if executor_of(n, executors) is e] for e in executors}
         started = time.monotonic()
-        gpu(f"ask {remote}/cands/{cid}.json {GPU_CASES} {remote}/out/{cid} --list {listed} --jobs 16")
-        fetched = ssh(GPU_HOST, f"cat {remote}/out/{cid}/results.jsonl")
+        with ThreadPoolExecutor(len(executors)) as pool:
+            fetched = list(pool.map(lambda e: ask_on(run, e, cid, texts, shares[e["host"]]) if shares[e["host"]]
+                                    else "", executors))
         with (run / "records" / f"{cid}.jsonl").open("a") as out:
-            out.write(fetched)
+            out.write("".join(fetched))
         log(run, f"{cid}: {len(missing)} cases asked in {time.monotonic() - started:.0f} s")
         known = records(run, cid)
     return {n: known[n] for n in names}
@@ -206,34 +233,40 @@ def banned_words(tasks: list[str]) -> list[str]:
 
 
 def init(args):
+    """The run's cases (the executors' case folder, indexed once), its splits and the seed's scores: every train
+    case, and for val every case of the open setup's own rollouts plus up to --sol-val of Sol's recorded turns."""
     run = RUNS / args.name
     (run / "records").mkdir(parents=True, exist_ok=True)
-    ssh(GPU_HOST, f"mkdir -p {GPU_CASES} && for d in ~/bench/cases-v3-pp/* ~/bench/cases-v3-wh/*; do "
-                  f"ln -sfn $d {GPU_CASES}/$(basename $d); done")
-    rows = [json.loads(line) for line in gpu(f"index {GPU_CASES}").splitlines() if line.strip()]
-    rows = [r for r in rows if r["families"] and split_of(r["scenario"])]
+    executor = EXECUTORS[0]
+    out = ssh(executor["host"], f"cd {executor['repo']} && PYTHONPATH=src:. {executor['py']} -m evolve.gepa_eval "
+                                f"index {executor['cases']}", timeout=1800)
+    rows = [json.loads(line) for line in out.splitlines() if line.strip()]
+    for row in rows:
+        row["split"] = row.get("split") or split_of(row["scenario"])
+    rows = [r for r in rows if r["families"] and r["split"] in ("train", "val")]
     rng = random.Random(7)
-    train = [r for r in rows if split_of(r["scenario"]) == "train"]
-    val = sample_val([r for r in rows if split_of(r["scenario"]) == "val"], VAL_SIZE, rng)
+    train = [r for r in rows if r["split"] == "train"]
+    own_val = [r["case"] for r in rows if r["split"] == "val" and r["source"] != "recorded"]
+    sol_val = sample_val([r for r in rows if r["split"] == "val" and r["source"] == "recorded"], args.sol_val, rng)
     seed = {"id": "c000", "parent": None, "component": None, "texts": seed_texts(), "iteration": 0}
-    state = {"train": {r["case"]: r["families"] for r in train}, "val": val, "candidates": [seed],
-             "iteration": 0, "credits": 0.0, "banned": [], "seed_e2e": [], "e2e_runs": 0}
+    state = {"train": {r["case"]: r["families"] for r in train}, "val": own_val + sol_val, "candidates": [seed],
+             "iteration": 0, "credits": 0.0, "banned": [], "e2e_runs": 0, "episodes": {},
+             "executors": [e["host"] for e in EXECUTORS]}
     save(run, state)
-    log(run, f"{len(train)} train cases, {len(val)} val cases")
-    seed_records = evaluate(run, state, "c000", val)
+    log(run, f"{len(train)} train cases, {len(own_val)} + {len(sol_val)} val cases (own rollouts + Sol's)")
+    seed_records = evaluate(run, state, "c000", state["val"])
     seed["val_mean"] = round(mean(seed_records.values()), 4)
-    state["banned"] = banned_words(sorted({r["task"] for r in seed_records.values()}
-                                          | {r["goal"] or "" for r in seed_records.values()}))
-    state["seed_e2e"] = [json.loads(ssh(E2E_HOST, f"cat {SHARED}/rows/{eid}.json"))["all_placed"]
-                         for eid in SEED_RUNS]
-    state["episodes"] = {"c000": episodes(BASE_EXPERIMENT) + episodes("SPR2")}
+    tasks = [r["task"] for r in seed_records.values()] + [r["goal"] or "" for r in seed_records.values()]
+    state["banned"] = banned_words(sorted(set(tasks)))
     save(run, state)
-    log(run, f"seed val {mean(seed_records.values()):.3f}; {len(state['banned'])} scenario words banned")
+    log(run, f"seed val {seed['val_mean']:.3f}; {len(state['banned'])} scenario words banned")
+    end_to_end(run, state, seed)
 
 
-def episodes(eid: str) -> list[dict]:
+def episodes(workdir: str) -> list[dict]:
+    """An end-to-end run's train sessions (its failed steps), for the reflection; [] when it has none."""
     out = ssh(E2E_HOST, f"cd {E2E_REPO} && PYTHONPATH=src:. .venv-loop/bin/python -m evolve.gepa_eval episodes "
-                        f"{E2E_WORK}/demo-pp-{eid}")
+                        f"{E2E_WORK}/{workdir} || true")
     return [json.loads(line) for line in out.splitlines() if line.strip()]
 
 
@@ -394,43 +427,65 @@ def iterate(run: Path, state: dict, rng: random.Random):
     save(run, state)
 
 
-def end_to_end(run: Path, state: dict):
-    """The best candidate not yet run end to end, if it beats the seed on val: its demo-pp baseline."""
-    seed_val = state["candidates"][0]["val_mean"]
-    untested = [c for c in state["candidates"] if c.get("val_mean") and "e2e" not in c and not c.get("dropped")
-                and c["val_mean"] > seed_val]
-    if not untested:
-        return
-    best = max(untested, key=lambda c: c["val_mean"])
-    state["e2e_runs"] += 1
-    eid = f"G{run.name[:4].upper()}{best['id'][1:]}"
-    options = {"local_notes": "", "local_guidance": best["texts"]["guidance"],
-               "local_target_note": best["texts"]["target_note"], "local_pick_note": best["texts"]["pick_note"],
-               "local_place_note": best["texts"]["place_note"]}
-    ssh(E2E_HOST, f"mkdir -p {SHARED}/gepa && cat > {SHARED}/gepa/{eid}.json",
-        json.dumps({"id": eid, "base": BASE_EXPERIMENT, "options": options}))
-    log(run, f"{best['id']}: end to end as {eid}")
+# a candidate end to end: the Dex1 profile (demo-pp and warehouse tasks) and the Dex3 one (G1 and move-variety
+# tasks) at once, each train, val and test with Sol's recorded plans; val decides, test is only reported
+E2E_BASES = {"A": ("GD1", "gepa-dex1"), "B": ("GD3", "gepa-dex3")}
+
+
+def run_e2e(run: Path, state: dict, candidate: dict) -> dict:
+    eid = f"G{run.name[:4].upper()}{candidate['id'][1:]}"
+    texts = candidate["texts"]
+    options = {"local_notes": "", "local_guidance": texts["guidance"], "local_target_note": texts["target_note"],
+               "local_pick_note": texts["pick_note"], "local_place_note": texts["place_note"]}
+    ids = {suffix: f"{eid}{suffix}" for suffix in E2E_BASES}
+    for suffix, (base, _) in E2E_BASES.items():
+        ssh(E2E_HOST, f"mkdir -p {SHARED}/gepa && cat > {SHARED}/gepa/{ids[suffix]}.json",
+            json.dumps({"id": ids[suffix], "base": base, "options": options}))
+    log(run, f"{candidate['id']}: end to end as {', '.join(ids.values())}")
     ssh(E2E_HOST, f"cd {E2E_REPO} && setsid nohup .venv-loop/bin/python -m evolve.agent_experiments worker --server "
-                  f"{GPU_HOST} --keep {eid} > ~/agent-logs/gepa-{eid}.log 2>&1 < /dev/null &")
-    while True:
+                  f"{GPU_HOST} --keep --concurrent {' '.join(ids.values())} > ~/agent-logs/gepa-{eid}.log 2>&1 "
+                  f"< /dev/null &")
+    rows = {}
+    while len(rows) < len(ids):
         time.sleep(120)
-        found = ssh(E2E_HOST, f"cat {SHARED}/rows/{eid}.json 2>/dev/null || cat {SHARED}/failed/{eid}.txt "
-                              f"2>/dev/null || true")
-        if found.strip():
-            break
-    if not found.lstrip().startswith("{"):
-        log(run, f"{eid} failed: {found.strip()[:300]}")
-        best["e2e"] = {"failed": found.strip()[:300]}
-        save(run, state)
-        return
-    row = json.loads(found)
-    seed = sum(state["seed_e2e"]) / len(state["seed_e2e"])
-    best["e2e"] = {"id": eid, "all_placed": row["all_placed"], "train_placed": row["train_placed"],
-                   "val_placed": row["val_placed"]}
-    best["dropped"] = row["all_placed"] < seed - E2E_MARGIN
-    state["episodes"][best["id"]] = episodes(eid)
-    log(run, f"{eid}: placed {row['all_placed']} (seed runs {state['seed_e2e']})"
-             f"{', dropped' if best['dropped'] else ''}")
+        for suffix, xid in ids.items():
+            found = ssh(E2E_HOST, f"cat {SHARED}/rows/{xid}.json 2>/dev/null || cat {SHARED}/failed/{xid}.txt "
+                                  f"2>/dev/null || true").strip()
+            if found and suffix not in rows:
+                rows[suffix] = json.loads(found) if found.startswith("{") else {"failed": found[:300]}
+    failed = [r["failed"] for r in rows.values() if "failed" in r]
+    if failed:
+        return {"id": eid, "failed": "; ".join(failed)}
+    result = {"id": eid, "val": round(sum(r["val_placed"] for r in rows.values()) / len(rows), 4),
+              "test": round(sum(r.get("test_placed", 0.0) for r in rows.values()) / len(rows), 4),
+              "train": round(sum(r["train_placed"] for r in rows.values()) / len(rows), 4),
+              "rows": {s: {k: r.get(k) for k in ("train_placed", "val_placed", "test_placed")} for s, r in rows.items()}}
+    state["episodes"][candidate["id"]] = [e for s, (_, profile) in E2E_BASES.items()
+                                          for e in episodes(f"{profile}-{ids[s]}")]
+    return result
+
+
+def end_to_end(run: Path, state: dict, candidate: dict | None = None):
+    """CANDIDATE (else the best not yet run, if it beats the seed on val) end to end; dropped from the front when
+    its val placed share is clearly below the seed's. The test share is logged, never used to choose."""
+    seed = state["candidates"][0]
+    if candidate is None:
+        untested = [c for c in state["candidates"] if c.get("val_mean") and "e2e" not in c
+                    and not c.get("dropped") and c["val_mean"] > seed["val_mean"]]
+        if not untested:
+            return
+        candidate = max(untested, key=lambda c: c["val_mean"])
+    state["e2e_runs"] += 1
+    candidate["e2e"] = run_e2e(run, state, candidate)
+    result = candidate["e2e"]
+    if "failed" in result:
+        log(run, f"{candidate['id']} end to end failed: {result['failed']}")
+    elif candidate is not seed:
+        candidate["dropped"] = result["val"] < seed["e2e"]["val"] - E2E_MARGIN
+        log(run, f"{candidate['id']} end to end: val {result['val']} (seed {seed['e2e']['val']}), test "
+                 f"{result['test']} (seed {seed['e2e']['test']}){', dropped' if candidate['dropped'] else ''}")
+    else:
+        log(run, f"seed end to end: train {result['train']}, val {result['val']}, test {result['test']}")
     save(run, state)
 
 
@@ -451,19 +506,22 @@ def status(args):
     run = RUNS / args.name
     state = load(run)
     counts = front(state, run)
-    print(f"iteration {state['iteration']}, {state['credits']:.1f} credits, seed e2e {state['seed_e2e']}")
+    print(f"iteration {state['iteration']}, {state['credits']:.1f} credits")
     print("| id | parent | text | minibatch | val | front | e2e |\n| --- | --- | --- | --- | --- | --- | --- |")
     for c in state["candidates"]:
         e2e = c.get("e2e", {})
         print(f"| {c['id']} | {c['parent'] or '-'} | {c['component'] or 'seed'} | {c.get('minibatch', '-')} | "
               f"{c.get('val_mean', '-')} | {counts.get(c['id'], '')} | "
-              f"{e2e.get('all_placed', e2e.get('failed', ''))}{' dropped' if c.get('dropped') else ''} |")
+              f"{('val ' + str(e2e['val']) + ' test ' + str(e2e['test'])) if 'val' in e2e else e2e.get('failed', '')}"
+              f"{' dropped' if c.get('dropped') else ''} |")
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("init").add_argument("name")
+    i = sub.add_parser("init")
+    i.add_argument("name")
+    i.add_argument("--sol-val", type=int, default=100, help="Sol's recorded val turns beside the own rollouts'")
     r = sub.add_parser("run")
     r.add_argument("name")
     r.add_argument("--iterations", type=int, default=40)
