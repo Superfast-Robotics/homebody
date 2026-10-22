@@ -630,9 +630,11 @@ def end_to_end(run: Path, state: dict, candidate: dict | None = None):
     seed = state["candidates"][0]
     shared = run / "seed_e2e.json"
     if candidate is not seed and "e2e" not in seed and state.get("seed_shared"):  # seed-from writes it
-        while not shared.exists():
-            log(run, "waiting for the shared seed check (seed_e2e.json)")
-            time.sleep(300)
+        if not shared.exists():  # not in yet: keep optimising; the check runs at a later call
+            log(run, "the shared seed check is not in yet: this end-to-end check waits for a later iteration")
+            state["e2e_due"] = True
+            save(run, state)
+            return
         adopted = json.loads(shared.read_text())
         seed["e2e"], state["episodes"]["c000"] = adopted["e2e"], adopted["episodes"]
         save(run, state)
@@ -667,7 +669,10 @@ def run_loop(args):
     last = state["iteration"] + args.iterations
     while state["iteration"] < last and state["credits"] < args.credits:
         iterate(run, state, rng)
-        if GROUPS[state.get("group", "planner")]["e2e"] and state["iteration"] % args.e2e_every == 0:
+        due = state["iteration"] % args.e2e_every == 0 or (
+            state.get("e2e_due") and (run / "seed_e2e.json").exists())
+        if GROUPS[state.get("group", "planner")]["e2e"] and due:
+            state["e2e_due"] = False
             end_to_end(run, state)
     if GROUPS[state.get("group", "planner")]["e2e"]:
         end_to_end(run, state)
