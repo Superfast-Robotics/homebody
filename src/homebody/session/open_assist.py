@@ -42,8 +42,15 @@ def pull_place_point(decision, frame, reach_m: float):
     return replace(decision, arguments={**decision.arguments, POINT: moved}), list(point)
 
 
+# results a retry of the same decision can fix (Sol retries them unchanged): the guard lets those through
+RETRYABLE = frozenset({"STALL", "HOLD_UNCERTAIN", "TARGET_LOST", "RETRY_REQUIRED", "ARRIVAL_NOT_VERIFIED",
+                       "LIFT_NOT_VERIFIED"})
+
+
 class RepeatGuard:
-    """Remembers the last decision that failed; the same decision again is refused with what failed."""
+    """Remembers the last decision that failed for a reason a retry cannot fix (RETRYABLE results are let through: in
+    SPO v2 the guard refused 21 reasonable retries after a stall or an uncertain hold); the same decision again is
+    refused with what failed."""
 
     def __init__(self):
         self.failed: tuple[str, str] | None = None
@@ -62,5 +69,5 @@ class RepeatGuard:
                             "the other hand, or mark the goal failed.")}
 
     def observe(self, decision, result: dict):
-        failed = result.get("code") not in ("OK", None)
+        failed = result.get("code") not in ("OK", None, *RETRYABLE)
         self.failed, self.code = (self.key(decision), result.get("code", "")) if failed else (None, "")

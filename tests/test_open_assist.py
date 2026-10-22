@@ -52,3 +52,11 @@ def test_the_repeat_guard_forgets_after_a_success():
     assert guard.refusal(Decision("x", "place", {"hand": "left"})) is None
     guard.observe(Decision("y", "navigate", {}), {"code": "OK"})
     assert guard.refusal(failing) is None
+
+
+def test_the_repeat_guard_lets_a_retryable_failure_be_retried():
+    guard, retry = RepeatGuard(), Decision("x", "navigate", {"goal_xy_m": [1, 2]})
+    guard.observe(retry, {"code": "STALL"})
+    assert guard.refusal(retry) is None
+    guard.observe(retry, {"code": "NO_ROUTE"})
+    assert "NO_ROUTE" in guard.refusal(retry)["message"]
