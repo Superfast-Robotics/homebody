@@ -477,6 +477,11 @@ def end_to_end(run: Path, state: dict, candidate: dict | None = None):
     """CANDIDATE (else the best not yet run, if it beats the seed on val) end to end; dropped from the front when
     its val placed share is clearly below the seed's. The test share is logged, never used to choose."""
     seed = state["candidates"][0]
+    if candidate is not seed and "e2e" not in seed:  # the seed's check first, once every test plan is recorded
+        while not (run / "plans_ready").exists():
+            log(run, "waiting for plans_ready (every end-to-end task's Sol plan recorded) before the seed's check")
+            time.sleep(300)
+        end_to_end(run, state, seed)
     if candidate is None:
         untested = [c for c in state["candidates"] if c.get("val_mean") and "e2e" not in c
                     and not c.get("dropped") and c["val_mean"] > seed["val_mean"]]
