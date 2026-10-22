@@ -625,7 +625,7 @@ def seed_from(args):
 
 
 def end_to_end(run: Path, state: dict, candidate: dict | None = None):
-    """CANDIDATE (else the best not yet run, if it beats the seed on val) end to end; dropped from the front when
+    """CANDIDATE (else the best on val, when it beats the seed and has not been checked) end to end; dropped from the front when
     its val placed share is clearly below the seed's. The test share is logged, never used to choose."""
     seed = state["candidates"][0]
     shared = run / "seed_e2e.json"
@@ -643,11 +643,12 @@ def end_to_end(run: Path, state: dict, candidate: dict | None = None):
             log(run, "waiting for plans_ready (every end-to-end task's Sol plan recorded) before the seed's check")
             time.sleep(300)
         end_to_end(run, state, seed)
-    if candidate is None:
-        untested = [c for c in eligible(state) if "e2e" not in c and c["val_mean"] > seed["val_mean"]]
-        if not untested:
+    if candidate is None:  # the best candidate on val, unless it is the seed or already checked: nothing changed
+        best = max(eligible(state), key=lambda c: c["val_mean"])
+        if best is seed or "e2e" in best or best["val_mean"] <= seed["val_mean"]:
+            log(run, f"no end-to-end check: the best on val ({best['id']}) is unchanged since the last check")
             return
-        candidate = max(untested, key=lambda c: c["val_mean"])
+        candidate = best
     state["e2e_runs"] += 1
     candidate["e2e"] = run_e2e(run, state, candidate)
     result = candidate["e2e"]
