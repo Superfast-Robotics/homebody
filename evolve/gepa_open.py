@@ -27,6 +27,7 @@ import urllib.request
 from pathlib import Path
 
 from homebody.vlm.composite import POINTER_PROMPTS, TARGET_NOTE
+from homebody.vlm.provider import streamed
 
 REPO = Path(__file__).resolve().parents[1]
 RUNS = REPO.parent / "astra-evolve" / "gepa"
@@ -218,7 +219,8 @@ def critic(prompt: str) -> tuple[str, float]:
     request = urllib.request.Request(PROXY, data=json.dumps(body).encode(),
                                      headers={"Authorization": f"Bearer {key}", "content-type": "application/json"})
     with urllib.request.urlopen(request, timeout=900) as response:
-        reply = json.loads(response.read())
+        raw = response.read().decode()
+    reply = streamed(raw) if raw.startswith("data:") else json.loads(raw)  # the ChatGPT backend streams
     text = "".join(part.get("text", "") for item in reply.get("output") or [] if item.get("type") == "message"
                    for part in item.get("content") or [] if part.get("type") == "output_text")
     usage = reply.get("usage") or {}
