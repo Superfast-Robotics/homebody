@@ -29,3 +29,9 @@ def test_selection_takes_hard_turns_first_spread_over_sessions(tmp_path):
     chosen = (tmp_path / "l.txt").read_text().split()
     assert "s-bbbbbbbb-000" in chosen and "s-cccccccc-000" in chosen and len(chosen) == 4
     assert sum(n.startswith("s-aaaaaaaa") for n in chosen) == 2  # two per session in the first pass
+
+
+def test_the_turns_allowed_decisions_come_from_the_skill_enum():
+    request = {"response_format": {"json_schema": {"schema": {"properties": {
+        "skill": {"type": "string", "enum": ["pick", "goal_done"]}, "text": {"type": "string"}}}}}}
+    assert gepa_data.skill_enum(request) == ["pick", "goal_done"]

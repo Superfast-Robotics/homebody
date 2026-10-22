@@ -43,6 +43,21 @@ def planner_folder(step: Path) -> Path | None:
     return None
 
 
+def skill_enum(value):
+    """The skill enum of a saved request: the "skill" property's enum (a turn's allowed decisions, which need not
+    include done), else agent_bench's search."""
+    if isinstance(value, dict):
+        skill = value.get("skill")
+        if isinstance(skill, dict) and isinstance(skill.get("enum"), list):
+            return skill["enum"]
+        value = list(value.values())
+    if isinstance(value, list):
+        for item in value:
+            if (found := skill_enum(item)) is not None:
+                return found
+    return None
+
+
 def session_prompt(text: str) -> str:
     """The session's prompt without the pointer composite's target note."""
     return text.split(NOTE_START)[0]
@@ -59,7 +74,8 @@ def collect_session(session: Path, scenario: str, split: str, out: Path) -> int:
             previous = here
             continue
         prompt = session_prompt((folder / "prompt.txt").read_text())
-        offered = tuple(find_enum(json.loads((folder / "request.json").read_text())) or ())
+        request = json.loads((folder / "request.json").read_text())
+        offered = tuple(skill_enum(request) or find_enum(request) or ())
         sensors = np.load(frame / "sensors.npz")
         case = out / f"{scenario}-{session.name[-8:]}-{step:03d}"
         case.mkdir(parents=True, exist_ok=True)
