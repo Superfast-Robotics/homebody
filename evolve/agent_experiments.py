@@ -97,6 +97,7 @@ class Serve:
     share: float
     max_len: int = 32768
     online_fp8: bool = False  # weight-only FP8 (Marlin on Ampere) to fit beside a bigger model
+    max_seqs: int = 16  # vLLM --max-num-seqs: requests batched at once (Qwen3.8 on the GH200 takes 32, 2026-10-22)
 
 
 @dataclass(frozen=True)
@@ -217,9 +218,9 @@ def experiments(best_small="robobrain2.5-8b", best_base="robobrain2.5-8b", gpu_g
         "MSPR": spr_on("move-var"),
         # GEPA's end-to-end checks (evolve/gepa_open.py; a candidate's texts join these options): Sol's recorded
         # plans only; the Dex3 one's planner is the Qwen3.8 replica on loki-a100's A100, spreading the load
-        "GD1": Experiment("c-solplan-q38-robobrain", Serve("qwen3.8-27b", 0.55, 16384),
+        "GD1": Experiment("c-solplan-q38-robobrain", Serve("qwen3.8-27b", 0.55, 16384, max_seqs=32),
                           Serve("robobrain2.5-8b", 0.33, 8192), options=OPEN_FIXES, profile="gepa-dex1", test=True),
-        "GD3": Experiment("c-solplan-q38-robobrain", Serve("qwen3.8-27b", 0.55, 16384),
+        "GD3": Experiment("c-solplan-q38-robobrain", Serve("qwen3.8-27b", 0.55, 16384, max_seqs=32),
                           Serve("robobrain2.5-8b", 0.33, 8192),
                           options={**OPEN_FIXES, "local_url": A100_REPLICA}, profile="gepa-dex3", test=True),
     }
@@ -307,7 +308,7 @@ def command(serve: Serve, ip, port):
     model = MODELS[serve.model]
     args = [model.repo, "--served-model-name", serve.model, "--host", ip, "--port", str(port),
             "--max-model-len", str(serve.max_len), "--enable-prefix-caching", "--limit-mm-per-prompt",
-            '{"image": 4}', "--gpu-memory-utilization", f"{serve.share:.2f}", "--max-num-seqs", "16",
+            '{"image": 4}', "--gpu-memory-utilization", f"{serve.share:.2f}", "--max-num-seqs", str(serve.max_seqs),
             # no free whitespace in a JSON grammar: Cosmos-Reason2-32B looped on it until max_tokens
             "--structured-outputs-config",
             json.dumps({"backend": "xgrammar", "disable_any_whitespace": not model.whitespace}), *model.args,

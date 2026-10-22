@@ -40,11 +40,11 @@ GPU_CASES, GPU_RUNS = "~/bench/gepa-cases", "~/bench/gepa"
 # two candidates are compared on the same hardware's numbers.
 EXECUTORS = (
     {"host": "loki-gh200", "repo": "~/hb-bench", "py": "~/vllm-venv/bin/python", "cases": "~/bench/gepa-cases-v2",
-     "urls": ""},
+     "urls": "", "jobs": 24},
     {"host": "loki-a100", "repo": "~/gepa-data-code",
      "py": "/lambda/nfs/group-volume/workcell-sim/homebody-baseline/homebody-astra/.venv/bin/python",
      "cases": "~/bench/gepa-cases-v2",
-     "urls": "--local-url http://10.19.89.218:8100/v1 --second-url http://10.19.89.218:9101/v1"},
+     "urls": "--local-url http://10.19.89.218:8100/v1 --second-url http://10.19.89.218:9101/v1", "jobs": 6},
 )
 E2E_HOST, E2E_REPO = "loki-a100", "~/hb-agents"
 SHARED = "/lambda/nfs/group-volume/workcell-sim/homebody-baseline/agent-experiments"
@@ -134,7 +134,7 @@ def ask_on(run: Path, executor: dict, cid: str, texts: dict, names: list[str]) -
     ssh(executor["host"], f"cat > {listed}", "\n".join(names))
     ssh(executor["host"], f"cd {executor['repo']} && export VLLM_API_KEY=$(cat ~/vlm/api_key) && PYTHONPATH=src:. "
                           f"{executor['py']} -m evolve.gepa_eval ask {remote}/cands/{cid}.json {executor['cases']} "
-                          f"{remote}/out/{cid} --list {listed} --jobs 16 {executor['urls']}")
+                          f"{remote}/out/{cid} --list {listed} --jobs {executor['jobs']} {executor['urls']}")
     return ssh(executor["host"], f"cat {remote}/out/{cid}/results.jsonl")
 
 
