@@ -188,7 +188,7 @@ class Transit:
         self.origin = self.frame.base_pose[:2].copy()
         self.navigation = self.frame.navigation
         self.free = free_space(self.navigation, settings.robot_radius)
-        self.heading, self.anchor, self.raised = 0.0, None, False
+        self.heading, self.anchor, self.raised, self.doubts = 0.0, None, False, {}
         self.settle_since, self.rounds, self.missed = None, 0, math.inf
         self.measure, self.best, self.progressed = None, math.inf, self.frame.time
 
@@ -314,12 +314,18 @@ class Transit:
         return None
 
     def check_carry(self):
-        """Recover a carry that stops reading as held. Cleared or uncertain ends the skill."""
+        """Recover a carry that stops reading as held for carry_doubt_ticks ticks in a row.
+        Cleared or uncertain ends the skill."""
         plan, ctx = self.plan, self.ctx
         for side in tuple(ctx.carried):
             if continuing(self.frame, ctx.arms[side], side, ctx.carried[side], ctx.settings.grasp,
                           look=lambda: ctx.observe(plan.epoch)):
+                self.doubts.pop(side, None)
                 continue
+            self.doubts[side] = self.doubts.get(side, 0) + 1
+            if self.doubts[side] < self.settings.carry_doubt_ticks:
+                continue
+            self.doubts.pop(side)
             ctx.stage("Checking carry")
             recovery = self.recover_carry(side)
             self.frame = recovery.frame
@@ -330,8 +336,8 @@ class Transit:
             self.best = math.inf
 
     def recover_carry(self, side):
-        """Navigation-only extension point; opt into a co-motion probe with probe=True."""
-        return recover_navigation(self.ctx, self.plan.epoch, side)
+        """Reclose once, then lift-and-look once: the load must rise with the hand."""
+        return recover_navigation(self.ctx, self.plan.epoch, side, probe=True)
 
     def locate(self):
         """The pose, and the distance and heading error to the stance, from the frame."""
