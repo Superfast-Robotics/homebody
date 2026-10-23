@@ -404,6 +404,7 @@ def test_pick_defers_only_after_verified_lift(monkeypatch, status):
     monkeypatch.setattr(pick, 'squeeze', lambda *args: frame)
     monkeypatch.setattr(pick, 'require_contact', lambda *args: None)
     monkeypatch.setattr(pick, 'lift_pending', lambda *args: frame)
+    monkeypatch.setattr(pick, 'visible_lift', lambda *args: np.eye(4))
     monkeypatch.setattr(pick, 'recover', lambda *args: (status, frame))
     if status == 'verified':
         assert pick.grasp(plan, ctx).code == 'OK'

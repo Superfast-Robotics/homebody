@@ -268,6 +268,8 @@ class Grasp:
     insertion_depth_scales: tuple[float, ...] = (1.0, 0.65, 0.3)
     approach_height: float = 0.10
     lift_height: float = 0.18
+    view_lift_rises: tuple[float, ...] = (0.12, 0.08)
+    view_lift_shifts: tuple[float, ...] = (0.0, 0.08, 0.15)
     lift_evidence: float = 0.05
     carry_palm_radius: float = 0.30
     carry_compact_min_delta: float = 0.03

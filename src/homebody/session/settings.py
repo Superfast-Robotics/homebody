@@ -34,7 +34,7 @@ SIGNED = frozenset({"topdown.ahead", "topdown.left", "topdown.height", "placemen
                     "placement.rest_arm_right", "placement.release_twists", "grasp.approach_across"})
 NONNEGATIVE = frozenset({"physics.noslip_iterations", "motion.route_clearance_margin",
                          "motion.left_hand_offset", "motion.right_hand_offset", "motion.close_slack",
-                         "motion.close_min_gain", "grasp.spline_out", "placement.release_drops",
+                         "motion.close_min_gain", "grasp.spline_out", "grasp.view_lift_shifts", "placement.release_drops",
                          "agent.done_settle_seconds", "coder.calls"})  # coder.calls = 0 turns the coder off
 
 
