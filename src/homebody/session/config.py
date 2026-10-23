@@ -216,7 +216,7 @@ class SharedMotion:
 
 @dataclass(frozen=True)
 class Navigate:
-    """Drive speeds, stances and arrival. An arrival is verified within `arrival_distance`, or `arrival_distance + close_slack` once re-closed."""
+    """Drive speeds, stances and arrival. An arrival is verified within `arrival_distance`, or `arrival_distance + close_slack` once re-closed; a held object is raised to pass `carry_rise_margin` over what the closing leg sweeps it into."""
     drive_speed: float = 0.35
     turn_speed: float = 0.45
     final_speed: float = 0.20
@@ -254,6 +254,7 @@ class Navigate:
     drive_timeout: float = 90.0
     stall_timeout: float = 6.0
     progress_distance: float = 0.03
+    carry_rise_margin: float = 0.04
     tick: float = 0.10
 
 
@@ -350,6 +351,7 @@ class Placement:
     max_release_height: float = 0.30
     forward_reach: float = 0.42
     support_match: float = 0.04
+    rim_clearance: float = 0.04
     open_closure_limit: float = 0.15
     settle_count: int = 15
     tick: float = 0.10

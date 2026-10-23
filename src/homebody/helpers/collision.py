@@ -143,6 +143,23 @@ def under_box(points, box, margin):
     return _support_domain(points, projected_box_domain(box, margin))
 
 
+def in_corridor(points, start, end, radius):
+    """Points whose XY lies within RADIUS (m) of the XY segment START-END."""
+    segment = np.asarray(end, dtype=float)[:2] - start[:2]
+    length = float(segment @ segment)
+    along = np.clip((points[:, :2] - start[:2]) @ segment / length, 0., 1.) if length > 0 else 0.
+    nearest = start[:2] + np.multiply.outer(along, segment)
+    return np.linalg.norm(points[:, :2] - nearest, axis=1) <= radius
+
+
+def swept_rise(points, start, end, bottom, top, radius, margin):
+    """How far (m) a load spanning BOTTOM..TOP and RADIUS wide must rise to pass MARGIN over the
+    points it sweeps from START to END (XY); 0 when none are in the way."""
+    hit = (in_corridor(points, start, end, radius + margin) &
+           (points[:, 2] > bottom - margin) & (points[:, 2] < top + margin))
+    return max(0., float(np.max(points[hit, 2])) + margin - bottom) if np.any(hit) else 0.
+
+
 def _support_domain(points, vertices):
     """Points whose XY lies in a closed counter-clockwise convex polygon."""
     edges = np.roll(vertices, -1, axis=0) - vertices
@@ -162,6 +179,11 @@ def _sensed_points(frame, exclude_labels):
     mask = (frame.labels >= 0) & ~np.isin(frame.labels, exclude_labels)
     points = unproject(frame.depth, frame.intrinsics, mask)
     return points_in(inverse(frame.world_torso) @ frame.world_camera, points)
+
+
+def sensed_world_points(frame, exclude_labels):
+    """Sensed depth in the world frame, less the excluded labels and the robot's own pixels."""
+    return points_in(frame.world_torso, _sensed_points(frame, exclude_labels))
 
 
 def first_per_voxel(points, size):
