@@ -326,6 +326,7 @@ class GraspSearch:
     """One frame's grasp gates (reach, descent clearance, approach route), with counts per gate
     and the blockers met."""
     GATES = ("width", "pre_reachable", "grasp_reachable", "descent_clear", "approach_clear")
+    climb = 0.  # how far the palm must first rise over the support, set from the frame
 
     def __init__(self, side, label, current, planning, blocked=()):
         self.arm, self.seed = planning.arms[side], current.arm_joints(side)
@@ -338,6 +339,7 @@ class GraspSearch:
         opened = current.hands[side].joints if blocked else np.zeros_like(current.hands[side].joints)
         self.descent = Clearance(current, planning.arms, side, collision, (label,), fingers=opened)
         self.approach = Clearance(current, planning.arms, side, collision, exempt_start=True, fingers=opened)
+        self.climb = start_climb(current, self.arm, self.seed, label, self.settings.approach_support_clearance)
         self.counts = dict.fromkeys(self.GATES, 0)
         self.blockers = Counter()
 
@@ -434,7 +436,8 @@ class GraspSearch:
 
         ranked = sorted(reachable, key=rank)
         checked = {}
-        for lift in (0., *self.settings.approach_start_lifts_m):
+        lifts = (0., *self.settings.approach_start_lifts_m)
+        for lift in tuple(lift for lift in lifts if lift >= self.climb) or lifts[-1:]:
             for grasp in ranked:
                 if not self.blocked:
                     key = id(grasp)
@@ -655,6 +658,15 @@ def visible_lift(frame, ctx, side):
         if hidden < least:
             best, least = target, hidden
     return default if best is None else best
+
+
+def start_climb(current, arm, seed, label, clearance):
+    """How far (m) the palm must first rise from SEED to clear the target's support by CLEARANCE:
+    the target's visible bottom stands for the support's top. 0 when already above it."""
+    if not current.visible(label):
+        return 0.
+    palm = current.world_torso @ arm.forward(seed)[0]
+    return max(0., float(np.min(current.target_points(label)[:, 2])) + clearance - palm[2, 3])
 
 
 class PickTarget:

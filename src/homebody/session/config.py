@@ -261,7 +261,7 @@ class Navigate:
 
 @dataclass(frozen=True)
 class Grasp:
-    """Grasp planning, approach and retention limits: the walk-in stands with the pre-grasp palm `grasp_range` from the shoulder, and a pick closes at least `squeeze` past where the fingers stopped."""
+    """Grasp planning, approach and retention limits: the walk-in stands with the pre-grasp palm `grasp_range` from the shoulder, and a pick closes at least `squeeze` past where the fingers stopped; an approach that starts with the palm below the target's support first rises at least `approach_support_clearance` over it."""
     shape_quantiles: tuple[float, float] = (0.02, 0.98)
     depth_max: float = 0.055
     depth_fraction: float = 0.5
@@ -306,6 +306,7 @@ class Grasp:
     spline_smooth_passes: int = 4
     spline_seed_bias: float = 0.75
     approach_start_lifts_m: tuple[float, ...] = (0.10, 0.20, 0.30)
+    approach_support_clearance: float = 0.05
     grasp_range: float = 0.36
     approach_short: float = 0.08
     approach_long: float = 0.03
