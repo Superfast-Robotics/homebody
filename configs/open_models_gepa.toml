@@ -1,0 +1,13 @@
+# The open-model agent with the GEPA-optimised texts (configs/prompts/open_models/gepa/README.md): Sol writes every
+# plan (the first, recorded or live, and each rewrite), Qwen3.8-27B decides each step, RoboBrain2.5 clicks picks and
+# places, with every open-model fix. Use with --settings; set agent.local_url (Qwen3.8) and agent.second_url
+# (RoboBrain2.5) to your model servers. Generated from the gepa/*.md files: change those, not these strings.
+[agent]
+model = "c-solall-q38-robobrain"
+local_notes = "gepa/guidance"
+local_target_note = "For every pick or place, supply point_normalized_1000 and end your text with TARGET: <concise click target in the current head-camera image>. Identify the intended instance by visible appearance and nearby landmarks, not task-relative directions alone. For picking, name its exposed body centre. For placing, name a clear exposed patch of the destination's support surface, not the held object, rim or background. Prefer a near-side patch safely inside the edge and within the arm's roughly 0.4 m forward reach. After failure, reassess the click; do not infer unreachability from a grasp refusal alone."
+local_pick_note = "Ground the target in visible pixels, not the narration's assumed location, pose or visibility. Identify matching objects first; interpret front/left/right within that group, not across the image. Include tilted, fallen, occluded and edge-truncated instances. Click inside the target's visible body in the unmasked region, not a neighbor, gripper or background. Use full-image coordinates normalized to 0-1000."
+local_place_note = "Click the destination's exposed support surface, not the held object, gripper, rim, or vertical face. Choose an ungreyed, upward-facing patch in the requested area with clearance for the object's footprint and other items. The robot's arm reaches about 0.4 m ahead of its torso; prefer the nearer interior of that same surface over distant or greyed-out regions."
+local_place_reach = true
+local_reach_mask = true
+local_repeat_guard = true

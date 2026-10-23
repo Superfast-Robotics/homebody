@@ -133,6 +133,11 @@ def single(model):
 # the pointer's view masked beyond reach, the repeat guard
 OPEN_FIXES = {"local_notes": "reach,claims,recover", "local_place_reach": True, "local_reach_mask": True,
               "local_repeat_guard": True}
+# the GEPA-optimised texts (configs/prompts/open_models/gepa/) in place of the reach, claims and recover notes
+GEPA_TEXTS = REPO / "configs" / "prompts" / "open_models" / "gepa"
+OPEN_GEPA = {**OPEN_FIXES, "local_notes": "gepa/guidance",
+             **{f"local_{name}": (GEPA_TEXTS / f"{name}.md").read_text().strip()
+                for name in ("target_note", "pick_note", "place_note")}}
 
 
 A100_REPLICA = "http://10.19.89.218:8100/v1"  # Qwen3.8-27B on loki-a100 (~/bench/a100_qwen.sh)
@@ -228,6 +233,12 @@ def experiments(best_small="robobrain2.5-8b", best_base="robobrain2.5-8b", gpu_g
         "GD3": Experiment("c-solall-q38-robobrain", Serve("qwen3.8-27b", 0.55, 16384, max_seqs=32),
                           Serve("robobrain2.5-8b", 0.33, 8192),
                           options={**OPEN_FIXES, "local_url": A100_REPLICA}, profile="gepa-dex3", test=True),
+        # the GEPA-optimised texts on GEPA's two check profiles (train, val and test)
+        "GOPT1": Experiment("c-solall-q38-robobrain", Serve("qwen3.8-27b", 0.55, 16384, max_seqs=32),
+                            Serve("robobrain2.5-8b", 0.33, 8192), options=OPEN_GEPA, profile="gepa-dex1", test=True),
+        "GOPT3": Experiment("c-solall-q38-robobrain", Serve("qwen3.8-27b", 0.55, 16384, max_seqs=32),
+                            Serve("robobrain2.5-8b", 0.33, 8192), options={**OPEN_GEPA, "local_url": A100_REPLICA},
+                            profile="gepa-dex3", test=True),
     }
 
 

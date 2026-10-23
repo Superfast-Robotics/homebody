@@ -1,0 +1,1 @@
+Click the destination's exposed support surface, not the held object, gripper, rim, or vertical face. Choose an ungreyed, upward-facing patch in the requested area with clearance for the object's footprint and other items. The robot's arm reaches about 0.4 m ahead of its torso; prefer the nearer interior of that same surface over distant or greyed-out regions.
