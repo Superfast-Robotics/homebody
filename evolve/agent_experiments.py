@@ -233,6 +233,10 @@ def experiments(best_small="robobrain2.5-8b", best_base="robobrain2.5-8b", gpu_g
         "GD3": Experiment("c-solall-q38-robobrain", Serve("qwen3.8-27b", 0.55, 16384, max_seqs=32),
                           Serve("robobrain2.5-8b", 0.33, 8192),
                           options={**OPEN_FIXES, "local_url": A100_REPLICA}, profile="gepa-dex3", test=True),
+        # the open setup with the GEPA texts on the 2026-10-23 scenes (kitchen baskets, warehouse cart): Sol writes
+        # every plan live (new tasks), Qwen3.8 decides, RoboBrain clicks
+        "NEW23": Experiment("c-solall-q38-robobrain", Serve("qwen3.8-27b", 0.55, 16384, max_seqs=32),
+                            Serve("robobrain2.5-8b", 0.33, 8192), options=OPEN_GEPA, profile="demo-new23"),
         # the GEPA-optimised texts on GEPA's two check profiles (train, val and test)
         "GOPT1": Experiment("c-solall-q38-robobrain", Serve("qwen3.8-27b", 0.55, 16384, max_seqs=32),
                             Serve("robobrain2.5-8b", 0.33, 8192), options=OPEN_GEPA, profile="gepa-dex1", test=True),
