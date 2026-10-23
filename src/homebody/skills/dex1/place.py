@@ -5,7 +5,7 @@ from itertools import product
 
 import numpy as np
 
-from homebody.helpers.collision import under_box
+from homebody.helpers.collision import in_corridor, under_box
 from homebody.helpers.geometry import inverse, points_in
 from homebody.helpers.grasp import payload_offset, visible_shape
 from homebody.motion.arm import (
@@ -259,7 +259,8 @@ def destination(arguments, selected, settings):
 
 def support_release(current, surface, point, height, carried, palm, settings):
     """The palm that rests the payload's bottom HEIGHT (m) above the clicked support, and the
-    release point on it (world)."""
+    release point on it (world). A support wall between the torso and the release, such as a
+    container's rim lower than max_release_height, raises the release to rim_clearance over it."""
     placement, collision = settings.placement, settings.collision
     points = current.target_points(surface)
     closest = points[np.argmin(np.linalg.norm(points - point, axis=1))]
@@ -277,7 +278,18 @@ def support_release(current, surface, point, height, carried, palm, settings):
     box = (payload[:3, 3], payload[:3, :3], carried["payload_half"])
     footprint = under_box(points, box, collision.cloud_margin)
     release[2] = np.max(points[footprint, 2]) if np.any(footprint) else closest[2]
+    radius = float(np.linalg.norm((np.abs(payload[:3, :3]) @ carried["payload_half"])[:2])) + collision.cloud_margin
+    rim = rim_height(points, current.world_torso[:3, 3], release, radius, placement.max_release_height)
+    if rim - release[2] > placement.rim_clearance:
+        height = min(max(height, rim + placement.rim_clearance - release[2]), placement.max_release_height)
     return resting(release), release
+
+
+def rim_height(points, torso, release, radius, reach):
+    """The highest support point the arm reaches over from the torso to the release (world),
+    up to REACH (m) above the release; higher points are overhead."""
+    over = in_corridor(points, torso, release, radius) & (points[:, 2] < release[2] + reach)
+    return float(np.max(points[over, 2])) if np.any(over) else float(release[2])
 
 
 def drop_palm(selected, point, height, carried, palm):

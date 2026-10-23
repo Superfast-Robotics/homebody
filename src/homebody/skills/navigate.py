@@ -5,6 +5,7 @@ from itertools import pairwise
 
 import numpy as np
 
+from homebody.helpers.collision import sensed_world_points, swept_rise
 from homebody.helpers.geometry import wrap
 from homebody.helpers.navigation import (
     cell_free,
@@ -16,6 +17,7 @@ from homebody.helpers.navigation import (
     route,
     square_stance,
 )
+from homebody.motion.arm import servo_best_effort
 from homebody.motion.carry import compact_carry, continuing
 from homebody.toolkit.navigation_carry import recover_navigation
 
@@ -186,7 +188,7 @@ class Transit:
         self.origin = self.frame.base_pose[:2].copy()
         self.navigation = self.frame.navigation
         self.free = free_space(self.navigation, settings.robot_radius)
-        self.heading, self.anchor = 0.0, None
+        self.heading, self.anchor, self.raised, self.doubts = 0.0, None, False, {}
         self.settle_since, self.rounds, self.missed = None, 0, math.inf
         self.measure, self.best, self.progressed = None, math.inf, self.frame.time
 
@@ -234,6 +236,7 @@ class Transit:
         settings = self.settings
         self.ctx.stage("Turning to face the stance heading")
         if abs(self.angle) <= settings.arrival_angle / 2:
+            self.raise_carry()
             return self.enter("close")
         rate = max(settings.min_turn_speed, min(self.turn_speed, settings.heading_gain * abs(self.angle)))
         self.send(0.0, 0.0, math.copysign(rate, self.angle))
@@ -250,6 +253,40 @@ class Transit:
         speed = float(np.clip(settings.close_gain * self.distance, settings.min_close_speed, settings.final_speed))
         self.send(*(body * speed / self.distance), settings.heading_gain * self.angle)
         return None
+
+    def raise_carry(self):
+        """Once, before the closing leg: lift each held object over what that leg would sweep it
+        into, such as a container's rim, by at most lift_height."""
+        plan, ctx = self.plan, self.ctx
+        if self.raised or not ctx.carried:
+            return
+        self.raised = True
+        ctx.actions.base_velocity(plan.epoch, 0., 0., 0.)
+        frame = ctx.observe(plan.epoch)
+        held = tuple(record["label"] for record in ctx.carried.values())
+        points = sensed_world_points(frame, held)
+        travel = plan.goal - self.pose[:2]
+        for side, record in tuple(ctx.carried.items()):
+            palm = frame.palm(ctx.arms[side], side)
+            payload = palm @ record["palm_to_payload"]
+            extent = np.abs(payload[:3, :3]) @ record["payload_half"]
+            center = payload[:3, 3]
+            rise = swept_rise(points, center, center[:2] + travel, center[2] - extent[2], center[2] + extent[2],
+                              float(np.linalg.norm(extent[:2])), self.settings.carry_rise_margin)
+            if not 0. < rise <= ctx.settings.grasp.lift_height:
+                continue
+            ctx.stage("Raising the held object over the edge ahead")
+            ctx.emit({"type": "carry_raised", "hand": side, "rise": rise})
+            target = palm.copy()
+            target[2, 3] += rise
+            try:
+                frame = servo_best_effort(ctx, plan.epoch, side, target, exclude_labels=held)
+            except SkillFailure as error:
+                ctx.actions.stop(plan.epoch)
+                ctx.emit({"type": "carry_raise_stopped", "hand": side, "code": error.code})
+                frame = ctx.observe(plan.epoch)
+        self.frame = frame
+        self.locate()
 
     def settle(self):
         """Stand still for settle_seconds, then verify arrival. A miss re-aims or re-closes, at most
@@ -277,12 +314,18 @@ class Transit:
         return None
 
     def check_carry(self):
-        """Recover a carry that stops reading as held. Cleared or uncertain ends the skill."""
+        """Recover a carry that stops reading as held for carry_doubt_ticks ticks in a row.
+        Cleared or uncertain ends the skill."""
         plan, ctx = self.plan, self.ctx
         for side in tuple(ctx.carried):
             if continuing(self.frame, ctx.arms[side], side, ctx.carried[side], ctx.settings.grasp,
                           look=lambda: ctx.observe(plan.epoch)):
+                self.doubts.pop(side, None)
                 continue
+            self.doubts[side] = self.doubts.get(side, 0) + 1
+            if self.doubts[side] < self.settings.carry_doubt_ticks:
+                continue
+            self.doubts.pop(side)
             ctx.stage("Checking carry")
             recovery = self.recover_carry(side)
             self.frame = recovery.frame
@@ -293,8 +336,8 @@ class Transit:
             self.best = math.inf
 
     def recover_carry(self, side):
-        """Navigation-only extension point; opt into a co-motion probe with probe=True."""
-        return recover_navigation(self.ctx, self.plan.epoch, side)
+        """Reclose once, then lift-and-look once: the load must rise with the hand."""
+        return recover_navigation(self.ctx, self.plan.epoch, side, probe=True)
 
     def locate(self):
         """The pose, and the distance and heading error to the stance, from the frame."""

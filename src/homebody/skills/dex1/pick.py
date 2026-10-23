@@ -3,6 +3,7 @@ verify the hold and defer transport tucking until navigation."""
 import json
 from collections import Counter
 from dataclasses import asdict, dataclass
+from itertools import product
 
 import numpy as np
 from scipy.spatial import cKDTree
@@ -10,12 +11,13 @@ from scipy.spatial import cKDTree
 from homebody.helpers.collision import HAND_END_LINKS, Clearance
 from homebody.helpers.geometry import inverse, points_in, rotation_error, transform, wrap
 from homebody.helpers.grasp import Shape, closing_angles, visible_shape
-from homebody.helpers.target import TargetTrack, arm_occlusion_evidence
+from homebody.helpers.target import TargetTrack, arm_occlusion_evidence, sight_blocked
 from homebody.helpers.trajectory import approach_path, servo_step
 from homebody.motion.arm import close_or_open, move_path, reset_arm, servo
 from homebody.motion.carry import (
     RECOVERY_FAILURES,
     RecoveryPlan,
+    in_view,
     recover,
     recovery_result,
 )
@@ -94,7 +96,7 @@ def grasp(plan, ctx):
     frame = close_or_open(ctx, plan.epoch, plan.side, 1.0, ctx.settings.grasp.close_seconds)
     frame = squeeze(plan, ctx, frame)
     require_contact(plan, ctx, frame)
-    ctx.carried[plan.side]["lift_target"] = lift_above(frame, ctx, plan.side)
+    ctx.carried[plan.side]["lift_target"] = visible_lift(frame, ctx, plan.side)
     ctx.stage("Lifting")
     lift_pending(ctx, plan.epoch, plan.side)
     ctx.stage("Verifying grasp")
@@ -324,6 +326,7 @@ class GraspSearch:
     """One frame's grasp gates (reach, descent clearance, approach route), with counts per gate
     and the blockers met."""
     GATES = ("width", "pre_reachable", "grasp_reachable", "descent_clear", "approach_clear")
+    climb = 0.  # how far the palm must first rise over the support, set from the frame
 
     def __init__(self, side, label, current, planning, blocked=()):
         self.arm, self.seed = planning.arms[side], current.arm_joints(side)
@@ -336,6 +339,7 @@ class GraspSearch:
         opened = current.hands[side].joints if blocked else np.zeros_like(current.hands[side].joints)
         self.descent = Clearance(current, planning.arms, side, collision, (label,), fingers=opened)
         self.approach = Clearance(current, planning.arms, side, collision, exempt_start=True, fingers=opened)
+        self.climb = start_climb(current, self.arm, self.seed, label, self.settings.approach_support_clearance)
         self.counts = dict.fromkeys(self.GATES, 0)
         self.blockers = Counter()
 
@@ -432,7 +436,8 @@ class GraspSearch:
 
         ranked = sorted(reachable, key=rank)
         checked = {}
-        for lift in (0., *self.settings.approach_start_lifts_m):
+        lifts = (0., *self.settings.approach_start_lifts_m)
+        for lift in tuple(lift for lift in lifts if lift >= self.climb) or lifts[-1:]:
             for grasp in ranked:
                 if not self.blocked:
                     key = id(grasp)
@@ -624,6 +629,44 @@ def lift_above(frame, ctx, side):
     lift = frame.palm(ctx.arms[side], side)
     lift[2, 3] += ctx.settings.grasp.lift_height
     return lift
+
+
+def visible_lift(frame, ctx, side):
+    """The lift that keeps the held object in the head camera's view, past the robot's own arm:
+    lift_above when the arm hides none of the object, else the clear candidate rise and outward
+    shift (view_lift_rises, view_lift_shifts) that the arm hides least of."""
+    settings, arm, record = ctx.settings.grasp, ctx.arms[side], ctx.carried[side]
+    palm, seed, torso = frame.palm(arm, side), frame.arm_joints(side), inverse(frame.world_torso)
+    eye = points_in(torso, frame.world_camera[:3, 3])
+    corners = np.vstack((np.zeros(3), np.array(list(product((-1., 1.), repeat=3))) * record["payload_half"]))
+    outward = frame.world_torso[:3, 1] * (1. if side == "left" else -1.)
+    clearance = Clearance(frame, ctx.arms, side, ctx.settings.collision, (record["label"],), record,
+                          exempt_start=True)
+    default, best, least = lift_above(frame, ctx, side), None, len(corners) + 1
+    for index, (rise, shift) in enumerate(product((settings.lift_height, *settings.view_lift_rises),
+                                                  settings.view_lift_shifts)):
+        target = palm.copy()
+        target[:3, 3] += outward * shift + [0., 0., rise]
+        joints = arm.solve(torso @ target, seed, restarts=False)
+        if joints is None or index and clearance.path_violation(seed, joints) is not None:
+            continue
+        payload = points_in(target @ record["palm_to_payload"], corners)
+        hidden = len(corners) if not in_view(frame, payload) else int(np.count_nonzero(sight_blocked(
+            eye, points_in(torso, payload), arm.collision.boxes(arm, joints), ctx.settings.collision.cloud_margin)))
+        if hidden == 0:
+            return target
+        if hidden < least:
+            best, least = target, hidden
+    return default if best is None else best
+
+
+def start_climb(current, arm, seed, label, clearance):
+    """How far (m) the palm must first rise from SEED to clear the target's support by CLEARANCE:
+    the target's visible bottom stands for the support's top. 0 when already above it."""
+    if not current.visible(label):
+        return 0.
+    palm = current.world_torso @ arm.forward(seed)[0]
+    return max(0., float(np.min(current.target_points(label)[:, 2])) + clearance - palm[2, 3])
 
 
 class PickTarget:

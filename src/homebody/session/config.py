@@ -216,7 +216,7 @@ class SharedMotion:
 
 @dataclass(frozen=True)
 class Navigate:
-    """Drive speeds, stances and arrival. An arrival is verified within `arrival_distance`, or `arrival_distance + close_slack` once re-closed."""
+    """Drive speeds, stances and arrival. An arrival is verified within `arrival_distance`, or `arrival_distance + close_slack` once re-closed; a held object is raised to pass `carry_rise_margin` over what the closing leg sweeps it into, and a carry is recovered only after `carry_doubt_ticks` ticks in a row of not reading as held."""
     drive_speed: float = 0.35
     turn_speed: float = 0.45
     final_speed: float = 0.20
@@ -254,18 +254,22 @@ class Navigate:
     drive_timeout: float = 90.0
     stall_timeout: float = 6.0
     progress_distance: float = 0.03
+    carry_rise_margin: float = 0.04
+    carry_doubt_ticks: int = 3
     tick: float = 0.10
 
 
 @dataclass(frozen=True)
 class Grasp:
-    """Grasp planning, approach and retention limits: the walk-in stands with the pre-grasp palm `grasp_range` from the shoulder, and a pick closes at least `squeeze` past where the fingers stopped."""
+    """Grasp planning, approach and retention limits: the walk-in stands with the pre-grasp palm `grasp_range` from the shoulder, and a pick closes at least `squeeze` past where the fingers stopped; an approach that starts with the palm below the target's support first rises at least `approach_support_clearance` over it."""
     shape_quantiles: tuple[float, float] = (0.02, 0.98)
     depth_max: float = 0.055
     depth_fraction: float = 0.5
     insertion_depth_scales: tuple[float, ...] = (1.0, 0.65, 0.3)
     approach_height: float = 0.10
     lift_height: float = 0.18
+    view_lift_rises: tuple[float, ...] = (0.12, 0.08)
+    view_lift_shifts: tuple[float, ...] = (0.0, 0.08, 0.15)
     lift_evidence: float = 0.05
     carry_palm_radius: float = 0.30
     carry_compact_min_delta: float = 0.03
@@ -302,6 +306,7 @@ class Grasp:
     spline_smooth_passes: int = 4
     spline_seed_bias: float = 0.75
     approach_start_lifts_m: tuple[float, ...] = (0.10, 0.20, 0.30)
+    approach_support_clearance: float = 0.05
     grasp_range: float = 0.36
     approach_short: float = 0.08
     approach_long: float = 0.03
@@ -350,6 +355,7 @@ class Placement:
     max_release_height: float = 0.30
     forward_reach: float = 0.42
     support_match: float = 0.04
+    rim_clearance: float = 0.04
     open_closure_limit: float = 0.15
     settle_count: int = 15
     tick: float = 0.10

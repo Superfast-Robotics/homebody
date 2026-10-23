@@ -73,6 +73,19 @@ def _slab_crossing(origin, rays, half):
     return enter, leave
 
 
+def sight_blocked(eye, points, boxes, stop):
+    """Per point, whether a box hides it from EYE: the segment from EYE stopping STOP (m)
+    short of the point crosses one of BOXES. All in one frame."""
+    rays = points - eye
+    reach = 1. - stop / np.maximum(np.linalg.norm(rays, axis=1), stop)
+    blocked = np.zeros(len(points), dtype=bool)
+    for box in boxes:
+        center, rotation, half = box[:3]
+        enter, leave = _slab_crossing((eye - center) @ rotation, rays @ rotation, half)
+        blocked |= (leave >= np.maximum(enter, 0.)) & (enter < reach)
+    return blocked
+
+
 def arm_occlusion_evidence(reference, current, frame, boxes, tolerance):
     """How much of the missing target is explained by the arm's torso-frame BOXES in front of it."""
     camera = frame.world_camera[:3, 3]
