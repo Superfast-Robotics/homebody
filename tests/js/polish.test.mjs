@@ -102,7 +102,7 @@ test("an observation bar names the decision model's held activity, and a new act
   const segments = observationSegments(readings, [{ start: 0, end: 4 }], 0, 4).filter((s) => s.level !== "missing");
   assert.deepEqual(segments.map((s) => s.activity), ["reach_jar", "grasp_jar"]);
   assert.equal(observationLabel(segments[1]), "grasp jar · 0.90");
-  assert.equal(activityText("none_of_these"), "None of the labels");
+  assert.equal(activityText("none_of_these"), "Working");
   assert.equal(activityText("working"), "Processing"); // the placeholder while the goal's labels are written
 });
 
