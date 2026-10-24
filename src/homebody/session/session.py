@@ -402,8 +402,8 @@ class Session:
         self.update("Paused", f"The monitor asks for a person: {text}. Press Resume to continue or Stop.")
         self.recorder.event("monitor", type="operator_pause", simulation_time=self.backend.time, reason=text)
         tick = self.paused_tick if self.settings.agent.pause_while_thinking else self.heartbeat
-        self.controls.resume.clear()
-        while not self.controls.resume.is_set():
+        self.controls.resumed.clear()
+        while not self.controls.resumed.is_set():
             if self.controls.cancel.is_set():
                 raise Cancelled("Task stopped by operator during a monitor pause")
             tick()

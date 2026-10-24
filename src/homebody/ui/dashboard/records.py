@@ -1,0 +1,179 @@
+"""The dashboard's immutable records and the JSON-safe conversion of session values into them."""
+import json
+import math
+from dataclasses import dataclass, field
+
+TEXT_LIMIT = 2000  # characters of model or result text kept per record
+ARGUMENT_LIMIT = 4000  # characters of a decision's JSON arguments kept
+
+
+@dataclass(frozen=True)
+class Interval:
+    """A span on one timeline track (goal, skill or thinking); END is None while it runs."""
+    id: str
+    track: str
+    label: str
+    start: float
+    end: float | None = None
+    status: str = "running"
+    detail: dict = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class Decision:
+    id: str
+    t: float
+    skill: str
+    text: str
+    arguments: dict
+    goal: str | None = None
+    tool: str | None = None
+
+
+@dataclass(frozen=True)
+class ToolCall:
+    """One decision the executor ran: a skill or a coder call, with its stages and result."""
+    id: str
+    skill: str
+    arguments: dict
+    start: float
+    goal: str | None = None
+    end: float | None = None
+    state: str = "running"
+    code: str = ""
+    message: str = ""
+    stages: tuple = ()
+    attempt: int = 1  # this skill's call number within its goal
+    recovery: bool = False  # run by a recovery branch or the coding assistant
+
+
+@dataclass(frozen=True)
+class Incident:
+    """A recorded event. KIND is a detection (skill, goal, task, monitor) or an action (intervention, recovery),
+    with TAG naming the action. ALERT marks the ones that need an operator (an intermediate skill failure is history,
+    not an alert). DETECTION, INITIATOR and EXECUTOR say which component found the problem, asked for the recovery
+    and ran it, only as the session's events establish them ("" when unknown). CAUSED_BY links an event to the one
+    that caused it, only where the runtime makes that link; OUTCOME is what followed, filled in when it happens."""
+    id: str
+    t: float
+    kind: str
+    severity: str
+    title: str
+    reason: str = ""
+    source: str = "session"
+    node: str | None = None
+    tool: str | None = None
+    skill: str | None = None
+    action: str = ""
+    outcome: str = ""
+    observation: dict | None = None
+    tag: str = ""
+    alert: bool = False
+    task: str | None = None
+    detection: str = ""
+    initiator: str = ""
+    executor: str = ""
+    caused_by: str | None = None
+    frame: int | None = None
+    state: str = "active"
+    acknowledged_at: float | None = None
+    evidence: dict = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class Reading:
+    """One monitor reading. An observation judges behaviour (LEVEL expected, unknown, elevated or anomaly; RISK
+    and CONFIDENCE in [0, 1] when reported); a heartbeat only shows the monitor is connected. SYNTHETIC marks test
+    data, never shown as a real outcome. T is when the monitor made the observation (its own stamp when it gives
+    one), RECEIVED when the dashboard got it. ELEVATED_THRESHOLD, when the monitor reports one, separates elevated from
+    low risk. DURING_TASK, NODE and SKILL are what ran when it arrived."""
+    t: float
+    level: str
+    source: str
+    risk: float | None = None
+    threshold: float | None = None
+    confidence: float | None = None
+    reason: str = ""
+    kind: str = "observation"
+    received: float | None = None
+    elevated_threshold: float | None = None
+    synthetic: bool = False
+    during_task: bool = False
+    node: str | None = None
+    skill: str | None = None
+
+
+@dataclass(frozen=True)
+class Instruction:
+    id: str
+    t: float
+    text: str
+    state: str
+    reason: str = ""
+
+
+@dataclass(frozen=True)
+class Log:
+    id: str
+    t: float
+    severity: str
+    source: str
+    message: str
+    node: str | None = None
+
+
+LEVELS = ("expected", "unknown", "elevated", "anomaly")
+KINDS = ("observation", "heartbeat")
+
+
+def clip(text, limit=TEXT_LIMIT) -> str:
+    text = "" if text is None else str(text)
+    return text if len(text) <= limit else text[:limit - 1] + "…"
+
+
+def plain(value):
+    """VALUE as JSON-safe data: arrays become lists, non-finite floats None, anything else its text."""
+    if isinstance(value, dict):
+        return {str(key): plain(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [plain(item) for item in value]
+    if hasattr(value, "tolist"):
+        return plain(value.tolist())
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if value is None or isinstance(value, (bool, int, str)):
+        return value
+    return str(value)
+
+
+def arguments(value) -> dict:
+    """A decision's arguments, JSON-safe and bounded; oversized arguments keep only their text."""
+    if not isinstance(value, dict):
+        return {}
+    data = {str(key): plain(item) for key, item in value.items()}
+    text = json.dumps(data)
+    return data if len(text) <= ARGUMENT_LIMIT else {"truncated": clip(text, ARGUMENT_LIMIT)}
+
+
+def unit(value: dict, name: str):
+    number = value.get(name)
+    if number is None:
+        return None
+    if isinstance(number, bool) or not isinstance(number, (int, float)) or not 0. <= number <= 1.:
+        raise ValueError(f"reading {name} must be a number in [0, 1]")
+    return float(number)
+
+
+def reading(value: dict, now: float, **context) -> Reading:
+    """A monitor reading from its adapter's dict, with CONTEXT (during_task, node, skill) from the store; refuses
+    unknown levels or kinds and numbers outside [0, 1]."""
+    level, kind = value.get("level", "unknown"), value.get("kind", "observation")
+    if level not in LEVELS:
+        raise ValueError(f"reading level must be one of {', '.join(LEVELS)}")
+    if kind not in KINDS:
+        raise ValueError(f"reading kind must be one of {', '.join(KINDS)}")
+    return Reading(t=float(value.get("t", now)), level=level, source=clip(value.get("source", "monitor"), 80),
+                   risk=unit(value, "risk"), threshold=unit(value, "threshold"),
+                   confidence=unit(value, "confidence"), reason=clip(value.get("reason", ""), 400), kind=kind,
+                   received=now, elevated_threshold=unit(value, "elevated_threshold"),
+                   synthetic=bool(value.get("synthetic", False)), **context)

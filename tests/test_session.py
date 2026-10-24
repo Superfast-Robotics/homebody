@@ -9,6 +9,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from fakes import FakeHub
 
 from homebody.primitives.observations import Frame, HandState, NavigationMap
 from homebody.session.config import Agent, Coder
@@ -16,7 +17,8 @@ from homebody.session.recorder import Recorder
 from homebody.session.session import Session
 from homebody.session.settings import Settings
 from homebody.skills.registry import SKILLS
-from homebody.ui.console import Controls
+from homebody.ui.controls import Controls
+from homebody.ui.dashboard import Dashboard
 from homebody.vlm.observations import describe, map_preview
 from homebody.vlm.provider import Decision, ProviderBusy, ProviderError
 
@@ -668,7 +670,7 @@ class ScriptedControls(Controls):
         self.commands = iter(commands)
 
     def next(self):
-        from homebody.ui.console import Command
+        from homebody.ui.controls import Command
         item = next(self.commands, "close")
         if item == "close":
             self.closing.set()
@@ -676,35 +678,15 @@ class ScriptedControls(Controls):
         return item() if callable(item) else item
 
 
-class Display:
+class Display(Dashboard):
+    """The real dashboard over a recording hub; decisions and skill events are recorded, frames dropped."""
     def __init__(self):
-        from types import SimpleNamespace
-        self.status = SimpleNamespace(content="Ready")
-        self.explanation = SimpleNamespace(content="")
-        self.thought = SimpleNamespace(content="")
-        self.stage = SimpleNamespace(content="")
-        self._skill_stages = []
-        self._stage_times = []
-        self._stage_result = None
-        self._stage_finished_at = None
-        self._active_skill = ""
-        self._stage_sim_start = self._stage_sim_now = None
-        self.ego = SimpleNamespace(image=np.ones((16, 32, 3), dtype=np.uint8), label="Old frame")
-        self.map = SimpleNamespace(image=np.ones((16, 16, 3), dtype=np.uint8))
-        self.topdown = SimpleNamespace(image=np.ones((16, 16, 3), dtype=np.uint8), label="Old capture")
-        self._bubble_message = ""
-        self.model_name = "Codex (gpt-6-astra)"
-        self.submit_button = SimpleNamespace(disabled=False)
-        self.reset_button = SimpleNamespace(disabled=False)
-        self.selections = []
-        self.events = []
+        super().__init__(Controls(), hub=FakeHub, render_in_background=False)
+        self.selections, self.events = [], []
 
     def clear_selection(self):
         self.selections.clear()
-
-    def clear_view(self):
-        from homebody.ui.console import Console
-        Console.clear_view(self)
+        super().clear_selection()
 
     def select(self, decision, frame):
         self.selections.append((decision, frame.frame_id))
@@ -715,20 +697,16 @@ class Display:
     def show(self, frame):
         pass
 
-    def update(self, status, text):
-        from homebody.ui.console import Console
-        Console.update(self, status, text)
-
 
 def test_idle_physics_failure_keeps_ui_resettable_and_blocks_queued_tasks(build):
-    from homebody.ui.console import Command
+    from homebody.ui.controls import Command
     backend, ui, provider = InvalidPhysicsBackend(), Display(), Provider([])
     stopped_commands = []
     def inspect_failure():
         """Returning no command exercises an idle heartbeat in the invalid generation."""
         assert session.requires_reset
-        assert ui.status.content == "Reset required"
-        assert ui.submit_button.disabled and not ui.reset_button.disabled
+        assert ui.store.status == "Reset required"
+        assert not ui.store.accepting and not ui.store.reset_pending
         stopped_commands[:] = backend.actuation
     def inspect_blocked():
         assert backend.actuation == stopped_commands
@@ -742,8 +720,8 @@ def test_idle_physics_failure_keeps_ui_resettable_and_blocks_queued_tasks(build)
     def inspect_reset():
         """Returning no command resumes the normal heartbeat in the new generation."""
         assert not session.requires_reset and backend.epoch == 2
-        assert ui.status.content == "Ready" and not ui.submit_button.disabled
-        assert not ui.reset_button.disabled
+        assert ui.store.status == "Ready" and ui.store.accepting
+        assert not ui.store.reset_pending
     controls = ScriptedControls([None, inspect_failure, Command("task", "Blocked task"),
                                  inspect_blocked, inspect_stopped, inspect_reset])
     session = build(provider, backend=backend, controls=controls, ui=ui)
@@ -755,7 +733,7 @@ def test_idle_physics_failure_keeps_ui_resettable_and_blocks_queued_tasks(build)
 
 
 def test_provider_heartbeat_failure_is_recorded_and_reset_resumes_tasks(build):
-    from homebody.ui.console import Command
+    from homebody.ui.controls import Command
     backend = InvalidPhysicsBackend("Robot fell")
     provider = Provider([Decision("Finished", "done", {})])
     controls = ScriptedControls([Command("reset")])
@@ -790,18 +768,16 @@ def test_skill_physics_failure_preserves_typed_terminal_and_reset_latch(build):
 
 def test_failed_reset_clears_the_view_keeps_the_ui_alive_and_requires_another_reset(build):
     """The human scene follows the new generation even when its reset fails."""
-    from homebody.ui.console import Command
+    from homebody.ui.controls import Command
     backend, display, generations = InvalidPhysicsBackend(), Display(), []
     backend.fail_reset = True
     display.selections.append("old target")
-    display.stage.content = "old stage"
     def retry_reset():
         assert session.requires_reset and backend.epoch == 2
         assert session.status == "Reset required"
         assert generations == [(1, 0.), (1, .02), (2, 0.)]
-        assert not display.ego.image.any() and not display.map.image.any()
-        assert "waiting for fresh observations" in display.ego.label
-        assert not display.selections and not display.stage.content
+        assert display.store.status == "Reset required" and display.store.plan is None
+        assert not display.selections and {"decision", "topdown"} <= set(display.hub.forgotten)
         backend.fail_reset = False
         return Command("reset")
     controls = ScriptedControls([None, Command("reset"), None, retry_reset])

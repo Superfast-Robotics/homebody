@@ -56,7 +56,7 @@ def test_the_harness_moves_to_another_simulation_server_only_when_idle(tmp_path)
     from homebody.server.serve import HarnessServer, Hub
     from homebody.session.config import Monitor
     from homebody.session.settings import Settings
-    from homebody.ui.console import Controls
+    from homebody.ui.controls import Controls
     hub = Hub()
     ui = UiLink(hub, quality=80, view_hz=1000.0)
     server = HarnessServer(Settings(), Controls(), ui, MonitorLink(hub, Monitor(), quality=80, root=tmp_path),

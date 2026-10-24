@@ -26,7 +26,7 @@ from homebody.server.serve import HarnessServer, Hub, load_token
 from homebody.session.config import Monitor as MonitorSettings
 from homebody.session.config import Server
 from homebody.session.settings import Settings
-from homebody.ui.console import Controls
+from homebody.ui.controls import Controls
 
 TOKEN = "t" * 32
 MONITOR = MonitorSettings(enabled=True, min_period_s=0.01, p95_margin=1.0, window_frames=2, ticks=2, ema=1.0,

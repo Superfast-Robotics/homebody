@@ -1,6 +1,6 @@
 """Offline cockpit video for a recorded session, laid out like the live console.
 
-Replays events.jsonl through the console's Overlays. A session without frames/ is replayed
+Replays events.jsonl through the dashboard's Overlays. A session without frames/ is replayed
 from its videos and decision images instead.
 """
 import argparse
@@ -20,7 +20,7 @@ from homebody.motion.carry import RecoveryPlan
 from homebody.primitives.observations import Frame, HandState, NavigationMap
 from homebody.session.config import Topdown
 from homebody.skills import navigate, pick, place
-from homebody.ui.console import Overlays
+from homebody.ui.overlays import Overlays
 from homebody.ui.theme import ACCENT, FACING, GOAL, MASK
 from homebody.vlm.provider import Decision
 from homebody.vlm.topdown import render, size_px

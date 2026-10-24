@@ -85,7 +85,8 @@ def evaluate(args, settings) -> int:
 
 
 def view(args, settings, runs: Path) -> int:
-    from homebody.ui.console import Console, Controls
+    from homebody.ui.console import Console
+    from homebody.ui.controls import Controls
     from homebody.ui.rollouts import RolloutsPanel
     monitor = replace(settings.monitor, enabled=True)
     console = Console(Controls(), host=args.host, port=args.port, scene_name="Rollouts", monitor=monitor)

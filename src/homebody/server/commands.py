@@ -24,7 +24,7 @@ def serve(args, settings, output) -> int:
     from homebody.server import presets as scenarios
     from homebody.server.links import UiLink
     from homebody.server.serve import HarnessServer, Hub, load_token
-    from homebody.ui.console import Controls
+    from homebody.ui.controls import Controls
 
     server_settings = settings.server
     if server_settings.host not in ("127.0.0.1", "localhost", "::1"):

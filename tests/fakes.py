@@ -1,5 +1,6 @@
-"""Shared test fakes: a planning arm with no collision geometry, and a console over a mocked
-web server. Used by tests of the skill framework, the console and the cockpit tool."""
+"""Shared test fakes: a planning arm with no collision geometry, and a dashboard over a recording
+server hub. Used by tests of the skill framework, the dashboard and the session."""
+
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -8,7 +9,9 @@ from scipy.spatial.transform import Rotation
 from homebody.helpers.geometry import transform
 from homebody.session.settings import Topdown
 from homebody.skills.contract import SkillFailure
-from homebody.ui.console import Console, Controls
+from homebody.ui.console import Console
+from homebody.ui.controls import Controls
+from homebody.ui.dashboard import Dashboard
 
 
 class EmptyCollisionGeometry:
@@ -73,3 +76,43 @@ def mocked_console(monkeypatch, settings=None, monitor=None, controls=None):
     console = Console(controls or Controls(), topdown_settings=settings or Topdown(pixels_per_metre=100.), monitor=monitor)
     console.scene_view = SceneRecorder()
     return console
+
+
+class FakeHub:
+    """The dashboard's server hub without sockets: records what the dashboard sends."""
+    url = "http://127.0.0.1:0"
+
+    def __init__(self, host, port, *, snapshot, on_command, history=None):
+        self.snapshot, self.on_command, self.history = snapshot, on_command, history
+        self.views, self.frames, self.forgotten, self.telemetries = {"robot"}, [], [], []
+        self.changes, self.closed = 0, False
+
+    def start(self):
+        return self
+
+    def changed(self):
+        self.changes += 1
+
+    def frame(self, view, meta, data):
+        self.frames.append((view, meta, data))
+
+    def forget(self, view):
+        self.forgotten.append(view)
+
+    def telemetry(self, values):
+        self.telemetries.append(values)
+
+    def wanted(self):
+        return set(self.views)
+
+    def close(self):
+        self.closed = True
+
+
+def fake_dashboard(settings=None, controls=None, clock=None):
+    """A real Dashboard over a FakeHub, drawing in the calling thread, with a recording 3D view."""
+    extra = {} if clock is None else {"clock": clock}
+    dashboard = Dashboard(controls or Controls(), topdown_settings=settings or Topdown(pixels_per_metre=100.),
+                          render_in_background=False, hub=FakeHub, **extra)
+    dashboard.scene_view = SceneRecorder()
+    return dashboard

@@ -10,7 +10,7 @@ requires-python = ">=3.11"
 license = { text = "Apache-2.0" }
 dependencies = [
   "numpy>=1.26", "scipy>=1.13", "mujoco==3.11.0", "torch>=2.4",
-  "pillow>=10", "trimesh>=4.4", "viser>=1.1", "imageio-ffmpeg>=0.6", "websockets>=14",
+  "pillow>=10", "trimesh>=4.4", "viser>=1.1", "websockets>=14", "imageio-ffmpeg>=0.6",
 ]
 
 [project.optional-dependencies]
@@ -35,7 +35,7 @@ package-dir = { "" = "src", "holosoma_inference" = "vendor/holosoma_inference" }
 where = ["src", "vendor"]
 
 [tool.setuptools.package-data]
-homebody = ["**/*.md"]
+homebody = ["**/*.md", "ui/dashboard/static/*.html", "ui/dashboard/static/*.css", "ui/dashboard/static/js/*.js"]
 "homebody.real2sim.exploration.record" = ["*.sh", "*.yaml", "*.txt"]
 holosoma_inference = ["LICENSE*"]
 

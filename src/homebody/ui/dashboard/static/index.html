@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en" data-theme="fuse-dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HomeBody Harness</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="dashboard.css">
+<script type="module" src="js/app.js"></script>
+</head>
+<body>
+<svg class="sprite" aria-hidden="true">
+  <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/><path d="M18.5 14.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="M21 3L10 14"/><path d="M21 3l-7 18-4-7-7-4z"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M9 5v14M15 5v14"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 5l12 7-12 7z"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></symbol>
+  <symbol id="i-hand" viewBox="0 0 24 24"><path d="M8 13V5.5a1.5 1.5 0 013 0V11m0-6.5a1.5 1.5 0 013 0V11m0-5a1.5 1.5 0 013 0v6m0-3a1.5 1.5 0 013 0v5a7 7 0 01-7 7h-1a7 7 0 01-5.6-2.8L4 15.5a1.6 1.6 0 012.4-2.1L8 15"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></symbol>
+  <symbol id="i-expand" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></symbol>
+  <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-skip" viewBox="0 0 24 24"><path d="M5 12h12M13 7l5 5-5 5"/></symbol>
+  <symbol id="i-tree" viewBox="0 0 24 24"><rect x="3" y="3" width="6" height="5" rx="1"/><rect x="15" y="10" width="6" height="5" rx="1"/><rect x="15" y="17" width="6" height="4" rx="1"/><path d="M6 8v11h9M6 12.5h9"/></symbol>
+  <symbol id="i-sequence" viewBox="0 0 24 24"><path d="M4 7h11M4 12h11M4 17h11M18 5v14l3-3"/></symbol>
+  <symbol id="i-fallback" viewBox="0 0 24 24"><path d="M12 3v6M12 9l-6 6M12 9l6 6M6 15v5M18 15v5"/></symbol>
+  <symbol id="i-goal" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.5"/></symbol>
+  <symbol id="i-action" viewBox="0 0 24 24"><path d="M13 3L5 13h6l-1 8 8-10h-6z"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></symbol>
+  <symbol id="i-tool" viewBox="0 0 24 24"><path d="M14.5 6.5a4 4 0 00-5 5L4 17l3 3 5.5-5.5a4 4 0 005-5L15 12l-3-3z"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18h.01"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5h.01"/></symbol>
+  <symbol id="i-robot" viewBox="0 0 24 24"><rect x="5" y="8" width="14" height="11" rx="3"/><path d="M12 4v4M9 13h.01M15 13h.01M9.5 16.5h5"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M8 10l4 4 4-4"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></symbol>
+  <symbol id="i-follow" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/></symbol>
+  <symbol id="i-recovery" viewBox="0 0 24 24"><path d="M4 12a8 8 0 0114-5.3L20 9"/><path d="M20 4v5h-5"/><path d="M20 12a8 8 0 01-14 5.3L4 15"/><path d="M4 20v-5h5"/></symbol>
+</svg>
+
+<div class="connection-banner" id="connection-banner" role="status" aria-live="polite" hidden></div>
+<div class="app" id="app">
+  <header class="header card-flat">
+    <div class="task-summary">
+      <div class="title-row">
+        <h1 id="title">HomeBody</h1>
+        <span class="pill" id="status" role="status" aria-live="polite" title="Executor lifecycle"><span class="dot"></span><span class="pill-text">Connecting</span></span>
+        <span class="outcome-badge" id="outcome-badge" role="status" hidden title="Task outcome, from the plan's verified goals"><span class="mark"></span><span class="outcome-text"></span></span>
+        <span class="elapsed" id="elapsed" title="Time since the task started"></span>
+        <button class="alert-chip" id="alert-chip" type="button" hidden></button>
+      </div>
+      <p class="summary" id="summary">Connecting to the session…</p>
+    </div>
+    <div class="command-group">
+      <form class="command" id="command" autocomplete="off">
+        <label class="visually-hidden" for="instruction">Instruction for the agent</label>
+        <div class="command-input">
+          <svg class="icon accent"><use href="#i-sparkle"/></svg>
+          <textarea id="instruction" rows="1" maxlength="4000" placeholder="Tell the agent what to do..."></textarea>
+          <button class="send" id="send" type="submit" aria-label="Send instruction" title="Send (Enter)" disabled><svg class="icon"><use href="#i-send"/></svg></button>
+        </div>
+        <div class="instruction-state" id="instruction-state" role="status" aria-live="polite"></div>
+      </form>
+      <div class="controls" data-controls="header">
+        <button class="btn primary" type="button" id="primary-action" hidden><svg class="icon"><use href="#i-play"/></svg><span>Start task</span></button>
+        <button class="btn" type="button" data-control="pause"><svg class="icon"><use href="#i-pause"/></svg><span>Pause</span></button>
+        <button class="btn" type="button" data-control="stop_skill"><svg class="icon"><use href="#i-hand"/></svg><span>Stop skill</span></button>
+        <button class="btn danger" type="button" data-control="stop_task"><svg class="icon"><use href="#i-stop"/></svg><span>Stop task</span></button>
+        <button class="btn icon-only" type="button" data-control="more" aria-haspopup="menu" aria-expanded="false" aria-label="More actions" title="More actions"><svg class="icon"><use href="#i-more"/></svg></button>
+      </div>
+    </div>
+  </header>
+
+  <main class="workspace" id="workspace">
+    <section class="card camera" id="camera" aria-label="Live camera">
+      <div class="camera-stage" id="camera-stage">
+        <img id="camera-image" alt="Live robot camera">
+        <iframe id="camera-scene" title="3D scene" hidden></iframe>
+        <div class="camera-empty" id="camera-empty" role="status">Waiting for camera frames…</div>
+      </div>
+      <div class="camera-top">
+        <span class="live-badge" id="live-badge"><span class="dot"></span><span>Connecting</span></span>
+        <label class="visually-hidden" for="camera-select">Camera</label>
+        <div class="select-wrap dark"><select id="camera-select"></select><svg class="icon"><use href="#i-chevron"/></svg></div>
+        <span class="camera-freshness" id="camera-freshness"></span>
+        <span class="spacer"></span>
+        <button class="btn-glass" type="button" id="camera-fullscreen" aria-label="Fullscreen" title="Fullscreen"><svg class="icon"><use href="#i-expand"/></svg></button>
+        <button class="btn-glass" type="button" id="camera-snapshot" aria-label="Save snapshot" title="Save snapshot"><svg class="icon"><use href="#i-camera"/></svg></button>
+        <button class="btn-glass" type="button" id="camera-settings" aria-label="Camera settings" title="Camera settings" aria-expanded="false"><svg class="icon"><use href="#i-gear"/></svg></button>
+        <div class="popover camera-popover" id="camera-popover" hidden>
+          <div class="popover-title">View</div>
+          <label class="check"><input type="checkbox" id="camera-fit"> Fill the panel (crops the frame)</label>
+          <div class="popover-title">Stream</div>
+          <dl class="kv small" id="camera-stats"></dl>
+        </div>
+      </div>
+      <div class="inspect-banner" id="inspect-banner" hidden>
+        <span id="inspect-text"></span>
+        <button class="btn small" type="button" data-action="live">Return to live</button>
+      </div>
+      <div class="overlay-controls controls" data-controls="overlay" aria-label="Execution controls (fullscreen)">
+        <button class="btn-glass wide" type="button" data-control="pause"><svg class="icon"><use href="#i-pause"/></svg><span>Pause</span></button>
+        <button class="btn-glass wide" type="button" data-control="stop_skill"><svg class="icon"><use href="#i-hand"/></svg><span>Stop skill</span></button>
+        <span class="divider"></span>
+        <button class="btn-glass" type="button" data-control="more" aria-haspopup="menu" aria-expanded="false" aria-label="More actions" title="More actions"><svg class="icon"><use href="#i-more"/></svg></button>
+      </div>
+    </section>
+
+    <section class="card tree-panel" id="tree-panel" aria-label="Behavior tree">
+      <div class="panel-head">
+        <svg class="icon muted"><use href="#i-tree"/></svg><h2>Behavior Tree</h2>
+        <span class="spacer"></span>
+        <button class="btn small toggle" type="button" id="tree-technical" aria-pressed="false" title="Show raw tool names, error codes and call counts">Technical</button>
+        <button class="btn small follow" type="button" id="tree-follow" hidden title="Scroll to the running node and keep following it"><svg class="icon"><use href="#i-follow"/></svg>Follow execution</button>
+        <button class="btn icon-only small info-toggle" type="button" id="info-toggle" aria-label="Robot information" title="Robot information" aria-expanded="false"><svg class="icon"><use href="#i-panel"/></svg></button>
+      </div>
+      <div class="tabs" role="tablist" aria-label="Behavior tree views">
+        <button role="tab" type="button" id="tab-plan" aria-controls="pane-plan" aria-selected="true"><svg class="icon"><use href="#i-tree"/></svg>Execution Plan</button>
+        <button role="tab" type="button" id="tab-logs" aria-controls="pane-logs" aria-selected="false" tabindex="-1"><svg class="icon"><use href="#i-list"/></svg>Logs</button>
+        <button role="tab" type="button" id="tab-tools" aria-controls="pane-tools" aria-selected="false" tabindex="-1"><svg class="icon"><use href="#i-tool"/></svg>Tools</button>
+      </div>
+      <div class="pane scroll" role="tabpanel" id="pane-plan" aria-labelledby="tab-plan">
+        <div class="tree-state" id="tree-state" role="status">
+          <span class="spinner" id="tree-spinner" hidden></span>
+          <div><strong id="tree-state-title">Connecting…</strong><p id="tree-state-text"></p></div>
+        </div>
+        <div class="tree-banner" id="tree-banner" role="status" hidden></div>
+        <div class="tree" id="tree" role="tree" aria-label="Execution plan"></div>
+        <details class="superseded" id="superseded" hidden><summary id="superseded-title"></summary><ol id="superseded-list"></ol></details>
+      </div>
+      <div class="pane" role="tabpanel" id="pane-logs" aria-labelledby="tab-logs" hidden>
+        <div class="filters" id="log-filters">
+          <div class="select-wrap"><select id="log-severity" aria-label="Severity"><option value="">All severities</option><option value="info">Info</option><option value="warning">Warning</option><option value="error">Error</option></select><svg class="icon"><use href="#i-chevron"/></svg></div>
+          <div class="select-wrap"><select id="log-source" aria-label="Source"><option value="">All sources</option><option value="session">Session</option><option value="agent">Agent</option><option value="skill">Skill</option><option value="operator">Operator</option><option value="monitor">Monitor</option></select><svg class="icon"><use href="#i-chevron"/></svg></div>
+          <div class="select-wrap"><select id="log-node" aria-label="Behavior tree goal"><option value="">All goals</option></select><svg class="icon"><use href="#i-chevron"/></svg></div>
+          <div class="select-wrap"><select id="log-time" aria-label="Time"><option value="">All time</option><option value="60">Last 1 min</option><option value="300">Last 5 min</option></select><svg class="icon"><use href="#i-chevron"/></svg></div>
+        </div>
+        <ol class="log-list scroll" id="logs" aria-live="off"></ol>
+        <div class="empty" id="logs-empty">No log entries yet.</div>
+      </div>
+      <div class="pane scroll" role="tabpanel" id="pane-tools" aria-labelledby="tab-tools" hidden>
+        <ol class="tool-list" id="tools"></ol>
+        <div class="empty" id="tools-empty">No tool calls yet.</div>
+      </div>
+    </section>
+
+    <section class="card info-panel" id="info-panel" aria-label="Robot information">
+      <div class="critical-banner" id="critical-banner" role="alert" hidden>
+        <svg class="icon"><use href="#i-alert"/></svg>
+        <div><strong id="critical-title"></strong><p id="critical-reason"></p></div>
+        <button class="btn small" type="button" id="critical-inspect">Inspect incident</button>
+      </div>
+      <div class="pause-card" id="pause-card" role="status" hidden>
+        <svg class="icon"><use href="#i-pause"/></svg>
+        <dl class="kv small" id="pause-facts"></dl>
+      </div>
+      <div class="info-section outcome-section" id="outcome-section" hidden>
+        <div class="section-head"><h2>Task Outcome</h2><span class="spacer"></span><button class="link" type="button" id="outcome-details">Evidence</button></div>
+        <div class="outcome-summary" id="outcome-summary"></div>
+      </div>
+      <div class="info-section status-section">
+        <div class="section-head"><svg class="icon accent"><use href="#i-robot"/></svg><h2>Robot Status</h2></div>
+        <dl class="kv" id="robot-status"></dl>
+        <details class="robot-details"><summary>Details</summary><dl class="kv small" id="robot-details"></dl></details>
+      </div>
+      <div class="info-section alerts-section">
+        <div class="section-head">
+          <h2>Unresolved alerts</h2><span class="count" id="alert-count" hidden></span>
+          <span class="spacer"></span>
+          <button class="link" type="button" id="alerts-all">View all</button>
+        </div>
+        <ol class="alerts" id="alerts"></ol>
+        <p class="note" id="alerts-note"></p>
+      </div>
+      <details class="info-section grow agent-section" id="agent-section" open>
+        <summary class="section-head"><h2>Agent</h2><span class="tag" title="Text the agent wrote; not verified against the robot's state">Agent-reported</span></summary>
+        <div class="agent-context" id="agent-context"></div>
+        <button class="link" type="button" id="agent-history">Recent decisions</button>
+      </details>
+    </section>
+  </main>
+
+  <section class="card monitor" id="monitor" aria-label="Automatic monitoring">
+    <div class="monitor-head">
+      <svg class="icon accent"><use href="#i-shield"/></svg><h2>Automatic Monitoring</h2>
+      <span class="pill" id="monitor-status" title="Monitoring connectivity"><span class="dot"></span><span class="pill-text">Connecting</span></span>
+      <span class="pill timeline-mode" id="timeline-mode" title="Timeline mode"><span class="pill-text">Live timeline</span></span>
+      <span class="badge synthetic" id="monitor-synthetic" hidden title="Readings marked synthetic by their source: test data, not a real safety or execution outcome">Synthetic data</span>
+      <span class="monitor-meta" id="monitor-age"></span>
+      <span class="monitor-meta" id="monitor-stats"></span>
+
+      <div class="select-wrap" id="risk-source-wrap" hidden><select id="risk-source" aria-label="Risk score source"></select><svg class="icon"><use href="#i-chevron"/></svg></div>
+      <span class="spacer"></span>
+      <div class="inspect-bar" id="monitor-inspect" hidden>
+        <span id="monitor-inspect-text"></span>
+        <button class="btn small" type="button" data-action="live">Return to live</button>
+      </div>
+      <ul class="legend" id="legend" aria-label="Legend">
+        <li><span class="swatch success"></span>Expected</li>
+        <li><span class="swatch neutral"></span>Unknown</li>
+        <li><span class="swatch missing"></span>No reading</li>
+        <li><span class="swatch warning"></span>Elevated</li>
+        <li><span class="swatch danger"></span>Anomaly</li>
+        <li><span class="swatch running"></span>Human action</li>
+        <li><span class="swatch recovery"></span>Recovery</li>
+      </ul>
+      <span class="window-label"><svg class="icon"><use href="#i-clock"/></svg>Last 1 min</span>
+      <button class="btn small" type="button" id="monitor-expand">View details</button>
+    </div>
+    <ol class="summary-strip" id="summary-strip" aria-label="What happened in this window"></ol>
+    <div class="timeline" id="timeline">
+      <ul class="track-labels" aria-hidden="true">
+        <li>Goal</li><li>Skill</li><li>Agent decisions</li><li>Monitor observations</li><li class="tall">Risk</li><li>Interventions</li><li class="axis-row"></li>
+      </ul>
+      <div class="timeline-canvas"><canvas id="timeline-canvas" tabindex="0" role="img" aria-label="Monitoring timeline for the last 60 seconds. Click a moment to inspect it."></canvas></div>
+    </div>
+    <div class="tooltip" id="tooltip" role="tooltip" hidden></div>
+  </section>
+</div>
+
+<div class="menu" id="more-menu" role="menu" hidden>
+  <button role="menuitem" type="button" data-menu="stop_skill">Stop current skill</button>
+  <button role="menuitem" type="button" data-menu="reset">Reset scene…</button>
+  <button role="menuitem" type="button" data-menu="instructions">Instruction history</button>
+  <button role="menuitem" type="button" data-menu="diagnostics">Diagnostics</button>
+  <p class="menu-note">Stop task cancels the task over the network. It is not an emergency stop: use the robot's safety-rated E-stop for that.</p>
+</div>
+
+<aside class="drawer" id="drawer" aria-labelledby="drawer-title" hidden>
+  <div class="drawer-head">
+    <h2 id="drawer-title"></h2>
+    <button class="btn icon-only small" type="button" id="drawer-close" aria-label="Close details"><svg class="icon"><use href="#i-x"/></svg></button>
+  </div>
+  <div class="drawer-body scroll" id="drawer-body"></div>
+</aside>
+
+<dialog class="confirm" id="confirm">
+  <form method="dialog">
+    <h2 id="confirm-title"></h2>
+    <p id="confirm-text"></p>
+    <div class="confirm-actions">
+      <button class="btn" value="cancel" type="submit">Cancel</button>
+      <button class="btn danger" value="ok" type="submit" id="confirm-ok"></button>
+    </div>
+  </form>
+</dialog>
+</body>
+</html>
