@@ -31,6 +31,11 @@ class RemoteControls:
     def _send(self, kind: str, **fields):
         self.client.send(kind, **fields)
 
+    @property
+    def paused(self):
+        """The harness's operator pause (an Event the dashboard reads), None before a harness is connected."""
+        return getattr(self.client, "paused", None)
+
     def submit(self, text: str):
         self._send("submit", text=text)
 
@@ -99,6 +104,7 @@ class HarnessClient:
         self.camera_sent = "robot"
         self.closed = threading.Event()
         self.received_state = threading.Event()
+        self.paused = threading.Event()  # the harness's operator pause, as its state reports it
         self.listener: threading.Thread | None = None
 
     # --- connection ---
@@ -147,6 +153,8 @@ class HarnessClient:
         if kind == "state":
             self.epoch, self.session = fields.get("epoch", self.epoch), fields.get("session", self.session)
             self.role = fields.get("role", self.role)
+            if "paused" in fields:
+                (self.paused.set if fields["paused"] else self.paused.clear)()
             self.received_state.set()
             if self.offer_presets and isinstance(fields.get("presets"), list):
                 self.presets = [p for p in fields["presets"] if isinstance(p, dict) and p.get("name")]

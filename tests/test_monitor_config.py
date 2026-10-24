@@ -131,3 +131,14 @@ def test_the_status_check_asks_a_homebody_sim_server_its_own_way(tmp_path, monke
     status = watch.sim_status(load(path).sims["kitchen_hb"])
     assert asked == ["tcp://127.0.0.1:5740"] and status.connected
     assert status.detail["controller"]["running"] and status.detail["profile"] == "homebody-kitchen_baskets"
+
+
+def test_a_bind_rechecks_a_server_that_was_slow_once_before_taking_it_as_down(tmp_path):
+    from homebody.server.watch import Status, Watcher
+    path = tmp_path / "servers.toml"
+    path.write_text(CONFIG)
+    config = load(path)
+    answers = iter([Status("warehouse_cart", "sim", error="TimeoutError"), Status("warehouse_cart", "sim", True, 1.0, {})])
+    watcher = Watcher(config, check=lambda kind, server: next(answers))
+    watcher.statuses[("sim", "warehouse_cart")] = Status("warehouse_cart", "sim", error="TimeoutError: slow tunnel")
+    assert watcher.answering("sim", config.sims["warehouse_cart"]).connected

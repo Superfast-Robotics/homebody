@@ -86,12 +86,17 @@ class MonitorApp:
         self.message = text
         self.console.update(status, text)
 
+    def sim_answer(self, sim):
+        """SIM's status for a bind or an Apply: the watcher's, rechecked when it did not answer last time."""
+        answering = getattr(self.watcher, "answering", None)
+        return answering("sim", sim) if answering else self.watcher.status("sim", sim.name)
+
     def bind(self, harness_name: str, sim_name: str, label: str) -> dict:
         """The simulation server SIM_NAME answering with a controller; the harness HARNESS_NAME connected and attached
         to it (confirmed by the harness's own state); the video switched to it. Returns the harness's state; raises
         with the failed step's reason."""
         sim = self.config.sims[sim_name]
-        status = self.watcher.status("sim", sim.name)
+        status = self.sim_answer(sim)
         if status is None or not status.connected:
             raise RuntimeError(f"simulation server {sim.name} does not answer ({status.error if status else 'not checked yet'})")
         controller = status.detail.get("controller") or {}
@@ -146,7 +151,7 @@ class MonitorApp:
         harness = self.watcher.status("harness", harness_name)
         if harness is not None and not harness.connected:
             return f"{harness_name} does not answer ({harness.error or 'no answer'})"
-        sim = self.watcher.status("sim", sim_name)
+        sim = self.sim_answer(self.config.sims[sim_name])
         if sim is None or not sim.connected:
             return f"{sim_name} does not answer ({sim.error if sim else 'not checked yet'})"
         if not (sim.detail.get("controller") or {}).get("running"):

@@ -9,6 +9,7 @@ of the state, and the cameras are published on the stream in warehouse-sim's for
 server like a warehouse-sim one. `describe` says what the monitor app reads of a warehouse-sim server, plus the engine
 and the scene's identity.
 """
+import os
 import threading
 import time
 import uuid
@@ -24,7 +25,7 @@ from homebody.simserver import codec, protocol
 from homebody.simserver.render import state_of
 from homebody.simserver.stream import encode
 
-POLL_MS = 20
+POLL_MS = 250  # the RPC loop also wakes at once for a request or a finished reply (_wake)
 WORKERS = 4  # concurrent calls: an advance waits while describe, measure or a render are answered
 SAMPLES = 4096  # evaluation samples kept for the client to collect
 
@@ -212,6 +213,7 @@ class SimServer:
         self._pub.setsockopt(zmq.SNDHWM, 8)
         self._pub.bind(self.config.stream)
         self._replies: deque = deque()
+        self._wake_read, self._wake = os.pipe()  # a finished call writes here so its reply leaves at once
         self._pool = ThreadPoolExecutor(WORKERS, thread_name_prefix="sim-call")
         for target, name in ((self._physics, "sim-physics"), (self._serve, "sim-rpc"), (self._publish, "sim-stream")):
             thread = threading.Thread(target=target, name=name, daemon=True)
@@ -230,10 +232,17 @@ class SimServer:
         except TypeError as error:
             packed = codec.pack(protocol.failure(error))
         self._replies.append((envelope, packed))
+        os.write(self._wake, b"r")
 
     def _serve(self):
+        poller = zmq.Poller()
+        poller.register(self._rpc, zmq.POLLIN)
+        poller.register(self._wake_read, zmq.POLLIN)
         while not self._stop.is_set():
-            if self._rpc.poll(POLL_MS):
+            ready = dict(poller.poll(POLL_MS))
+            if self._wake_read in ready:
+                os.read(self._wake_read, 4096)
+            if self._rpc in ready:
                 *envelope, payload = self._rpc.recv_multipart()
                 self._pool.submit(self._answer, envelope, payload)
             while self._replies:
@@ -264,4 +273,6 @@ class SimServer:
             self._pool.shutdown(wait=False, cancel_futures=True)
             self._rpc.close(0)
             self._pub.close(0)
+            os.close(self._wake_read)
+            os.close(self._wake)
         self.renderer.close()

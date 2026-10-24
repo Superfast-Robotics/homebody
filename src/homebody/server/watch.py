@@ -10,7 +10,8 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 POLL_S = 2.0  # how often a server's status is refreshed
-TIMEOUT_S = 2.0  # a status request slower than this counts as a lost link
+TIMEOUT_S = 5.0  # a status request slower than this counts as a lost link (tunnels to loki can take seconds)
+RECHECKS = 3  # fresh checks before a server is taken as down for a bind or an Apply
 
 
 @dataclass(frozen=True)
@@ -101,6 +102,16 @@ class Watcher:
     def status(self, kind: str, name: str) -> Status | None:
         with self._lock:
             return self.statuses.get((kind, name))
+
+    def answering(self, kind: str, server, tries: int = RECHECKS) -> Status | None:
+        """SERVER's last status when it answered, else a fresh check (up to TRIES): one slow answer over a busy
+        tunnel is not a server down."""
+        status = self.status(kind, server.name)
+        for _ in range(tries if status is None or not status.connected else 0):
+            status = self._check(kind, server)
+            if status.connected:
+                break
+        return status
 
     def _run(self):
         while not self._stop.is_set():

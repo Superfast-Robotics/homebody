@@ -184,10 +184,12 @@ class HarnessServer:
 
     def state(self) -> dict:
         status, text = self.ui.status
+        paused = getattr(self.controls, "paused", None)  # the operator's pause holds a skill mid-motion too
         monitor = getattr(self.settings, "monitor", None)  # a branch without the live monitor has no [monitor]
         return {"session": self.session_dir.name if self.session_dir else "", "epoch": self.epoch,
                 "sim": self.sim_status(),
                 "status": status, "text": text, "scene": self.scene.name if self.scene else "",
+                "paused": bool(paused is not None and paused.is_set()),
                 "presets": [preset.public() for preset in self.presets.values()],
                 "camera": self.ui.camera, "commander": self.commander is not None,
                 "clients": len(self.hub.clients), "monitor_capture_hz": monitor.capture_hz if monitor is not None else None}
@@ -315,6 +317,8 @@ class HarnessServer:
             if not hasattr(controls, kind):  # an older console's Controls (submit, stop, reset) has none of these
                 return f"this harness cannot {kind.replace('_', ' ')}"
             getattr(controls, kind)()
+            if kind in ("pause", "unpause"):  # held at once, even mid-skill: consoles see it without a status change
+                self.hub.publish(protocol.text("state", **self.state()))
         elif kind == "preset":
             return self.run_preset(fields)
         elif kind == "attach_sim":

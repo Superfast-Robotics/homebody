@@ -19,7 +19,7 @@ from websockets.sync.client import connect
 from homebody.monitor.monitor import Monitor
 from homebody.monitor.targets import NodeInfo, Phase, VocabularyRequest
 from homebody.server import protocol
-from homebody.server.client import HarnessClient
+from homebody.server.client import HarnessClient, RemoteControls
 from homebody.server.links import UiLink
 from homebody.server.monitor_link import MonitorLink
 from homebody.server.serve import HarnessServer, Hub, load_token
@@ -327,3 +327,15 @@ def test_a_mark_reaches_the_clients_monitor_with_its_kind(tmp_path):
     client.monitor = SimpleNamespace(mark=lambda kind, text, t: marks.append((kind, text, t)))
     client.monitor_call(fields["call"], fields)
     assert marks == [("note", "keep the other products in place", 3.5)]
+
+
+def test_a_pause_mid_skill_reaches_the_remote_console_at_once(harness, tmp_path):
+    client = HarnessClient(url(harness), TOKEN, folder=tmp_path / "client")
+    controls = RemoteControls(client)
+    client.connect()
+    harness.ui.update("Executing", "picking")  # a skill runs: the session reports no Paused status until it ends
+    controls.pause()
+    assert wait_for(lambda: harness.controls.paused.is_set() and controls.paused.is_set())
+    controls.unpause()
+    assert wait_for(lambda: not controls.paused.is_set())
+    client.close()
