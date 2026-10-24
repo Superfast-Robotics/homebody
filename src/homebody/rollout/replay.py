@@ -78,7 +78,7 @@ def replay(dashboard, rollout, tau: float, now=None):
             event = dict(payload.get("event") or {})
             if event.get("type") == "skill_finished":
                 event["result"] = result(event.get("result"))
-            if event.get("type") in ("skill_started", "skill_stage", "skill_finished"):
+            if event.get("type") in ("skill_started", "skill_stage", "skill_finished", "intervention"):
                 dashboard.skill_event(event)
         elif kind == "frame" and dashboard.history.due(clock()) and payload.is_file():
             dashboard.remote_frame("robot", np.asarray(Image.open(payload).convert("RGB")), {"sim": t})

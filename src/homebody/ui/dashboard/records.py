@@ -101,6 +101,31 @@ class Reading:
     during_task: bool = False
     node: str | None = None
     skill: str | None = None
+    signal: str = ""  # what RISK measures, as the monitor names it (e.g. "stall", "unsafe", "failure:dropped")
+
+
+@dataclass(frozen=True)
+class Intervention:
+    """A request that a component stop or change what the robot does, and what became of it. STAGES are the
+    events that established each step, oldest first: (stage, t, source, note), with stage one of "detected",
+    "requested", "accepted", "confirmed", "rejected", "failed" or "cancelled"; a step no event established is absent,
+    never assumed. INITIATOR asked for it, DECIDED_BY chose to, TARGET was asked, INCIDENT is the detection it acted
+    on. PHYSICAL is whether the robot was seen to stop: "unverified" unless a motion or safety signal says so."""
+    id: str
+    t: float
+    action: str
+    initiator: str
+    decided_by: str = ""
+    detection: str = ""
+    target: str = "Skill executor (session)"
+    tool: str | None = None
+    skill: str | None = None
+    node: str | None = None
+    incident: str | None = None
+    task: str | None = None
+    reason: str = ""
+    stages: tuple = ()
+    physical: str = "unverified"
 
 
 @dataclass(frozen=True)
@@ -176,4 +201,4 @@ def reading(value: dict, now: float, **context) -> Reading:
                    risk=unit(value, "risk"), threshold=unit(value, "threshold"),
                    confidence=unit(value, "confidence"), reason=clip(value.get("reason", ""), 400), kind=kind,
                    received=now, elevated_threshold=unit(value, "elevated_threshold"),
-                   synthetic=bool(value.get("synthetic", False)), **context)
+                   synthetic=bool(value.get("synthetic", False)), signal=clip(value.get("signal", ""), 80), **context)

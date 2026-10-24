@@ -17,7 +17,7 @@ from homebody.monitor.targets import NodeInfo, Phase, VocabularyRequest
 from homebody.server import protocol
 from homebody.skills.contract import Result
 
-CONSOLE_SKILL_EVENTS = ("skill_started", "skill_stage", "skill_finished")
+CONSOLE_SKILL_EVENTS = ("skill_started", "skill_stage", "skill_finished", "intervention")
 VIEWS = ("robot", "observer", "hand")  # the cameras a harness renders for a dashboard elsewhere
 CAMERA_POLL_S = 0.5  # how often the dashboard's watched view is checked, to ask the harness for that camera
 

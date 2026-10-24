@@ -9,6 +9,7 @@ from dataclasses import asdict, replace
 from itertools import count
 from threading import RLock
 
+from homebody.ui.dashboard.interventions import InterventionTracking
 from homebody.ui.dashboard.outcome import evaluate, lifecycle
 from homebody.ui.dashboard.planning import PlanTracking
 from homebody.ui.dashboard.records import (
@@ -49,7 +50,7 @@ def bounded(records: OrderedDict, limit: int) -> OrderedDict:
     return records
 
 
-class Store(PlanTracking):
+class Store(PlanTracking, InterventionTracking):
     def __init__(self, *, scene_name="Simulation", model_name="", initial_task="", clock=time.time):
         self.clock, self.lock, self._ids = clock, RLock(), count(1)
         self.scene_name, self.model_name, self.initial_task = scene_name, model_name, initial_task
@@ -63,6 +64,7 @@ class Store(PlanTracking):
         self.intervals, self.decisions, self.tools = OrderedDict(), OrderedDict(), OrderedDict()
         self.incidents, self.logs, self.instructions = OrderedDict(), OrderedDict(), OrderedDict()
         self.readings, self.tasks = [], []  # tasks: every recent task's span, for the monitoring tracks
+        self.interventions = OrderedDict()  # requests to stop the running skill, and what became of them
         self._open = {}  # track -> id of its running interval
         self._recoveries = {}  # goal id -> {"incident", "failed"} while a recovery goal runs
         self._superseded = []  # trees the agent replaced, newest last
@@ -160,6 +162,7 @@ class Store(PlanTracking):
         if self.task is None or self.task["end"] is not None:
             return
         tone, title = ENDINGS.get(status, ("neutral", None))
+        self._task_ended_interventions()
         self.task = {**self.task, "end": self.clock(), "outcome": status, "frame": self.frame_id}
         self._end("goal", "ended")
         self._end("skill", "cancelled" if status == "cancelled" else "ended")
@@ -217,6 +220,8 @@ class Store(PlanTracking):
                 self.log("info", "skill", f"{event.get('skill')}: {event.get('stage')}", tool and tool.goal)
             elif kind == "skill_finished":
                 self._finished(event.get("result"), tool)
+            elif kind == "intervention":
+                self._intervention_event(event)
             self._touch()
 
     def _running_tool(self):
@@ -230,6 +235,7 @@ class Store(PlanTracking):
         if tool is not None and tool.skill == skill:
             self.tools[tool.id] = replace(tool, end=self.clock(), state="succeeded" if ok else "failed",
                                           code=code, message=message)
+            self._skill_ended(tool, code)
         self.log("info" if ok else "warning", "skill", f"{skill} {code}: {message}", tool and tool.goal)
         if tool is not None and tool.attempt > 1:
             self._retried(tool, code)
@@ -282,6 +288,11 @@ class Store(PlanTracking):
                                   ("confidence", entry.confidence), ("synthetic", entry.synthetic or None))
                                   if value is not None})
                 self._anomalies[entry.source] = (next(reversed(self.incidents)), entry.t)
+            request = value.get("request")
+            if isinstance(request, dict) and entry.kind == "observation":
+                anomaly = self.incidents.get(self._anomalies.get(entry.source, (None,))[0])
+                self.request_intervention("monitor", str(request.get("reason") or entry.reason), incident=anomaly,
+                                          detection=f"Monitoring model ({entry.source})")
             self._touch()
 
     def _continues(self, entry):
@@ -363,7 +374,8 @@ class Store(PlanTracking):
             def recent(records, stamp):
                 return [asdict(r) for r in records if stamp(r) is None or stamp(r) >= keep]
             self.readings = [r for r in self.readings if r.t >= keep]
-            tree = plan_nodes(self.plan, self.tools.values(), self.task)
+            interventions = self.intervention_rows(now)
+            tree = plan_nodes(self.plan, self.tools.values(), self.task, interventions)
             return {
                 "now": now, "version": self.version, "scene": self.scene_name, "model": self.model_name,
                 "initial_task": self.initial_task, "status": self.status, "text": self.text,
@@ -380,6 +392,7 @@ class Store(PlanTracking):
                 "decisions": recent(self.decisions.values(), lambda r: r.t),
                 "tools": [asdict(t) for t in self.tools.values()],
                 "incidents": [asdict(i) for i in self.incidents.values()],
+                "interventions": interventions,
                 "readings": [asdict(r) for r in self.readings],
                 "logs": [asdict(entry) for entry in self.logs.values()],
                 "instructions": [asdict(i) for i in self.instructions.values()],

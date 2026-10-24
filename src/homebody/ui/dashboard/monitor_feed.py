@@ -1,8 +1,10 @@
 """The live monitor (homebody/monitor) on the dashboard: each new reading of its View becomes one dashboard reading.
 
-The risk is the strongest of the signals the monitor's rules weigh (monitor/decide.signals); the level follows the
-verdict the reading got: an abort or a reopened goal is an anomaly (the dashboard raises an alert), a flag or a risk
-at the threshold is elevated, a reading whose questions were all refused is unknown.
+The risk is the strongest of the signals the monitor's rules weigh (monitor/decide.signals), named in SIGNAL; the
+level follows the verdict the reading got: an abort or a reopened goal is an anomaly (the dashboard raises an alert),
+a flag or a risk at the threshold is elevated, a reading whose questions were all refused is unknown. REQUEST says the
+verdict asked the skill executor to stop the skill: the monitor does so exactly when an abort or reopen falls on the
+skill call it watched (Monitor._decide), so a verdict on a reading taken outside that call requests nothing.
 """
 from homebody.monitor.decide import signals
 
@@ -30,13 +32,16 @@ def verdict_for(view, reading):
 
 def feed(view, tau: float) -> dict | None:
     """VIEW's newest reading as a dashboard reading (ui/dashboard/records.reading), or None without one."""
-    if view.reading is None:
+    reading = view.reading
+    if reading is None:
         return None
-    return value(view.reading, view.vocabulary, verdict_for(view, view.reading), tau)
+    this_call = reading.phase.name == "tool_call" and reading.phase.call == view.skill_call
+    return value(reading, view.vocabulary, verdict_for(view, reading), tau, this_call=this_call)
 
 
-def value(reading, vocabulary, verdict, tau: float) -> dict:
-    """READING (with the VERDICT it gave, if any) as a dashboard reading."""
+def value(reading, vocabulary, verdict, tau: float, *, this_call: bool = False) -> dict:
+    """READING (with the VERDICT it gave, if any) as a dashboard reading; THIS_CALL: taken during the skill call
+    the monitor watches now, so an abort or reopen on it is a stop request."""
     name, risk = strongest(reading, vocabulary)
     activity = max(reading.activity.values(), default=None) if reading.activity else None
     if verdict is not None and verdict.action in ALERTS:
@@ -53,8 +58,10 @@ def value(reading, vocabulary, verdict, tau: float) -> dict:
         reason = f"{name.split(':', 1)[-1].replace('_', ' ')} p={risk:.2f}"
     else:
         reason = "the model answered none of the questions"
+    request = verdict is not None and verdict.action in ALERTS and this_call
     return {"level": level, "kind": "observation", "source": SOURCE, "risk": risk, "threshold": tau,
-            "confidence": activity, "reason": reason}
+            "confidence": activity, "reason": reason, "signal": name or "",
+            **({"request": {"action": "stop_skill", "reason": verdict.text()}} if request else {})}
 
 
 class MonitorFeed:

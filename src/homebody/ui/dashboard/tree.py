@@ -4,6 +4,10 @@ Node ids stay stable between snapshots ("goal:<id>", "tool:<id>", and child path
 update rows in place. MODE says where the task is: "plan" (a tree runs), "replanning" (the tree failed and the agent
 is rewriting it), "planning" (plan mode, before the first tree), or "free" (no tree: the task's actions under one
 root, labelled as such).
+
+A goal is the tree's retry boundary: its skill calls are its attempts, up to its budget. When a goal has made more
+than one, the finished earlier ones sit under an "attempts" node ("attempts:<goal id>"), a grouping for reading only
+(detail.visual): the goal and its calls are unchanged, and the newest call stays directly under the goal.
 """
 GOAL_STATUS = {"pending": "pending", "active": "running", "done": "success", "failed": "failure"}
 TOOL_STATUS = {"running": "running", "succeeded": "success", "failed": "failure"}
@@ -60,11 +64,36 @@ def check_text(check):
     return f"{name} ({hand} hand)" if hand else name
 
 
-def action_nodes(tools):
+def action_nodes(tools, interventions=()):
+    """One node per tool call, with the requests to stop it (their states, as the store derives them): a request
+    never changes the node's status, which only the call's own result sets."""
+    on = {}
+    for row in interventions:
+        if row.get("tool"):
+            on.setdefault(row["tool"], []).append({"id": row["id"], "state": row["state"],
+                                                   "initiator": row["initiator"]})
     return [{"id": f"tool:{tool.id}", "type": "action", "label": tool.skill,
              "status": TOOL_STATUS.get(tool.state, "skipped"), "children": [],
              "detail": {"tool": tool.id, "code": tool.code, "message": tool.message, "start": tool.start,
-                        "end": tool.end, "attempt": tool.attempt, "recovery": tool.recovery}} for tool in tools]
+                        "end": tool.end, "attempt": tool.attempt, "recovery": tool.recovery, "number": number,
+                        "interventions": on.get(tool.id, [])}}
+            for number, tool in enumerate(tools, 1)]
+
+
+def grouped(goal_id, actions, nodes):
+    """ACTIONS' ids under the goal, the finished earlier ones in one attempts node when there are several."""
+    if len(actions) < 2:
+        return [n["id"] for n in actions]
+    earlier, newest = actions[:-1], actions[-1]
+    failed = [n for n in earlier if n["status"] == "failure"]
+    key = f"attempts:{goal_id}"
+    nodes[key] = {"id": key, "type": "attempts", "label": "Earlier attempts",
+                  "status": "failure" if len(failed) == len(earlier) else composite_status("fallback", [
+                      n["status"] for n in earlier]),
+                  "children": [n["id"] for n in earlier],
+                  "detail": {"visual": True, "count": len(earlier), "failed": len(failed),
+                             "codes": [n["detail"]["code"] for n in earlier]}}
+    return [key, newest["id"]]
 
 
 def free_note(plan, task):
@@ -77,8 +106,8 @@ def free_note(plan, task):
     return "Generating the execution plan: the tree appears when the agent's plan is accepted."
 
 
-def free_nodes(plan, tools, task):
-    actions = action_nodes(tools)
+def free_nodes(plan, tools, task, interventions=()):
+    actions = action_nodes(tools, interventions)
     nodes = {n["id"]: n for n in actions}
     status = ("running" if task["end"] is None else "success" if task["outcome"] == "model_done"
               else "skipped" if task["outcome"] in ("cancelled", "Stopped") else "failure")
@@ -88,13 +117,13 @@ def free_nodes(plan, tools, task):
     return {"mode": "planning" if planning else "free", "root": "root", "nodes": nodes}
 
 
-def plan_nodes(plan, tools, task):
+def plan_nodes(plan, tools, task, interventions=()):
     """{"mode", "root": id, "nodes": {id: node}} for the task's tree, or None before any task."""
     if task is None:
         return None
     tools = [t for t in tools if t.start >= task["start"]]
     if plan is None or plan["tree"] is None:
-        return free_nodes(plan, tools, task)
+        return free_nodes(plan, tools, task, interventions)
     nodes, status, active = {}, plan["status"], plan.get("active")
 
     def walk(node, path):
@@ -114,11 +143,11 @@ def plan_nodes(plan, tools, task):
 
     def goal(node):
         goal_id, key = node["id"], f"goal:{node['id']}"
-        actions = action_nodes([t for t in tools if t.goal == goal_id])
+        actions = action_nodes([t for t in tools if t.goal == goal_id], interventions)
         nodes.update((n["id"], n) for n in actions)
         recovers = recovery_of(plan["tree"], status, goal_id)
         nodes[key] = {"id": key, "type": "goal", "label": node["goal"], "status": node_status(node, status, active),
-                      "children": [n["id"] for n in actions],
+                      "children": grouped(goal_id, actions, nodes),
                       "detail": {"goal": goal_id, "check": check_text(node.get("check")),
                                  "budget": node.get("budget", 8), "used": len(actions),
                                  "reason": plan["reasons"].get(goal_id, ""),

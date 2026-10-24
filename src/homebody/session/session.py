@@ -168,6 +168,7 @@ class Session:
         self.controls, self.ui = controls, ui
         self.semantic_context = semantic_context or {}
         self.observer_frame, self.shoulder_frame, self.view_side = observer_frame, shoulder_frame, "right"
+        self._running_skill = self._stop_taken = None  # the skill running now, and who stopped it (interruption)
         self._observer_epoch = self._frame_epoch = None
         self._observer_time = self._frame_time = self._view_time = float("-inf")
         self.observed = ObservedBackend(backend, self.publish, settings.recording.publish_period,
@@ -327,13 +328,33 @@ class Session:
         return bool(paused is not None and paused.is_set() and not self.controls.cancel.is_set())
 
     def interruption(self):
-        """(code, reason) when the operator or the monitor stops the running skill, else None."""
+        """(code, reason) when the operator or the monitor stops the running skill, else None. The skill's context
+        asks until it gets one, then stops asking: that moment the executor took the request (an intervention
+        event, "accepted"); how the skill then ended follows in `intervention_ended`."""
         stop = getattr(self.controls, "skill_stop", None)
+        taken = None
         if stop is not None and stop.is_set():
-            return OPERATOR_STOPPED, "The operator stopped the skill"
-        if self.monitor is not None and (reason := self.monitor.stop_requested()) is not None:
-            return MONITOR_STOPPED, f"The monitor stopped the skill: {reason}"
-        return None
+            taken = "operator", OPERATOR_STOPPED, "The operator stopped the skill"
+        elif self.monitor is not None and (reason := self.monitor.stop_requested()) is not None:
+            taken = "monitor", MONITOR_STOPPED, f"The monitor stopped the skill: {reason}"
+        if taken is None:
+            return None
+        self._stop_taken = taken[0]
+        self.skill_event({"type": "intervention", "stage": "accepted", "initiator": taken[0], "action": "stop_skill",
+                          "skill": self._running_skill, "reason": taken[2],
+                          "note": "The skill executor took the request at its next cancellation check"})
+        return taken[1], taken[2]
+
+    def intervention_ended(self, skill, code):
+        """How a skill that took a stop request ended: the executor's confirmation, or its failure to stop."""
+        initiator, self._stop_taken = self._stop_taken, None
+        if initiator is None:
+            return
+        expected = OPERATOR_STOPPED if initiator == "operator" else MONITOR_STOPPED
+        stopped = code == expected
+        self.skill_event({"type": "intervention", "stage": "confirmed" if stopped else "failed", "initiator": initiator,
+                          "action": "stop_skill", "skill": skill, "code": code,
+                          "note": f"The skill ended with {code}" + ("" if stopped else f", not {expected}")})
 
     def refusals(self):
         return (*COMMON_FAILURES, MONITOR_STOPPED, OPERATOR_STOPPED) if self.monitor is not None else COMMON_FAILURES
@@ -595,7 +616,7 @@ class Session:
             self.monitor_skill(decision)
             if getattr(self.controls, "skill_stop", None) is not None:
                 self.controls.skill_stop.clear()  # a Stop skill pressed between skills is not for this one
-            code = None
+            code, self._running_skill, self._stop_taken = None, decision.skill, None
             try:
                 if decision.skill in self.coder.skills:
                     result = self.runner.run(decision.skill, decision.arguments, frame,
@@ -604,6 +625,8 @@ class Session:
                     result = self.runner.run(decision.skill, decision.arguments, frame).as_dict()
                 code = result["code"]
             finally:
+                self._running_skill = None
+                self.intervention_ended(decision.skill, code or "ERROR")
                 if code == OPERATOR_STOPPED:
                     self.controls.skill_stop.clear()
                     self.recorder.event("operator", type="stop_skill", skill=decision.skill,

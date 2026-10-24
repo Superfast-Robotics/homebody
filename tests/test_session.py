@@ -1250,3 +1250,9 @@ def test_a_session_behind_the_server_links_stops_its_skill_when_the_remote_monit
     assert "stopped the skill: missed p=0.95" in provider.prompts[2]
     assert any('"call": "skill_started"' in m for m in sent if isinstance(m, str))
     assert any('"type": "status"' in m for m in sent if isinstance(m, str))
+    # the executor reported taking the stop, then the skill's end confirming it (the dashboard's lifecycle)
+    stages = [m for m in sent if isinstance(m, str) and '"intervention"' in m]
+    assert ['"stage": "accepted"' in m for m in stages] == [True, False]
+    assert '"stage": "confirmed"' in stages[1] and '"initiator": "monitor"' in stages[1]
+    link.client_stop("late", link.skill_call - 1)  # a stop for a call that already ended: refused, and said so
+    assert '"stage": "rejected"' in sent[-1]

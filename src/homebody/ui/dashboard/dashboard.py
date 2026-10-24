@@ -371,7 +371,10 @@ class Dashboard:
             if not capabilities(self.controls)["pause" if name in ("pause", "resume") else name]:
                 return {"ok": False, "message": "This session's controller does not support that control."}
             getattr(self.controls, name)()
-            self.store.intervention(name, f"Operator: {done.lower()}")
+            if name == "stop_skill":  # a request the skill executor takes at its next check, tracked to its end
+                self.store.request_intervention("operator", "The operator pressed Stop skill")
+            else:
+                self.store.intervention(name, f"Operator: {done.lower()}")
             return {"ok": True, "message": done}
         return handle
 

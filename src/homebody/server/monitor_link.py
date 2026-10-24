@@ -55,10 +55,17 @@ class MonitorLink:
                 self.stop_reason = None
 
     def client_stop(self, reason: str, call: int):
-        """The client's monitor stopped skill call CALL; a stop for an earlier call is stale and dropped."""
+        """The client's monitor stopped skill call CALL; a stop for an earlier call is stale: refused, and the
+        refusal sent back as an intervention event."""
         with self.lock:
-            if call == self.skill_call:
+            current = self.skill_call
+            if call == current:
                 self.stop_reason = reason
+                return
+        event = {"type": "intervention", "stage": "rejected", "initiator": "monitor", "action": "stop_skill",
+                 "reason": reason, "note": f"The request named skill call {call}; call {current} runs now"}
+        self.sink("skill", event=event)
+        self.hub.publish(protocol.text("skill", event=event))
 
     def client_verdicts(self, verdicts: list[dict]):
         with self.lock:
