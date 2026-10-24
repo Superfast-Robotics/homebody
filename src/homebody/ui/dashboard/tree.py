@@ -152,7 +152,8 @@ def plan_nodes(plan, tools, task, interventions=()):
                       "detail": {"goal": goal_id, "check": check_text(node.get("check")),
                                  "budget": node.get("budget", 8), "used": len(actions),
                                  "reason": plan["reasons"].get(goal_id, ""),
-                                 "recovers": recovers, "recovers_label": plan["goals"].get(recovers)}}
+                                 "recovers": recovers, "recovers_label": plan["goals"].get(recovers),
+                                 "operator": bool(node.get("operator"))}}  # the operator's command, given while paused
         return key
 
     top = walk(plan["tree"], "p")

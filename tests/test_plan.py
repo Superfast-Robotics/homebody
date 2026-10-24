@@ -129,3 +129,33 @@ def test_flag_and_reopen_without_a_plan_do_nothing():
     runner = PlanRunner(2)
     runner.flag("g1", "x")
     assert not runner.reopen("g1", "x")
+
+
+def test_an_operator_command_becomes_the_next_goal_and_the_plan_resumes_after_it():
+    runner = PlanRunner(replans=1)
+    assert runner.insert_operator("wave") is None  # no plan yet: nothing to add it to
+    runner.handle(plan_decision({"type": "sequence", "children": [goal("a"), goal("b")]}), {})
+    runner.phase()
+    runner.handle(Decision("Reached.", "goal_done", {"reason": "seen it"}), {})
+    runner.phase()  # b is active when the operator pauses
+    assert runner.insert_operator("put the jar back on the shelf") == "op1"
+    assert runner.phase() == "goal" and runner.goal["id"] == "op1" and runner.goal["operator"] is True
+    assert "Active goal op1: put the jar back on the shelf" in runner.note()
+    assert runner.take_operator_closed() is None
+    runner.handle(Decision("Done.", "goal_done", {"reason": "back on the shelf"}), {})
+    assert runner.take_operator_closed() == "op1" and runner.take_operator_closed() is None
+    runner.phase()
+    assert runner.goal["id"] == "b"  # the interrupted goal goes on
+    assert runner.plan.status == {"a": "done", "op1": "done", "b": "pending"}
+    assert [c["id"] for c in runner.plan.tree["children"]] == ["a", "op1", "b"]
+
+
+def test_an_operator_goal_in_a_tree_that_is_not_a_sequence_runs_first():
+    runner = PlanRunner(replans=1)
+    runner.handle(plan_decision({"type": "fallback", "children": [goal("x"), goal("y")]}), {})
+    runner.phase()
+    assert runner.insert_operator("look left") == "op1" and runner.phase() == "goal" and runner.goal["id"] == "op1"
+    runner.handle(Decision("Failed.", "goal_failed", {"reason": "cannot"}), {})
+    assert runner.take_operator_closed() == "op1"
+    runner.phase()
+    assert runner.goal["id"] == "x"  # an operator goal's failure is its own: the plan goes on

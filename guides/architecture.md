@@ -165,6 +165,13 @@ its endpoint; without that report the impact is unknown.
 
 The plan node's status stays the tree runtime's: a request is shown beside a running call, never as its failure.
 
+**Commands while paused** (`Session.hold_for_operator`): while the operator's Pause lasts the robot waits and the
+monitor goes on watching. Text sent meanwhile becomes the plan's next goal (`Plan.insert_operator`: an operator goal
+before the first goal still to do, after earlier commands), and the pause ends so it runs; a skill frozen mid-motion
+is stopped first (OPERATOR_STOPPED) so the command can run from a safe state. When the operator goal closes, done or
+failed, the robot pauses again and waits. "continue" (or Resume) goes on with the rest of the plan, which never fails
+because a command did. Without a plan the text goes to the agent's next prompt.
+
 A stall (no progress for `stall_s` simulation seconds while a skill runs) is only flagged: the monitor labels it,
 the agent's next prompt mentions it, and monitoring goes on. It never stops the skill, spends no abort, and raises no
 alert; the monitoring summary says "Stalled for N s · <attempt> · monitoring continues".

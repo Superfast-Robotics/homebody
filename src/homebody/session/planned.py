@@ -20,6 +20,7 @@ class PlanRunner:
         self.plan: Plan | None = None
         self.replans, self.invalid, self.abandoned = 0, 0, False
         self.goal, self.results, self.feedback = None, [], ""
+        self.operator_goals, self._operator_closed = 0, None  # the operator's commands added as goals
 
     # --- what the agent may do this turn ---
     def phase(self):
@@ -102,10 +103,32 @@ class PlanRunner:
 
     def _close(self, done, reason):
         goal_id = self.goal["id"]
+        if self.goal.get("operator"):
+            self._operator_closed = goal_id
         self.plan.close(goal_id, done, reason)
         self.goal, self.results = None, []
         return {"skill": GOAL_DONE if done else GOAL_FAILED, "code": "OK",
                 "message": f"goal {goal_id} {'done' if done else 'failed'}"}
+
+    # --- the operator's commands ---
+    def insert_operator(self, text):
+        """The operator's command TEXT as the plan's next goal: its id, or None without a plan to add it to."""
+        if self.plan is None or self.abandoned:
+            return None
+        self.operator_goals += 1
+        goal_id = f"op{self.operator_goals}"
+        self.plan.insert_operator(goal_id, text)
+        return goal_id
+
+    def operator_pending(self):
+        """Whether an operator goal is still to do."""
+        return self.plan is not None and any(self.plan.status.get(f"op{n}") == "pending"
+                                             for n in range(1, self.operator_goals + 1))
+
+    def take_operator_closed(self):
+        """The operator goal that closed since the last call, or None."""
+        closed, self._operator_closed = self._operator_closed, None
+        return closed
 
     # --- the live monitor ---
     def flag(self, goal_id, text):

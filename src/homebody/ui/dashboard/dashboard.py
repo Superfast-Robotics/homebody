@@ -367,6 +367,11 @@ class Dashboard:
             return {"ok": False, "message": f"Instructions are limited to {INSTRUCTION_LIMIT} characters."}
         if self.store.busy and capabilities(self.controls)["tell"]:
             self.controls.tell(text)
+            if self.store.status == "Paused":  # session.hold_for_operator: a command while paused is the next goal
+                reason = ("Added as the plan's next goal; it runs now, then the robot waits again. Say continue to go "
+                          "on with the plan.") if text.strip().lower() not in ("continue", "resume") else "Continuing the plan."
+                self.store.instruction(text, "sent", reason)
+                return {"ok": True, "message": reason}
             self.store.instruction(text, "sent", "The agent reads it before its next decision.")
             return {"ok": True, "message": "Sent. The agent reads it before its next decision."}
         if not self.store.accepting:

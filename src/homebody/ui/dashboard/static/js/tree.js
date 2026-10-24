@@ -329,6 +329,7 @@ export class TreeView {
       if (d.used > 1 || node.status === "running") text.label = `${goalLabel(node.label, 44)} · ${count}`;
       text.meta = [STATUS_TEXT[node.status] || node.status, ...previous, elapsed].filter(Boolean).join(" · ");
     }
+    if (node.type === "goal" && d.operator) text.meta = `Your command · ${text.meta}`; // given while paused
     if (node.type === "goal" && d.recovers) {
       const started = state.incidents.findLast((i) => i.tag === "recovery_start" && i.node === d.goal);
       text.meta += ` · triggered by ${started?.initiator || "an unrecorded source"}`;

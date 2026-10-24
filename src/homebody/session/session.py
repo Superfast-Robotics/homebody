@@ -28,6 +28,9 @@ from homebody.skills.registry import Prompts, registry
 from homebody.vlm.observations import annotations, model_observation, rounded
 from homebody.vlm.provider import Cancelled, ProviderBusy, ProviderError
 
+# what the operator says to go on with the plan after a pause
+CONTINUE = re.compile(r"(continue|resume|go on|carry on|proceed)( (with )?(the )?(plan|task))?[.!]?")
+
 
 def prompted(result: dict) -> dict:
     """A skill result without its traceback detail, as the prompted history keeps it."""
@@ -178,7 +181,7 @@ class Session:
         self.observed = ObservedBackend(backend, self.publish, settings.recording.publish_period,
                                         scene_update, real_time,
                                         capture=self.capture if monitor is not None else None,
-                                        paused=self.frozen)
+                                        paused=lambda: self.frozen() and not self.commanded())
         self.context = Context(observations=self.observed, actions=self.observed, arms=arms,
                                settings=settings, jaw_samples=jaw_samples,
                                cancelled=controls.cancel.is_set, emit=self.skill_event,
@@ -193,6 +196,7 @@ class Session:
         self.trace = Trace(backend, lambda: self.context.carried)
         self.history = []
         self.monitor_note = self.operator_note = ""
+        self.hold_text = ""  # what the paused robot waits for (hold_for_operator)
         self.paused_seconds = 0.0
         self.status = "Ready"
         self._physics_fault = None
@@ -333,6 +337,60 @@ class Session:
         paused = getattr(self.controls, "paused", None)
         return bool(paused is not None and paused.is_set() and not self.controls.cancel.is_set())
 
+    def commanded(self):
+        """Whether the operator gave a command while the world is paused (the session runs it as the plan's next goal:
+        hold_for_operator)."""
+        has_notes = getattr(self.controls, "has_notes", None)
+        return bool(self.frozen() and has_notes is not None and has_notes())
+
+    def hold_for_operator(self):
+        """While the operator's pause lasts the robot waits here and the monitor goes on watching. A command given
+        meanwhile becomes the plan's next goal and runs; when that goal closes the robot waits here again
+        (after_operator_goal). "continue" (or Resume) goes on with the rest of the plan."""
+        while self.frozen():
+            if self.controls.cancel.is_set():
+                raise Cancelled("Task stopped by operator while paused")
+            if self.operator_commands():
+                return
+            self.update("Paused", self.hold_text or "Paused by the operator. Give a command, or continue.")
+            self.paused_tick()
+        self.hold_text = ""
+
+    def operator_commands(self):
+        """The notes given during the pause: "continue" resumes the plan; any other text becomes the plan's next goal
+        (without a plan, the agent's next prompt carries it). Either ends the pause; returns whether one came."""
+        notes = self.controls.take_notes() if self.commanded() else []
+        if not notes:
+            return False
+        lines = []
+        for note in notes:
+            if CONTINUE.fullmatch(note.strip().lower()):
+                self.recorder.event("operator", type="continue", text=note, simulation_time=self.backend.time)
+                continue
+            goal_id = self.planner.insert_operator(note) if self.planner is not None else None
+            self.recorder.event("operator", type="command", text=note, goal_id=goal_id, simulation_time=self.backend.time)
+            if self.monitor is not None:
+                self.monitor.mark("command", note, self.backend.time)
+            if goal_id is None:
+                lines.append(note)
+        if lines:
+            self.operator_note = "Operator (the person supervising you; follow it): " + " ".join(lines)
+        self.hold_text = ""
+        self.controls.paused.clear()
+        return True
+
+    def after_operator_goal(self):
+        """When the operator's command (an operator goal) closes and no other is waiting, the robot pauses and waits
+        for the next command or continue."""
+        closed = self.planner.take_operator_closed() if self.planner is not None else None
+        if closed is None or self.planner.operator_pending() or not hasattr(self.controls, "pause"):
+            return
+        status = self.planner.plan.status.get(closed)
+        self.hold_text = (f"Your command ({closed}) {'is done' if status == 'done' else 'failed'}. Waiting: give "
+                          "another command, or continue with the plan.")
+        self.recorder.event("operator", type="hold", goal_id=closed, status=status, simulation_time=self.backend.time)
+        self.controls.pause()
+
     def interruption(self):
         """(code, reason) when the operator or the monitor stops the running skill, else None. The skill's context
         asks until it gets one, then stops asking: that moment the executor took the request (an intervention
@@ -341,6 +399,8 @@ class Session:
         taken = None
         if stop is not None and stop.is_set():
             taken = "operator", OPERATOR_STOPPED, "The operator stopped the skill"
+        elif self.commanded():  # a command while paused: the skill ends so the command can run as the next goal
+            taken = "operator", OPERATOR_STOPPED, "The operator gave a command while paused"
         elif self.monitor is not None and (reason := self.monitor.stop_requested()) is not None:
             taken = "monitor", MONITOR_STOPPED, f"The monitor stopped the skill: {reason}"
         if taken is None:
@@ -500,10 +560,8 @@ class Session:
                 images = self.recorder.agent_images(frame)
                 # the monitor's verdicts may reopen a goal, so they go on the plan before this turn's choices
                 self.monitor_note = self.watch(task, images) or self.monitor_note
+                self.hold_for_operator()
                 self.operator_note = self.operator_input() or self.operator_note
-                while self.frozen():
-                    self.update("Paused", "Paused by the operator. Resume to continue.")
-                    self.paused_tick()
                 if self.planner is not None:
                     names = self.planner.names(names)
                 self.record_turn(step, task, images)
@@ -546,6 +604,7 @@ class Session:
                     break
                 if self.planner is not None and decision.skill in PLAN_DECISIONS:
                     result = self.planner.handle(decision, self.context.carried)
+                    self.after_operator_goal()
                     self.history.append({"base_pose": frame.base_pose.tolist(), "decision": asdict(decision),
                                          "epoch": frame.epoch, "frame_sequence": frame.sequence, "result": result})
                     self.recorder.event("result", step=step, simulation_time=self.backend.time, result=result)
@@ -563,6 +622,7 @@ class Session:
                         raise PhysicsInvalid(result["message"])
                 if self.planner is not None:
                     self.planner.observe(result, self.context.carried)
+                    self.after_operator_goal()
             else:
                 outcome["status"] = "step_limit"
         except PhysicsInvalid as exc:

@@ -87,6 +87,8 @@ class Plan:
     def _evaluate(self, node):
         if node["type"] == "goal":
             status = self.status[node["id"]]
+            if node.get("operator") and status == "failed":
+                return "done", node  # an operator command's outcome is its own: the plan goes on after it
             return ("done", node) if status == "done" else ("failed", node) if status == "failed" else ("run", node)
         if node["type"] == "sequence":
             for child in node["children"]:
@@ -107,6 +109,20 @@ class Plan:
         self.flags.pop(goal_id, None)
         if reason:
             self.reasons[goal_id] = reason[:200]
+
+    def insert_operator(self, goal_id, text, budget=BUDGET_DEFAULT):
+        """The operator's command TEXT as goal GOAL_ID, worked on next: before the first goal still to do (after
+        earlier operator goals still to do, so commands keep their order); a tree that is not a sequence runs it
+        first. The rest of the plan is unchanged and goes on after it."""
+        node = {"type": "goal", "id": goal_id, "goal": text, "check": None, "budget": budget, "operator": True}
+        if self.tree["type"] == "sequence":
+            children = self.tree["children"]
+            index = next((i for i, child in enumerate(children)
+                          if self._evaluate(child)[0] != "done" and not child.get("operator")), len(children))
+            self.tree = {**self.tree, "children": [*children[:index], node, *children[index:]]}
+        else:
+            self.tree = {"type": "sequence", "children": [node, self.tree]}
+        self.status[goal_id] = "pending"
 
     def flag(self, goal_id, text):
         """The monitor's note on GOAL_ID, shown until the goal closes."""
@@ -136,6 +152,8 @@ class Plan:
             check = node.get("check")
             check_text = "agent closes it" if not check else " ".join(f"{k}={v}" for k, v in check.items())
             marker = "ACTIVE" if node["id"] == active else self.status[node["id"]]
+            if node.get("operator"):
+                marker += ", the operator's command"
             flag = self.flags.get(node["id"])
             if flag:
                 marker += f" ⚠ {flag}" if flag.startswith("monitor") else f" ⚠ monitor: {flag}"

@@ -62,6 +62,9 @@ class Controls:
         if text.strip():
             self.notes.put(text.strip())
 
+    def has_notes(self) -> bool:
+        return not self.notes.empty()
+
     def take_notes(self) -> list[str]:
         notes = []
         while True:

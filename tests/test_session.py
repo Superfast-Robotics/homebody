@@ -1279,3 +1279,54 @@ def test_a_session_behind_the_server_links_stops_its_skill_when_the_remote_monit
     assert '"stage": "confirmed"' in stages[1] and '"initiator": "monitor"' in stages[1]
     link.client_stop("late", link.skill_call - 1)  # a stop for a call that already ended: refused, and said so
     assert '"stage": "rejected"' in sent[-1]
+
+
+def test_a_command_while_paused_runs_as_a_goal_then_the_robot_waits_and_continue_resumes_the_plan(build, monkeypatch):
+    from homebody.session.config import PlanMode
+    from homebody.skills.contract import Result
+
+    tree = {"type": "sequence", "children": [{"type": "goal", "id": "g1", "goal": "pick the cup", "check": None}]}
+    decisions = [Decision("Plan.", "plan", {"tree": tree}), Decision("Wave.", "pick", {"hand": "right"}),
+                 Decision("Waved.", "goal_done", {"reason": "waved"}), Decision("Held.", "goal_done", {"reason": "held"}),
+                 Decision("Finished.", "done", {})]
+    controls = Controls()
+
+    class PausedAfterPlanning(Provider):
+        def generate(self, prompt, **kwargs):
+            decision = super().generate(prompt, **kwargs)
+            if decision.skill == "plan":  # the operator pauses and gives a command while the agent plans
+                controls.pause()
+                controls.tell("wave at the camera")
+            return decision
+    settings = replace(Settings(agent=Agent(done_settle_seconds=0.)), plan=PlanMode(enabled=True))
+    provider = PausedAfterPlanning(decisions)
+    session = build(provider, settings=settings, controls=controls)
+    monkeypatch.setattr(session.runner, "run", lambda skill, arguments, frame, **kw: Result(skill, "OK", "done"))
+    waited = []
+
+    def operator_waits():  # the robot waits after the operator's goal; the operator then says continue
+        if controls.paused.is_set():  # (the same tick also holds the world while the agent thinks)
+            waited.append(session.status)
+            controls.tell("continue")
+    monkeypatch.setattr(session, "paused_tick", operator_waits)
+    assert session.run_task("Pick up the cup.")["status"] == "model_done"
+    assert "Active goal op1: wave at the camera" in provider.prompts[1]
+    assert "Active goal g1" in provider.prompts[3]  # after continue: the rest of the plan
+    assert session.planner.plan.status == {"op1": "done", "g1": "done"}
+    assert len(waited) == 1 and not controls.paused.is_set()
+    events = [json.loads(line) for line in next(session.recorder.path.glob("events.jsonl")).read_text().splitlines()]
+    operator = [e["type"] for e in events if e.get("kind") == "operator"]
+    assert operator == ["command", "hold", "continue"]
+
+
+def test_a_command_while_a_skill_is_frozen_stops_that_skill_so_the_command_can_run(build):
+    from homebody.skills.contract import OPERATOR_STOPPED
+    controls = Controls()
+    session = build(Provider([]), controls=controls)
+    controls.pause()
+    assert session.frozen() and not session.commanded() and session.interruption() is None
+    assert session.observed._paused()  # the world holds still
+    controls.tell("wave at the camera")
+    assert session.commanded() and not session.observed._paused()  # the frozen skill runs on to its next check
+    code, reason = session.interruption()
+    assert code == OPERATOR_STOPPED and "command while paused" in reason
