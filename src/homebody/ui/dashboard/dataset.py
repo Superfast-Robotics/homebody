@@ -174,15 +174,17 @@ def samples(kind, state, frames, trace):
 
 def available(state, frames, trace, *, human_supported=True) -> list[dict]:
     """The sample types to offer, highest value first: {id, title, description, badge, tone, count, available,
-    reason, preselected}. Human interventions are left out where the controls cannot take them."""
+    reason, preselected, preview (dataset_preview.preview)}. Human interventions are left out where the controls cannot take them."""
+    from homebody.ui.dashboard.dataset_preview import preview
     rows = []
     for kind, title, description, badge, tone in TYPES:
         if kind == "human_interventions" and not human_supported:
             continue
-        found = len(samples(kind, state, frames, trace))
+        found = samples(kind, state, frames, trace)
         rows.append({"id": kind, "title": title, "description": description, "badge": badge, "tone": tone,
-                     "count": found, "available": found > 0, "reason": "" if found else EMPTY[kind],
-                     "preselected": found > 0 and kind in PRESELECTED})
+                     "count": len(found), "available": bool(found), "reason": "" if found else EMPTY[kind],
+                     "preselected": bool(found) and kind in PRESELECTED,
+                     "preview": preview(kind, state, found, frames)})
     return rows
 
 

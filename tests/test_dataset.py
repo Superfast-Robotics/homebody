@@ -85,3 +85,20 @@ def test_an_empty_session_offers_nothing_and_a_bad_request_is_refused(tmp_path):
     assert not any(row["available"] for row in types) and types[0]["reason"] == "No failed attempts in this session"
     assert not dashboard.command({"type": "extract_dataset", "types": []})["ok"]
     assert not dashboard.command({"type": "extract_dataset", "types": ["everything"]})["ok"]
+
+
+def test_each_type_previews_its_most_telling_sample_with_key_frames_and_what_it_includes(tmp_path):
+    dashboard = session(tmp_path)
+    types = {row["id"]: row for row in dashboard.command({"type": "dataset_types"})["types"]}
+    failure = types["failure_recovery"]["preview"]
+    assert failure["name"] == "failure_recovery_episode_0000"
+    assert [f["caption"] for f in failure["frames"]] == ["1. Pick attempt 1", "2. Pick failed: NO_GRASP",
+                                                          "3. Recovery: pick ok"]
+    assert failure["record"]["failure_type"] == "NO_GRASP" and failure["record"]["outcome"] == "recovered"
+    assert failure["record"]["task"] == "Pick the jam jar" and failure["thumbnail"] is not None
+    assert {"camera frames", "actions", "monitor events", "outcome label"} <= set(failure["includes"])
+    assert types["task_language"]["preview"]["text"] == "Pick the jam jar"
+    assert "robot state" in types["robot_state_actions"]["preview"]["includes"]
+    empty = fake_dashboard()
+    dataset.attach(empty, tmp_path / "empty")
+    assert all(row["preview"] is None for row in empty.command({"type": "dataset_types"})["types"])

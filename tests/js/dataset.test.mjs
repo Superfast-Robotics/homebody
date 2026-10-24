@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { buttonState, countText, initialSelection, visibleTypes } from "../../src/homebody/ui/dashboard/static/js/dataset.js";
+import { buttonState, countText, firstFocus, initialSelection, recordLines, visibleTypes } from "../../src/homebody/ui/dashboard/static/js/dataset.js";
 
 const type = (id, tone, count, preselected = false) =>
   ({ id, tone, count, available: count > 0, preselected: preselected && count > 0, reason: count ? "" : `No ${id}` });
@@ -25,4 +25,16 @@ test("cards keep the value order, hide empty common types and keep empty inciden
   assert.equal(countText(TYPES[0]), "2 samples");
   assert.equal(countText(TYPES[4]), "1 sample");
   assert.equal(countText(TYPES[1]), "No monitor_incidents");
+});
+
+test("the preview starts on the first selected type and shows its record one key per line", () => {
+  assert.equal(firstFocus(TYPES, initialSelection(TYPES)), "failure_recovery");
+  assert.equal(firstFocus(TYPES, new Set()), "failure_recovery"); // nothing selected: the first available
+  const lines = recordLines({ task: "pick jam jar", frames: 84, labels: ["failure", "recovery"], recovery: null });
+  const text = lines.map((tokens) => tokens.map((t) => t.text).join(""));
+  assert.deepEqual(text, ["{", '  "task": "pick jam jar",', '  "frames": 84,', '  "labels": ["failure", "recovery"],',
+    '  "recovery": null', "}"]);
+  assert.equal(lines[1][1].cls, "k");
+  assert.equal(lines[1][3].cls, "s");
+  assert.equal(lines[2][3].cls, "n");
 });
