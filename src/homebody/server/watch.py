@@ -5,6 +5,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -74,11 +75,16 @@ class Watcher:
             self.statuses = {key: value for key, value in self.statuses.items() if key in names}
 
     def refresh(self):
-        """One round now (also what the thread does every poll_s)."""
+        """One round now (also what the thread does every poll_s): every server at once, so one that does not
+        answer costs a round its timeout, not the sum of them."""
         with self._lock:
             servers = [("harness", h) for h in self.config.harnesses.values()] + \
                       [("sim", s) for s in self.config.sims.values()]
-        results = {(kind, server.name): self._check(kind, server) for kind, server in servers}
+        if not servers:
+            return {}
+        with ThreadPoolExecutor(max_workers=len(servers), thread_name_prefix="server-check") as pool:
+            checks = {(kind, server.name): pool.submit(self._check, kind, server) for kind, server in servers}
+            results = {key: check.result() for key, check in checks.items()}
         with self._lock:
             self.statuses.update(results)
             statuses = dict(self.statuses)

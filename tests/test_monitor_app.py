@@ -88,6 +88,7 @@ def test_stream_frames_feed_the_watched_view_and_the_monitors_frames(tmp_path):
     hub = made.console.hub
     made.on_frame({"camera": "ego", "stamp": {"sim_time_s": 2.5}, "rgb": np.zeros((4, 4, 3), np.uint8)})
     assert captured == [2.5] and [f[0] for f in hub.frames] == ["robot"]
+    assert hub.telemetries[-1]["sim"] == 2.5 and "pose" not in hub.telemetries[-1]  # frames arrive; no pose known
     hub.views = {"observer"}  # the page watches the observer: an ego frame only feeds the monitor and the history
     made.on_frame({"camera": "ego", "stamp": {"sim_time_s": 2.6}, "rgb": np.ones((4, 4, 3), np.uint8)})
     made.on_frame({"camera": "observer", "stamp": {"sim_time_s": 2.7}, "rgb": np.full((4, 4, 3), 7, np.uint8)})

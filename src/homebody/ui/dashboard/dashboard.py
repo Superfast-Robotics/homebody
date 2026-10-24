@@ -281,12 +281,16 @@ class Dashboard:
             return
         if self.history.due(now):
             self.store.frame_id = self.history.add(now, jpeg(rgb, HISTORY_QUALITY, HISTORY_WIDTH))
-        pose = meta.get("base_pose")
-        if pose is not None and now - self._telemetry_at >= TELEMETRY_PERIOD:
-            self._telemetry_at = now
-            x, y, yaw = (float(v) for v in pose)
-            place = None if self.places is None else self.places.near(x, y)
-            self.hub.telemetry({"t": now, **meta, "pose": [x, y, yaw], "frame": "map", "place": place})
+        if now - self._telemetry_at < TELEMETRY_PERIOD:
+            return
+        self._telemetry_at = now
+        pose = meta.pop("base_pose", None)  # a simulation server's stream carries no pose
+        if pose is None:
+            self.hub.telemetry({"t": now, **meta})
+            return
+        x, y, yaw = (float(v) for v in pose)
+        place = None if self.places is None else self.places.near(x, y)
+        self.hub.telemetry({"t": now, **meta, "pose": [x, y, yaw], "frame": "map", "place": place})
 
     # --- browser commands (server loop thread) ---
     def command(self, request: dict) -> dict:

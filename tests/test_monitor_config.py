@@ -70,3 +70,22 @@ def test_a_bad_config_is_refused_whole_with_the_reason(tmp_path, change, error):
 def test_an_unreadable_config_names_the_file(tmp_path):
     with pytest.raises(ValueError, match="servers.toml"):
         load(write(tmp_path, "[[harness]\nname = 1"))
+
+
+def test_one_watch_round_checks_every_server_at_once(tmp_path):
+    import time
+
+    from homebody.server.config import load
+    from homebody.server.watch import Status, Watcher
+    path = tmp_path / "servers.toml"
+    path.write_text(CONFIG)
+    config = load(path)
+
+    def slow(kind, server):
+        time.sleep(0.3)  # a server that does not answer costs its timeout
+        return Status(server.name, kind, True, checked=time.time())
+    watcher = Watcher(config, check=slow)
+    start = time.monotonic()
+    statuses = watcher.refresh()
+    assert len(statuses) == len(config.harnesses) + len(config.sims) >= 3
+    assert time.monotonic() - start < 0.3 * 2

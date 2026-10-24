@@ -133,8 +133,8 @@ export class Info {
     const details = [
       ["Position", pose ? coordinates(pose, telemetry.frame) : "Unavailable"],
       ["Target arguments", state.robot.target ? JSON.stringify(state.robot.target) : "None"],
-      ["Simulation time", telemetry ? `${telemetry.sim.toFixed(1)} s` : "Unavailable"],
-      ["Frame", telemetry ? `#${telemetry.seq} · epoch ${telemetry.epoch}` : "Unavailable"],
+      ["Simulation time", typeof telemetry?.sim === "number" ? `${telemetry.sim.toFixed(1)} s` : "Unavailable"],
+      ["Frame", telemetry?.seq !== undefined ? `#${telemetry.seq} · epoch ${telemetry.epoch}` : "Unavailable"],
     ];
     $("robot-details").replaceChildren(...details.flatMap(([k, v]) => [h("dt", { text: k }), h("dd", { text: v })]));
   }
