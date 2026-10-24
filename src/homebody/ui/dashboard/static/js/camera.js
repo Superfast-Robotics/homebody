@@ -146,23 +146,34 @@ export class Camera {
     return { kind: age > STALE ? "stale" : "live", age };
   }
 
+  /** The badge says transport, freshness and (for the robot camera) frame usability apart: "Live · 0.2s old",
+   * "Live · Visual quality warning", "Stale · Last frame 5.2s ago", "Camera offline". */
   renderFreshness(state = this.app.state) {
     const badge = $("live-badge");
-    const age = this.frameAt === null ? null : this.app.link.now() - this.frameAt;
+    const age = this.frameAt === null ? null : Math.max(0, this.app.link.now() - this.frameAt);
+    const quality = this.view === "robot" ? state?.frame_quality : null;
+    const warn = quality && (quality.state === "invalid" || quality.state === "suspected_invalid");
     let kind = "on";
     let text = "Live";
-    if (!this.app.link.connected) [kind, text] = this.app.link.attempt > RECONNECTS ? ["off", "Offline"] : ["stale", "Reconnecting"];
+    if (!this.app.link.connected) [kind, text] = this.app.link.attempt > RECONNECTS ? ["off", "Camera offline"] : ["stale", "Reconnecting"];
     else if (this.inspecting !== null) [kind, text] = ["inspect", "Inspecting"];
     else if (this.view === SCENE) [kind, text] = ["on", "Live 3D"];
     else if (!this.live()) [kind, text] = ["on", "Still"];
-    else if (age === null) [kind, text] = ["stale", "Waiting"];
-    else if (age > STALE) [kind, text] = ["stale", `Stale · ${duration(age)}`];
+    else if (age === null) [kind, text] = ["stale", "No frames received"];
+    else if (age > STALE) [kind, text] = ["stale", `Stale · Last frame ${duration(age)} ago`];
+    else if (warn) [kind, text] = ["warn", "Live · Visual quality warning"];
+    else text = `Live · ${duration(age)} old`;
     badge.className = `live-badge ${kind}`;
+    badge.title = quality ? `Frames: ${quality.state.replace("_", " ")}${quality.reason ? ` · ${quality.reason}` : ""}` : "";
     setText(badge.querySelector("span:last-child"), text);
     const ended = state?.task && state.task.end !== null && !state.controls.busy;
-    const fresh = this.view === SCENE || age === null || this.inspecting !== null ? "" :
-      this.live() ? `${duration(Math.max(0, age))} old${ended && age <= STALE ? " · camera remains live" : ""}` : `captured ${clock(this.frameAt)}`;
-    setText($("camera-freshness"), fresh);
+    setText($("camera-freshness"), this.live() || this.view === SCENE || this.inspecting !== null ? (ended && kind === "on" ? "camera remains live" : "")
+      : this.frameAt ? `captured ${clock(this.frameAt)}` : "");
+    // a persistent invalid frame explains itself on the image; a brief one only in the badge
+    const overlay = $("camera-quality");
+    const lasting = quality?.state === "invalid" && quality.since !== null && this.app.link.now() - quality.since > 3;
+    overlay.hidden = !lasting || this.inspecting !== null;
+    setText(overlay, lasting ? `Camera frames invalid: ${quality.reason}` : "");
     if (!$("camera-popover").hidden) this.renderStats(state);
   }
 

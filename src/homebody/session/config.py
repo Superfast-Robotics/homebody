@@ -298,11 +298,14 @@ class Dashboard:
     ending); longer is a suspected mismatch. `stale_s`: a controller or server status older than this is stale, so
     the dashboard says Unknown rather than claim a mismatch. `ack_timeout_s`: a stop request unanswered this long
     shows as timed out (a later answer still shows). `stop_s`: an attempt still running this long after the executor
-    took a stop is suspected of not stopping."""
+    took a stop is suspected of not stopping. The frame checks are ui/dashboard/frames.py's."""
     transition_s: float = 3.0
     stale_s: float = 8.0
     ack_timeout_s: float = 10.0
     stop_s: float = 20.0
+    report_overdue_s: float = 15.0  # s without a report from the executor, while an attempt runs, before it is overdue
+    frame_uniform_std: float = 2.0  # a camera frame's pixel spread below this is suspected invalid (ui/dashboard/frames.py)
+    frame_repeat_s: float = 10.0  # simulated s the same camera image may repeat before it is suspected invalid
 
 
 @dataclass(frozen=True)

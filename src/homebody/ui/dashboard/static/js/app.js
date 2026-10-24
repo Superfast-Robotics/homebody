@@ -11,7 +11,6 @@ import { signalLabel } from "./interventions.js";
 import { gapFor, liveEnd, momentAt, monitorStatus, riskSources } from "./model.js";
 import { Rollouts } from "./rollouts.js";
 import { Scenarios } from "./scenarios.js";
-import { summarize } from "./story.js";
 import { Link } from "./socket.js";
 import { Timeline } from "./timeline.js";
 import { TreeView, setupTabs } from "./tree.js";
@@ -49,6 +48,12 @@ class App {
     this.timeline = new Timeline(this, $("timeline-canvas"));
     setupTabs(document.querySelector(".tabs"));
     $("monitor-expand").addEventListener("click", () => this.drawer.monitor());
+    const legend = $("legend"), toggle = $("legend-toggle");
+    toggle.addEventListener("click", () => {
+      legend.hidden = !legend.hidden;
+      toggle.setAttribute("aria-expanded", String(!legend.hidden));
+    });
+    document.addEventListener("keydown", (event) => { if (event.key === "Escape") { legend.hidden = true; toggle.setAttribute("aria-expanded", "false"); } });
     $("risk-source").addEventListener("change", (event) => { this.riskSource = event.target.value; });
     document.querySelectorAll("[data-action='live']").forEach((button) => button.addEventListener("click", () => this.returnToLive()));
     setInterval(() => this.tick(), TICK_MS);
@@ -106,15 +111,12 @@ class App {
     const pill = $("monitor-status");
     pill.className = `pill ${tone}`;
     setText(pill.querySelector(".pill-text"), label);
-    pill.title = status.state === "unknown" ? "No monitoring service has reported to this session" : `Monitor ${label.toLowerCase()}`;
-    $("monitor-synthetic").hidden = !status.synthetic;
     const age = status.observationAge;
-    setText($("monitor-age"), status.state === "unknown" ? "No monitoring service connected: session, agent and skill events only."
-      : age === null ? "No behavioural observation yet" : `Last observation ${age < 1 ? `${age.toFixed(1)}s` : duration(age)} ago`);
+    pill.title = status.state === "unknown" ? "No monitoring service has reported to this session"
+      : [`Monitor ${label.toLowerCase()}`, age === null ? "no behavioural observation yet" : `last observation ${age < 1 ? `${age.toFixed(1)}s` : duration(age)} ago`,
+        `${status.observations} observations in the last minute`].join(" · ");
+    $("monitor-synthetic").hidden = !status.synthetic;
     const held = this.timelineEnd();
-    const stats = status.state === "unknown" || held.held ? "" : [`${status.observations} observations in the last minute`,
-      status.anomalies ? `${status.anomalies} active anomal${status.anomalies > 1 ? "ies" : "y"}` : ""].filter(Boolean).join(" · ");
-    setText($("monitor-stats"), stats);
     this.renderMode(state, held);
     this.renderRiskSources(state);
     this.renderRiskLabel(state, status);
@@ -126,9 +128,9 @@ class App {
     const inspecting = this.inspectAt !== null;
     const mode = inspecting ? ["history", `Inspecting history · ${clock(this.inspectAt)}`]
       : held.held ? ["frozen", held.reason === "ended" ? `Task end · Frozen at ${clock(state.task.end)}` : `Session lost · Frozen at ${clock(this.lastSeen)}`]
-        : ["", "Live timeline"];
+        : ["live", "Live timeline"];
     const pill = $("timeline-mode");
-    pill.className = `pill timeline-mode ${mode[0]}`;
+    pill.className = `pill timeline-mode ${mode[0]}`; // shown only when not live: the header stays minimal
     setText(pill.querySelector(".pill-text"), mode[1]);
     $("monitor-inspect").hidden = !inspecting && !(held.held && held.reason === "ended");
     toggleClass($("monitor"), "inspecting", inspecting);
@@ -143,37 +145,21 @@ class App {
     }
   }
 
-  /** The monitor's current condition first (an open intervention, an anomaly, elevated risk, unknown, normal), then
-   * the window's milestones from recorded events; "→" only where one event records the other as its cause. While
-   * inspecting history the condition is not current, so only the milestones show. */
+  /** One primary conclusion (execution.contextSummary: an open intervention, an anomaly, a mismatch, elevated risk,
+   * a required service, normal), with a stale monitor or unusable camera frames said beside it. While inspecting
+   * history it is not current, so the strip says what window it shows; the milestones are in View details. */
   renderSummary(state, status) {
     const end = this.inspectEnd ?? this.timelineEnd().end;
-    const { blocks, earlier } = summarize(state, end - 60, end);
     const live = this.inspectAt === null && !this.timelineEnd().held;
     const now = this.link.now();
     const condition = live ? contextSummary(state, status, now, end - 60, {
       gap: gapFor(state.readings.filter((r) => r.kind === "observation")), check: consistency(state, now),
-      system: state.servers ? systemSummary(state.servers) : null }) : null;
-    const signature = `${blocks.map((b) => `${b.id}${b.count}${b.label}`).join("|")}:${earlier}:${status.state}:${condition?.text}`;
-    if (signature === this.summaryShown) return;
-    this.summaryShown = signature;
-    const strip = $("summary-strip");
-    const head = condition ? [h("li", { class: `condition ${condition.level}`, text: condition.text,
-      title: "The monitor's current condition (not its connectivity)" })] : [];
-    if (!blocks.length) {
-      strip.replaceChildren(...head, ...(condition ? [] : [h("li", { class: "empty-note", text: "No significant events in this window" })]));
-      return;
-    }
-    const items = [...head, ...(earlier ? [h("li", { class: "earlier", text: `+${earlier} earlier` })] : [])];
-    blocks.forEach((block, index) => {
-      if (index || head.length) {
-        items.push(h("li", { class: `connector${block.linked ? " linked" : ""}`, text: block.linked ? "→" : "·",
-          title: block.linked ? "Recorded as caused by the step before" : "Consecutive; no recorded causal link" }));
-      }
-      items.push(h("li", {}, h("button", { type: "button", class: block.kind, title: `${clock(block.t)} · ${block.label}`,
-        onclick: () => this.openMilestone(block) }, block.label)));
-    });
-    strip.replaceChildren(...items);
+      system: state.servers ? systemSummary(state.servers) : null })
+      : { level: "history", text: `Showing ${clock(end - 60)}–${clock(end)}: View details lists what happened` };
+    if (condition.text === this.summaryShown) return;
+    this.summaryShown = condition.text;
+    $("summary-strip").replaceChildren(h("li", { class: `condition ${condition.level}`, text: condition.text,
+      title: "The monitoring panel's primary conclusion, from recorded events" }));
   }
 
   openMilestone(block) {
@@ -247,7 +233,10 @@ class App {
       const request = (this.state.interventions || []).findLast((r) => toolId && r.tool === toolId);
       this.focusAttempt(toolId, item.start, () => (request ? this.drawer.intervention(request.id) : this.drawer.risk(item)));
     }
-    else if (kind === "intervention") this.focusAttempt(item.tool, item.at ?? item.t, () => this.drawer.intervention(item.id));
+    else if (kind === "event") {
+      this.focusAttempt(item.tool, item.t, () => (item.intervention ? this.drawer.intervention(item.intervention)
+        : item.incident ? this.drawer.incident(item.incident) : null));
+    } else if (kind === "cluster") this.drawer.events(item);
   }
 
   /** Select moment T, highlight attempt TOOL_ID in the tree (expanding its group), then OPEN its details. The

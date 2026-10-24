@@ -65,6 +65,10 @@ export class Controls {
     if (item === "instructions") this.app.drawer.instructions();
     if (item === "rollouts") this.app.rollouts.open();
     if (item === "diagnostics") this.app.drawer.diagnostics();
+    if (item === "fullscreen") {
+      if (document.fullscreenElement) document.exitFullscreen();
+      else document.documentElement.requestFullscreen?.().catch(() => this.app.notify("bad", "Full screen is not available here."));
+    }
   }
 
   async send(command) {

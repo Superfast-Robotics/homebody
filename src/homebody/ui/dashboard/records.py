@@ -107,6 +107,7 @@ class Reading:
     signal: str = ""  # what RISK measures, as the monitor names it (e.g. "stall", "unsafe", "failure:dropped")
     call: int | None = None  # the skill call of its task it watched (Phase.call), None between skills or unknown
     tool: str | None = None  # the attempt with that call, as the store matched it (None: no match, never guessed)
+    frame_quality: str = "unknown"  # the robot camera's frame quality when it arrived (ui/dashboard/frames.py)
 
 
 @dataclass(frozen=True)
@@ -209,7 +210,8 @@ def reading(value: dict, now: float, **context) -> Reading:
                    confidence=unit(value, "confidence"), reason=clip(value.get("reason", ""), 400), kind=kind,
                    received=now, elevated_threshold=unit(value, "elevated_threshold"),
                    synthetic=bool(value.get("synthetic", False)), signal=clip(value.get("signal", ""), 80),
-                   call=call_number(value.get("call")), **context)
+                   call=call_number(value.get("call")),
+                   frame_quality=clip(value.get("frame_quality", "unknown"), 24), **context)
 
 
 def call_number(value) -> int | None:

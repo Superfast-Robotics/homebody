@@ -25,8 +25,8 @@
 
   /* palette: text */
   --text-primary: #F1F2FA;
-  --text-secondary: #A6AABD;
-  --text-muted: #868CA0;
+  --text-secondary: #B3B7C9;  /* raised for legibility (V7): timestamps, metadata, error summaries */
+  --text-muted: #9499AD;
   --text-disabled: #555B6D;
 
   /* palette: operational states */

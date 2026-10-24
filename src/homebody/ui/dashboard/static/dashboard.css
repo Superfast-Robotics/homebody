@@ -233,7 +233,8 @@ h2 { font-size: var(--size-panel); font-weight: var(--weight-strong); }
 .twisty.leaf .icon { display: none; }
 .node-text { min-width: 0; }
 .node-label { display: block; font-weight: var(--weight-label); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.node-meta { display: block; font-size: var(--size-small); color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.node-meta { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; font-size: var(--size-small); color: var(--text-secondary);
+  overflow: hidden; overflow-wrap: anywhere; } /* two readable lines rather than one cut short */
 .row.running .node-label, .row.running .node-meta { color: var(--running); }
 .tree-node:not(.collapsed) > .row:not(.leaf) .node-label { color: var(--text-primary); }
 .row.pending .node-label { color: var(--text-secondary); }
@@ -330,16 +331,6 @@ pre.json { margin: 4px 8px 10px; padding: 8px 10px; background: var(--surface-2)
 .intervention-head > .icon { color: var(--danger); margin-top: 2px; }
 .intervention-card.requested .intervention-head > .icon, .intervention-card.executing .intervention-head > .icon { color: var(--warning-text); }
 .intervention-head p, .intervention-age { color: var(--text-secondary); font-size: var(--size-meta); }
-.intervention-state { font-weight: var(--weight-strong); }
-.intervention-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: var(--size-meta); }
-.intervention-steps li { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; gap: 8px; align-items: baseline; }
-.intervention-steps .mark { font-weight: var(--weight-strong); text-align: center; }
-.intervention-steps .done .mark { color: var(--success); }
-.intervention-steps .pending .mark { color: var(--warning-text); }
-.intervention-steps .failed .mark { color: var(--danger); }
-.intervention-steps .unknown .mark, .intervention-steps .skipped .mark { color: var(--text-muted); }
-.intervention-steps .note { grid-column: 2 / 4; color: var(--text-secondary); }
-.intervention-steps .when { color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .recovery-card { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 8px 10px; margin: 12px 12px 0; padding: 12px;
   border-radius: var(--radius-small); background: var(--recovery-light); border: 1px solid var(--violet-edge); }
 .recovery-card > .icon { color: var(--violet); }
@@ -461,9 +452,6 @@ pre.json { margin: 4px 8px 10px; padding: 8px 10px; background: var(--surface-2)
 .confirm-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
 
 /* --- responsive --- */
-@media (max-width: 1599px) {
-  #monitor-stats { display: none; }
-}
 @media (max-width: 1439px) {
   .workspace { grid-template-columns: minmax(0, 64fr) minmax(300px, 36fr); }
   .info-toggle { display: inline-flex; }
@@ -473,15 +461,21 @@ pre.json { margin: 4px 8px 10px; padding: 8px 10px; background: var(--surface-2)
   .command-group { flex-wrap: wrap; }
 }
 @media (max-width: 1099px) {
-  .app { height: auto; min-height: 100vh; grid-template-rows: auto auto var(--monitor-height) auto; }
+  .app { height: auto; min-height: 100vh; grid-template-rows: auto auto auto var(--monitor-height) auto; }
+  /* tablet: camera, then the critical cards inline (the rest of the robot panel opens from the tree's toggle),
+     then monitoring and the tree; nothing critical sits in a closed overlay */
+  .info-panel, .info-panel:not(.open) { position: static; width: auto; box-shadow: none; grid-row: 3; display: block; }
+  .info-panel:not(.open) > :not(.intervention-card):not(.execution-card):not(.critical-banner):not(.pause-card):not(.recovery-card) { display: none; }
+  .info-panel:not(.open):not(:has(> .intervention-card:not([hidden]), > .execution-card:not([hidden]), > .critical-banner:not([hidden]), > .pause-card:not([hidden]), > .recovery-card:not([hidden]))) { display: none; }
+  .info-panel:not(.open) > :not([hidden]):last-child { margin-bottom: 12px; }
+  .info-panel:not(.open) { padding-bottom: 12px; }
   .header { flex-wrap: wrap; }
   .command-group { justify-content: flex-start; }
   .command { max-width: none; }
   .workspace { display: contents; }
   .camera { grid-row: 2; aspect-ratio: 4 / 3; max-height: 70vh; }
-  .monitor { grid-row: 3; }
-  .tree-panel { grid-row: 4; height: 70vh; }
-  .legend { display: none; }
+  .monitor { grid-row: 4; }
+  .tree-panel { grid-row: 5; height: 70vh; }
 }
 @media (max-width: 640px) {
   :root { --page-pad: 16px; }
@@ -528,14 +522,46 @@ pre.json { margin: 4px 8px 10px; padding: 8px 10px; background: var(--surface-2)
 .servers-chip.quiet { color: var(--text-muted); border-color: var(--border-subtle); background: transparent; font-weight: 500; }
 .command-group > .controls[data-controls="header"] { border-left: 1px solid var(--border-subtle); padding-left: var(--gap); }
 .summary { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60ch; }
-/* V6: the attempt an alert or intervention belongs to, and the execution-state mismatch card */
+/* the attempt an alert or intervention belongs to */
 .alert-attempt { display: block; font-size: var(--size-small); color: var(--text-secondary); font-weight: var(--weight-strong); }
 .intervention-attempt { font-size: var(--size-meta); color: var(--text-secondary); }
-.mismatch-card { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 8px 10px; margin: 12px 12px 0; padding: 12px;
-  border-radius: var(--radius-small); background: var(--warning-light); border: 1px solid var(--state-warning-edge); }
-.mismatch-card.critical { background: var(--danger-light); border-color: var(--state-error-edge); }
-.mismatch-card > .icon { color: var(--warning-text); }
-.mismatch-card.critical > .icon { color: var(--danger); }
 .server-list .impact.critical { color: var(--warning-text); }
-.intervention-card .controls, .mismatch-card .controls { display: flex; flex-direction: row; flex-wrap: wrap; gap: 6px; }
+.intervention-card .controls, .execution-card .controls { display: flex; flex-direction: row; flex-wrap: wrap; gap: 6px; }
 .intervention-head p { line-height: 1.3; }
+/* V7: the compact incident card, the execution card, and the inspector's lifecycle sections */
+.intervention-card { gap: 6px; }
+.intervention-head strong { font-size: var(--size-body); }
+.intervention-outcome { font-weight: var(--weight-strong); font-size: var(--size-body); }
+.intervention-extra { font-size: var(--size-meta); color: var(--warning-text); }
+.execution-card { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 8px 10px; margin: 12px 12px 0; padding: 12px;
+  border-radius: var(--radius-small); background: var(--warning-light); border: 1px solid var(--state-warning-edge); }
+.execution-card.critical { background: var(--danger-light); border-color: var(--state-error-edge); }
+.execution-card > .icon { color: var(--warning-text); }
+.execution-card.critical > .icon { color: var(--danger); }
+.execution-lines { margin: 4px 0 8px; padding-left: 16px; font-size: var(--size-meta); color: var(--text-secondary); }
+.lifecycle { border: 1px solid var(--border); border-left-width: 3px; border-radius: var(--radius-small); padding: 8px 10px; margin: 8px 0;
+  background: var(--surface-2); }
+.lifecycle.done { border-left-color: var(--success); } .lifecycle.pending { border-left-color: var(--warning); }
+.lifecycle.failed { border-left-color: var(--danger); } .lifecycle.unknown, .lifecycle.skipped { border-left-color: var(--neutral); }
+.lifecycle-head { display: flex; align-items: center; gap: 8px; width: 100%; background: none; border: 0; padding: 0 0 4px; text-align: left; }
+.lifecycle-head .when { margin-left: auto; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.lifecycle img { max-width: 100%; border-radius: var(--radius-small); margin-top: 6px; }
+.live-badge.warn .dot { background: var(--warning); }
+.live-badge.warn { color: var(--warning-text); }
+.camera-quality { position: absolute; left: 12px; bottom: 12px; max-width: 70%; padding: 6px 10px; border-radius: var(--radius-small);
+  background: var(--overlay); border: 1px solid var(--state-warning-edge); color: var(--warning-text); font-size: var(--size-meta); }
+/* V7 monitoring header: the legend is a popover, opened by click or keyboard */
+.legend-wrap { position: relative; flex: none; }
+.legend.popover { position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; flex-direction: column; flex-wrap: nowrap;
+  gap: 6px; padding: 10px 12px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-small);
+  min-width: 220px; overflow: visible; display: flex; }
+.legend.popover[hidden] { display: none; }
+.legend .glyph { width: 12px; text-align: center; font-size: 11px; color: var(--warning-text); }
+.legend .glyph.danger { color: var(--danger); } .legend .glyph.running { color: var(--running); }
+.legend .glyph.recovery { color: var(--violet); } .legend .glyph.success { color: var(--success); }
+.timeline-mode.live { display: none; }
+/* V7 tree hierarchy: the running attempt blue, failed rows subdued with a red icon, done green, pending muted, recovery violet */
+.row.failure .node-label, .row.failure .node-meta { opacity: 0.78; }
+.row.pending .node-meta { color: var(--text-muted); }
+.row:has(.tag.recovery:not([hidden])) { box-shadow: inset 2px 0 0 var(--violet); }
+.summary { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }

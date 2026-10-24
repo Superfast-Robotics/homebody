@@ -3,7 +3,7 @@ import { $, ago, clock, duration, h, json } from "./dom.js";
 import { interventionView } from "./inspector.js";
 import { attemptLabel, consistency } from "./execution.js";
 import { stateText } from "./interventions.js";
-import { errorText } from "./story.js";
+import { errorText, summarize } from "./story.js";
 import { Timeline } from "./timeline.js";
 
 const LABELS = ["Goal", "Skill", "Agent decisions", "Monitor observations", "Risk", "Interventions", ""];
@@ -295,9 +295,16 @@ export class Drawer {
     this.open("Tool call", "tool", id, () => this.toolView(id));
   }
 
+  /** Events that share a moment on the timeline, each opening its own record. */
+  events(items) {
+    this.open("Events at this moment", "events", null, () => h("ol", { class: "drawer-list" }, ...items.map((m) => h("li", {},
+      h("button", { type: "button", onclick: () => this.app.open("event", m) }, h("strong", { text: `${clock(m.t)} ${m.label}` }),
+        h("br"), m.detail || "")))), { signature: () => items.map((m) => m.id).join("|") });
+  }
+
   /** The provenance inspector of an intervention (inspector.js). */
   intervention(id) {
-    this.open("Intervention", "intervention", id, () => interventionView(this, id),
+    this.open("Incident", "intervention", id, () => interventionView(this, id),
       { signature: () => JSON.stringify((this.app.state.interventions || []).find((r) => r.id === id) || null) });
   }
 
@@ -387,7 +394,20 @@ export class Drawer {
         h("ul", { class: "track-labels", "aria-hidden": "true" }, ...LABELS.map((l) => h("li", { text: l }))),
         h("div", { class: "timeline-canvas" }, canvas));
       requestAnimationFrame(() => { this.timeline = new Timeline(this.app, canvas, { seconds: 600 }); });
-      return [h("p", { class: "note", text: "Click a moment to inspect it; the main view keeps its 60-second window." }), view];
+      const now = this.app.link.now();
+      const { blocks } = summarize(this.app.state, now - 600, now, 30);
+      const readings = this.app.state.readings.filter((r) => r.kind === "observation");
+      const last = readings.at(-1);
+      return [h("p", { class: "note", text: "Click a moment to inspect it; the main view keeps its 60-second window." }), view,
+        h("h3", { text: "What happened" }),
+        blocks.length ? h("ol", { class: "drawer-list" }, ...blocks.map((b) => h("li", {}, h("button", { type: "button",
+          onclick: () => (b.incident ? this.app.openIncident(b.incident.id) : this.app.inspect(b.t)) },
+        h("strong", { text: clock(b.t) }), ` ${b.label}${b.linked ? " (caused by the step before)" : ""}`))))
+          : h("p", { class: "note", text: "No significant events in the last 10 minutes." }),
+        h("h3", { text: "Monitor" }),
+        facts([["Last observation", last ? `${clock(last.t)} (${ago(now - last.t)})` : "None"],
+          ["Observations in the window", String(readings.filter((r) => r.t >= now - 600).length)],
+          ["Source", last?.source], ["Synthetic data", readings.some((r) => r.synthetic) ? "Yes: not a real outcome" : "No"]])];
     }, { wide: true });
   }
 }

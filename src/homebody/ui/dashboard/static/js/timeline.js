@@ -1,9 +1,9 @@
 // The monitoring timeline: every track on one time axis, drawn on a canvas from the newest state. Readings are
 // drawn where they were made and stand only as long as their cadence allows; gaps are drawn as gaps.
 import { clock, duration, tokens } from "./dom.js";
-import { attemptLabel } from "./execution.js";
+import { MARKERS, attemptLabel, clusterMarkers, eventMarkers } from "./execution.js";
 import { signalLabel, stateText } from "./interventions.js";
-import { interventionMarker, observationSegments, riskBuckets, riskSources, spans } from "./model.js";
+import { observationSegments, riskBuckets, riskSources, spans } from "./model.js";
 
 const ROWS = [["goal", 26], ["skill", 26], ["decisions", 26], ["readings", 26], ["risk", 30], ["interventions", 34], ["axis", 20]];
 const LEFT = 8, RIGHT = 8; // px margins of the plot
@@ -12,11 +12,6 @@ const FRAME_MS = 100;
 const STATUS_TEXT = { running: "Running", success: "Completed", failure: "Failed", ended: "Ended", cancelled: "Cancelled" };
 const RISK_TEXT = { low: "Low risk", elevated: "Elevated risk", high: "High risk (at or above threshold)", missing: "Missing" };
 const LEVEL_TEXT = { expected: "Expected", unknown: "Unknown or unclassified", elevated: "Elevated concern", anomaly: "Anomaly", missing: "No reading" };
-// an intervention's recorded stages on the interventions track: shape and tone
-const STAGE_MARK = { requested: ["triangle", "warning"], accepted: ["diamond", "running"], confirmed: ["square", "success"],
-  rejected: ["cross", "danger"], failed: ["cross", "danger"], cancelled: ["circle", "neutral"], timed_out: ["clock", "danger"] };
-const STAGE_TEXT = { requested: "Stop requested", accepted: "Executor acknowledged", confirmed: "Skill stopped (confirmed)",
-  rejected: "Request rejected", failed: "Did not stop", cancelled: "Request withdrawn", timed_out: "Acknowledgement timed out" };
 
 export class Timeline {
   /**
@@ -303,7 +298,7 @@ export class Timeline {
       const before = blocks[index - 1];
       if (!before || before.state === "missing" || !(block.state in rank) || rank[block.state] <= rank[before.state] || block.state === "low") return;
       const x = this.clampX(block.start, view);
-      ctx.fillStyle = block.state === "high" ? c["event-high"] : c["event-warning"];
+      ctx.fillStyle = c["event-warning"]; // the standard "risk threshold crossed" symbol: an amber triangle
       ctx.beginPath();
       ctx.moveTo(x - 4, row.y);
       ctx.lineTo(x + 4, row.y);
@@ -328,86 +323,73 @@ export class Timeline {
     }
   }
 
+  /** The interventions track: each recorded event with its standard symbol (execution.MARKERS); events that would
+   * overlap are one numbered cluster, listed on click, so none is hidden. */
   interventions(view, state) {
     const { ctx, c, end, start, width } = view;
     const row = view.rows.interventions;
     const mid = row.y + row.h / 2;
-    this.requests(view, state, row, mid);
-    const shown = state.incidents.filter((i) => i.t >= start && i.t <= end && interventionMarker(i)).sort((a, b) => a.t - b.t);
-    const xs = shown.map((i) => this.x(i.t, end, width));
-    shown.forEach((incident, index) => {
-      const x = xs[index];
-      const { shape, tone } = interventionMarker(incident);
-      this.glyph(ctx, shape, x, mid, c[tone] || c.running, c["app-bg"]);
-      const limit = Math.min(width - RIGHT, (xs[index + 1] ?? Infinity) - 12); // a label stops before the next marker
-      let text = incident.title;
-      while (text.length > 4 && x + 11 + ctx.measureText(text).width > limit) text = `${text.slice(0, -2)}…`;
-      if (x + 11 + ctx.measureText(text).width <= limit) {
-        ctx.fillStyle = c["text-primary"];
-        ctx.fillText(text, x + 11, mid);
+    const markers = eventMarkers(state, start, end);
+    if (!markers.length) return;
+    for (const cluster of clusterMarkers(markers, (t) => this.x(t, end, width))) {
+      const x = cluster.x;
+      if (cluster.items.length === 1) {
+        const [m] = cluster.items;
+        const [shape, tone] = MARKERS[m.kind];
+        this.symbol(ctx, shape, x, mid, c[tone] || c.neutral, c["app-bg"]);
+        this.hits.push({ x0: x - 8, x1: x + 8, y0: row.y, y1: row.y + row.h, kind: "event", item: m, t: m.t });
+        continue;
       }
-      this.hits.push({ x0: x - 8, x1: x + 8, y0: row.y, y1: row.y + row.h, kind: "incident", item: incident, t: incident.t });
-    });
-  }
-
-  /** Each intervention's recorded stages, joined by a line from its request to its last stage. */
-  requests(view, state, row, mid) {
-    const { ctx, c, end, start, width } = view;
-    for (const r of state.interventions || []) {
-      const marks = r.stages.filter(([s, t]) => t !== null && STAGE_MARK[s]).map(([s, t]) => [s, t]);
-      const requested = marks.find(([s]) => s === "requested");
-      if (requested && (r.state === "timed_out" || marks.some(([s, t]) => s === "accepted" && t - requested[1] > r.ack_timeout))) {
-        marks.push(["timed_out", requested[1] + r.ack_timeout]);
-      }
-      const shown = marks.filter(([, t]) => t >= start && t <= end).sort((a, b) => a[1] - b[1]);
-      if (!shown.length) continue;
-      const xs = shown.map(([, t]) => this.x(t, end, width));
-      ctx.strokeStyle = c.border;
+      ctx.fillStyle = c["surface-3"];
+      ctx.strokeStyle = c["text-secondary"];
       ctx.lineWidth = 1.5;
-      ctx.setLineDash(r.state === "timed_out" || r.state === "requested" ? [3, 3] : []);
       ctx.beginPath();
-      ctx.moveTo(xs[0], mid);
-      ctx.lineTo(r.state === "requested" || r.state === "timed_out" || r.state === "executing" ? this.x(end, end, width) : xs.at(-1), mid);
+      ctx.arc(x, mid, 9, 0, Math.PI * 2);
+      ctx.fill();
       ctx.stroke();
-      ctx.setLineDash([]);
-      shown.forEach(([stage, t], i) => {
-        const [shape, tone] = STAGE_MARK[stage];
-        this.mark(ctx, shape, xs[i], mid, c[tone] || c.neutral, c["app-bg"]);
-        this.hits.push({ x0: xs[i] - 7, x1: xs[i] + 7, y0: row.y, y1: row.y + row.h, kind: "intervention",
-          item: { ...r, stage, at: t }, t });
-      });
+      ctx.fillStyle = c["text-primary"];
+      ctx.textAlign = "center";
+      ctx.fillText(String(cluster.items.length), x, mid + 0.5);
+      ctx.textAlign = "left";
+      this.hits.push({ x0: x - 10, x1: x + 10, y0: row.y, y1: row.y + row.h, kind: "cluster", item: cluster.items, t: cluster.t });
     }
   }
 
-  mark(ctx, shape, x, y, colour, ink) {
+  /** One event symbol: stop (outlined octagon), check, square, diamond, person, cross. */
+  symbol(ctx, shape, x, y, colour, ink) {
     ctx.fillStyle = colour;
     ctx.strokeStyle = colour;
+    ctx.lineWidth = 2;
     ctx.beginPath();
-    if (shape === "triangle") { ctx.moveTo(x, y - 6); ctx.lineTo(x + 6, y + 5); ctx.lineTo(x - 6, y + 5); ctx.closePath(); ctx.fill(); }
-    else if (shape === "cross") { ctx.lineWidth = 2.5; ctx.moveTo(x - 5, y - 5); ctx.lineTo(x + 5, y + 5); ctx.moveTo(x + 5, y - 5); ctx.lineTo(x - 5, y + 5); ctx.stroke(); }
-    else if (shape === "clock") {
-      ctx.arc(x, y, 6, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = ink; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(x, y - 4); ctx.lineTo(x, y); ctx.lineTo(x + 3, y + 2); ctx.stroke();
-    } else this.glyph(ctx, shape, x, y, colour, ink);
-  }
-
-  glyph(ctx, shape, x, y, colour, ink) {
-    ctx.fillStyle = colour;
-    ctx.beginPath();
-    if (shape === "square") ctx.rect(x - 6, y - 6, 12, 12);
-    else if (shape === "diamond") { ctx.moveTo(x, y - 7); ctx.lineTo(x + 7, y); ctx.lineTo(x, y + 7); ctx.lineTo(x - 7, y); ctx.closePath(); }
-    else ctx.arc(x, y, 7, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = ink;
-    ctx.strokeStyle = ink;
-    if (shape === "pause") { ctx.fillRect(x - 3, y - 4, 2, 8); ctx.fillRect(x + 1, y - 4, 2, 8); }
-    if (shape === "play") { ctx.beginPath(); ctx.moveTo(x - 2, y - 4); ctx.lineTo(x + 4, y); ctx.lineTo(x - 2, y + 4); ctx.fill(); }
-    if (shape === "reset" || shape === "replan") {
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.arc(x, y, 3.5, 0.3, Math.PI * 1.7);
+    if (shape === "stop") {
+      for (let k = 0; k < 8; k += 1) {
+        const a = Math.PI / 8 + (k * Math.PI) / 4;
+        ctx[k ? "lineTo" : "moveTo"](x + 6.5 * Math.cos(a), y + 6.5 * Math.sin(a));
+      }
+      ctx.closePath();
       ctx.stroke();
+    } else if (shape === "check") {
+      ctx.moveTo(x - 5, y);
+      ctx.lineTo(x - 1.5, y + 4);
+      ctx.lineTo(x + 5.5, y - 4.5);
+      ctx.stroke();
+    } else if (shape === "square") {
+      ctx.fillRect(x - 5.5, y - 5.5, 11, 11);
+    } else if (shape === "diamond") {
+      ctx.moveTo(x, y - 7); ctx.lineTo(x + 7, y); ctx.lineTo(x, y + 7); ctx.lineTo(x - 7, y); ctx.closePath(); ctx.fill();
+    } else if (shape === "person") {
+      ctx.arc(x, y - 4, 2.6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(x - 5, y + 6); ctx.quadraticCurveTo(x, y - 3, x + 5, y + 6); ctx.closePath(); ctx.fill();
+    } else if (shape === "cross") {
+      ctx.lineWidth = 2.5;
+      ctx.moveTo(x - 5, y - 5); ctx.lineTo(x + 5, y + 5); ctx.moveTo(x + 5, y - 5); ctx.lineTo(x - 5, y + 5); ctx.stroke();
+    } else {
+      ctx.arc(x, y, 5, 0, Math.PI * 2);
+      ctx.fill();
     }
+    void ink;
   }
 
   axis({ ctx, c, end, width, rows }) {
@@ -522,11 +504,13 @@ export class Timeline {
       const what = item.block.state === "high" ? `Threshold crossed (${r.risk.toFixed(2)} ≥ ${r.threshold?.toFixed(2) ?? "?"})` : `Rose to elevated (${r.risk.toFixed(2)})`;
       return `${what} at ${clock(item.block.start)}\n${signalLabel(r.signal)} after ${item.before.max?.toFixed(2) ?? "?"}`;
     }
-    if (kind === "intervention") {
-      const stage = item.stages.find(([s]) => s === item.stage);
-      return [`${STAGE_TEXT[item.stage]} · ${clock(item.at)}`, `${item.initiator} → ${item.target}`,
-        stage ? `${stage[2]}${stage[3] ? ` · ${stage[3]}` : ""}` : `No acknowledgement within ${item.ack_timeout} s of the request`,
-        `Now: ${stateText(item.state)[1]} · click to inspect`].join("\n");
+    if (kind === "event") {
+      const tool = state.tools.find((t) => t.id === item.tool);
+      return [`${item.label} · ${clock(item.t)}`, item.detail || "", tool ? `Attempt: ${attemptLabel(tool)}` : "",
+        "Click to inspect"].filter(Boolean).join("\n");
+    }
+    if (kind === "cluster") {
+      return [`${item.length} events · click to list them`, ...item.map((m) => `${clock(m.t)} ${m.label}`)].join("\n");
     }
     return `${item.title}\n${item.severity} · ${item.state} · ${clock(item.t)}${item.outcome ? `\nThen: ${item.outcome}` : ""}`;
   }

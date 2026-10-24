@@ -33,8 +33,10 @@ test("operator labels say what happened; raw codes stay in the detail", () => {
     meta: "All failed · Stopped by monitor, No grasp found, Observation too old" });
   const running = { type: "goal", label: "Pick one accessible jam jar from the shelf with the right hand, keeping the rest.",
     status: "running", detail: { used: 4, budget: 8 } };
-  assert.deepEqual(operatorText(running, "1m"), { label: "Pick one accessible jam jar", meta: "Running · attempt 4 of 8 · 1m" });
-  assert.equal(goalLabel("Carry the jam jar to the blue picking cart"), "Carry the jam jar");
+  assert.deepEqual(operatorText(running, "1m"), { label: "Pick accessible jam jar", meta: "Running · attempt 4 of 8 · 1m" });
+  assert.equal(goalLabel("Pick the jam jar from the shelf"), "Pick jam jar");
+  assert.equal(goalLabel("Open the door"), "Open door");
+  assert.equal(goalLabel("Carry the jam jar to the blue picking cart"), "Carry jam jar");
   assert.equal(goalLabel("Go to the kitchen"), "Go to the kitchen"); // a cut would leave one word: kept whole
   const recovery = { type: "goal", label: "reposition and look again", status: "success", detail: { recovers: "g2", used: 1 } };
   assert.deepEqual(operatorText(recovery, "8.1s"), { label: "Recovery: Reposition and look again", meta: "Completed · 8.1s" });

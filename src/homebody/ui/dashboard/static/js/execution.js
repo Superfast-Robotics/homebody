@@ -4,7 +4,7 @@
 import { OPEN, signalLabel, stateText } from "./interventions.js";
 
 const SKILLS = { navigate: "Navigate", pick: "Pick", place: "Place", call_coder: "Coding assistant" };
-const DEFAULT_TIMING = { transition_s: 3, stale_s: 8, ack_timeout_s: 10, stop_s: 20 };
+const DEFAULT_TIMING = { transition_s: 3, stale_s: 8, ack_timeout_s: 10, stop_s: 20, report_overdue_s: 15 };
 
 /** "Pick attempt 4", or "Unknown attempt" for a record that names none. */
 export function attemptLabel(tool) {
@@ -159,46 +159,175 @@ export function retrySummary(tools, budget) {
   return parts.join(" · ");
 }
 
-const RESPONSE = { requested: "Abort requested · Awaiting executor", executing: "Executor stopping the skill",
-  timed_out: "Abort requested · No executor acknowledgement" };
+/** When the skill executor last reported (a stage, a result, a stop it took), from the recorded events only. */
+export function lastExecutorReport(state) {
+  const times = [];
+  for (const tool of state.tools) {
+    times.push(tool.start);
+    for (const [t] of tool.stages) times.push(t);
+    if (tool.end !== null) times.push(tool.end);
+  }
+  for (const row of state.interventions || []) {
+    for (const [, t, source] of row.stages) if (t !== null && source.startsWith("Skill executor")) times.push(t);
+  }
+  return times.length ? Math.max(...times) : null;
+}
 
 /**
- * The monitoring panel's summary, by priority: the current intervention, an anomaly or high risk (continuous on
- * this attempt, else cumulative in the window), an execution-state mismatch, a relevant system degradation, then
- * unknown or normal. Every phrase comes from a recorded event. Returns {level, text}.
+ * How certain the dashboard is about execution: confirmed executing (a running attempt, the executor reporting within
+ * report_overdue_s, nothing disagreeing), transitioning, uncertain (an overdue executor report, a mismatch, or an
+ * unknown controller under a running attempt), confirmed stopped (the last attempt ended by its own result and nothing
+ * executes) or unknown. Returns {state, severity, reasons, attempt, overdue}. Uncertain never claims the robot moved
+ * or stopped; severity grows with how overdue the report is, missing monitoring, and an open stop on the attempt.
+ */
+export function executionCertainty(state, now, { monitorFresh = true } = {}) {
+  const timing = { ...DEFAULT_TIMING, ...(state.timing || {}) };
+  const check = consistency(state, now);
+  const tool = check.attempt;
+  const report = lastExecutorReport(state);
+  const overdue = tool && report !== null ? Math.max(0, now - report) : null;
+  const out = (s, severity, reasons = []) => ({ state: s, severity, reasons, attempt: tool, overdue, check });
+  if (check.state === "transitioning") return out("transitioning", "info", [check.rule]);
+  if (tool) {
+    const reasons = [];
+    if (overdue !== null && overdue > timing.report_overdue_s) reasons.push(`Executor report overdue (${Math.round(overdue)} s)`);
+    if (check.state === "suspected" || check.state === "confirmed") reasons.push(check.rule);
+    if (check.state === "unknown") reasons.push("Controller state unknown");
+    if (!reasons.length) return out("confirmed_executing", "info");
+    const stopOpen = (state.interventions || []).some((r) => r.tool === tool.id && OPEN.includes(r.state));
+    let severity = "info";
+    if (check.state === "confirmed" || (overdue !== null && overdue > 2 * timing.report_overdue_s) || !monitorFresh) severity = "warning";
+    if ((check.state === "confirmed" && stopOpen) || (stopOpen && overdue !== null && overdue > timing.stop_s)) severity = "critical";
+    return out("uncertain", severity, reasons);
+  }
+  if (check.state === "suspected") return out("uncertain", "warning", [check.rule]);
+  const last = state.task ? state.tools.findLast((t) => t.start >= (state.task.start ?? -Infinity)) : null;
+  if (last && last.end !== null) return out("confirmed_stopped", "info", [`${attemptLabel(last)} ended (${last.code || last.state})`]);
+  return out("unknown", "info", ["No attempt reported in this task"]);
+}
+
+const SIGNAL_NAMES = { stall: "stall", unsafe: "unsafe situation", human_needed: "needs a person" };
+const signalWord = (signal) => SIGNAL_NAMES[signal] || (signal?.startsWith("failure:") ? signal.slice(8).replace(/_/g, " ") : "anomaly");
+
+/**
+ * The compact incident card's words for intervention ROW: {title, status, tone, attempt, outcome, severity}, e.g.
+ * "Pick stall detected" · "Action pending" · "Pick · Attempt 4 · Stall probability 1.00" · "Abort requested · No
+ * controller acknowledgement". Every phrase follows a recorded stage; nothing is claimed past the last one.
+ */
+export function incidentCard(state, row) {
+  const incident = state.incidents.find((i) => i.id === row.incident) || null;
+  const tool = toolById(state, row.tool);
+  const skill = tool ? (SKILLS[tool.skill] || tool.skill) : row.skill ? (SKILLS[row.skill] || row.skill) : "Skill";
+  const signal = incident?.observation?.signal || "";
+  const title = row.initiator === "Human operator" ? `${skill} stop requested by the operator` : `${skill} ${signalWord(signal)} detected`;
+  const status = { requested: ["warning", "Action pending"], executing: ["warning", "Stopping"], timed_out: ["danger", "Action pending"],
+    confirmed: ["success", "Skill stopped"], failed: ["danger", "Stop failed"], rejected: ["danger", "Stop rejected"],
+    cancelled: ["neutral", "Request withdrawn"] }[row.state] || ["neutral", row.state];
+  const risk = incident?.evidence?.risk;
+  const attempt = [skill, tool ? `Attempt ${tool.number}` : "Attempt unknown",
+    risk !== undefined && risk !== null ? `${signalLabel(signal)} ${Number(risk).toFixed(2)}` : ""].filter(Boolean).join(" · ");
+  const outcome = { requested: "Abort requested · Awaiting controller acknowledgement",
+    timed_out: "Abort requested · No controller acknowledgement", executing: "Controller acknowledged · Skill not yet stopped",
+    confirmed: row.stages.some(([s]) => s === "retry_started") ? "Skill stopped · Retry started" : "Skill stopped · Recovery pending",
+    failed: "Stop acknowledged · The skill did not stop", rejected: "Abort rejected by the harness",
+    cancelled: "Request withdrawn before it was taken" }[row.state] || stateText(row.state)[1];
+  return { title, status: status[1], tone: status[0], attempt, outcome, severity: incident?.severity || "warning", incident, tool };
+}
+
+/**
+ * The monitoring panel's one summary, by priority: a pending or failed intervention, a completed one awaiting
+ * recovery, a current critical anomaly, a confirmed execution inconsistency, elevated risk, a relevant system
+ * degradation, then normal. A stale or disconnected monitor and unusable camera frames are said in any case.
+ * Returns {level, text}.
  */
 export function contextSummary(state, status, now, windowStart, { gap = 3, system = null, check = null } = {}) {
   const fresh = status.state === "connected" && status.observationAge !== null && status.observationAge <= Math.max(3, status.staleAfter || 3);
-  const tool = runningAttempt(state);
-  const open = (state.interventions || []).findLast((r) => OPEN.includes(r.state) && r.task === state.task?.id);
+  const notes = [];
+  if (state.readings.length && !fresh) {
+    notes.push(status.state === "offline" ? "Monitor disconnected" : `Monitor stale (last observation ${Math.round(status.observationAge ?? 0)} s ago)`);
+  }
+  const quality = state.frame_quality?.state;
+  if (quality === "invalid" || quality === "suspected_invalid") notes.push("Visual input degraded");
+  const said = (level, text) => ({ level, text: [text, ...notes].join(" · ") });
+  const task = state.task?.id;
+  const rows = (state.interventions || []).filter((r) => r.task === task);
+  const open = rows.findLast((r) => OPEN.includes(r.state) || r.state === "failed" || r.state === "rejected");
   if (open) {
-    const what = state.incidents.find((i) => i.id === open.incident)?.observation?.signal;
-    const head = open.initiator === "Human operator" ? "Operator stop" : `${what ? signalLabel(what).replace(" probability", "") : "Anomaly"} detected`;
-    return { level: "intervention", text: `${head} on ${attemptLabel(toolById(state, open.tool))} · ${RESPONSE[open.state] || stateText(open.state)[1]}` };
+    const card = incidentCard(state, open);
+    const short = { requested: "Abort requested · Awaiting controller" }[open.state] || card.outcome;
+    return said("intervention", `${card.title} · ${short}`);
+  }
+  const tool = runningAttempt(state);
+  const done = rows.findLast((r) => r.state === "confirmed" && !r.stages.some(([s]) => s === "retry_finished"));
+  if (done && (!tool || done.tool !== tool.id)) {
+    const card = incidentCard(state, done);
+    return said("intervention", `${card.title} · ${card.outcome}`);
   }
   if (!state.readings.length && !check && !system?.required) {
-    return { level: "unavailable", text: "No monitoring service connected: session, agent and skill events only" };
+    return said("unavailable", "No monitoring service connected: session, agent and skill events only");
   }
   const run = fresh ? continuousRisk(state.readings, gap) : null;
-  if (run) {
-    const runTool = toolById(state, run.tool);
-    const where = runTool ? ` (${attemptLabel(runTool)})` : "";
-    const response = run.tool && run.tool === tool?.id ? "Monitoring" : runTool ? "That attempt has ended" : "Attempt unknown";
-    const label = signalLabel(run.signal);
-    return { level: run.high ? "anomaly" : "elevated",
-      text: `${label} ${run.high ? "high" : "elevated"} for ${Math.round(run.seconds)} s continuously${where} · ${response}` };
+  const where = (id) => { const t = toolById(state, id); return t ? ` · ${attemptLabel(t)}` : ""; };
+  if (run?.high) {
+    const lasting = run.seconds >= 1 ? ` · ${Math.round(run.seconds)} s continuously` : "";
+    return said("anomaly", `${signalLabel(run.signal).replace(" probability", "")} risk high${where(run.tool)}${lasting}`);
   }
-  if (check && (check.state === "suspected" || check.state === "confirmed")) {
-    return { level: check.severity === "critical" ? "anomaly" : "elevated", text: `Execution state mismatch · ${check.rule}` };
+  if (check && check.state === "confirmed") return said("anomaly", `Execution state mismatch · ${check.rule}`);
+  if (run) return said("elevated", `${signalLabel(run.signal).replace(" probability", "")} risk elevated${where(run.tool)}`);
+  if (system?.required) return said("elevated", `Required service unavailable: ${system.names.join(", ")}`);
+  if (!state.readings.length) return said("unavailable", "No monitoring service connected: session, agent and skill events only");
+  if (!fresh) return said("unknown", "Current behaviour assessment unavailable");
+  return said("normal", "Monitoring active · No significant concerns");
+}
+
+// the interventions track's standard symbols: [shape, tone]
+export const MARKERS = {
+  abort_requested: ["stop", "danger"], acknowledged: ["check", "running"], stopped: ["square", "danger"],
+  recovery_started: ["diamond", "violet"], recovery_completed: ["diamond", "success"], human: ["person", "running"],
+  failed: ["cross", "danger"],
+};
+const MARKER_TEXT = { abort_requested: "Abort requested", acknowledged: "Controller acknowledged", stopped: "Skill stopped",
+  recovery_started: "Recovery started", recovery_completed: "Recovery completed", human: "Human intervention",
+  failed: "Intervention failed" };
+
+/**
+ * The interventions track's events in [start, end]: each {id, t, kind, label, tool, intervention, incident} with
+ * KIND a MARKERS key, only from recorded stages and incidents (a timeout is shown where the deadline passed).
+ */
+export function eventMarkers(state, start, end) {
+  const out = [];
+  const add = (id, t, kind, extra) => { if (t !== null && t >= start && t <= end) out.push({ id, t, kind, label: MARKER_TEXT[kind], ...extra }); };
+  for (const r of state.interventions || []) {
+    const extra = { tool: r.tool, intervention: r.id, incident: r.incident };
+    for (const [stage, t, source, note] of r.stages) {
+      const ok = /ended with OK/.test(note);
+      const kind = { requested: r.initiator === "Human operator" ? "human" : "abort_requested", accepted: "acknowledged",
+        confirmed: "stopped", failed: "failed", rejected: "failed", retry_started: "recovery_started",
+        retry_finished: ok ? "recovery_completed" : "failed" }[stage];
+      if (kind) add(`${r.id}:${stage}`, t, kind, { ...extra, detail: `${source}${note ? ` · ${note}` : ""}` });
+    }
+    const requested = r.stages.find(([s, t]) => s === "requested" && t !== null);
+    if (requested && r.state === "timed_out") add(`${r.id}:timeout`, requested[1] + r.ack_timeout, "failed", { ...extra, detail: `No acknowledgement within ${r.ack_timeout} s` });
   }
-  if (system?.required) return { level: "elevated", text: `Required service unavailable: ${system.names.join(", ")}` };
-  if (!state.readings.length) return { level: "unavailable", text: "No monitoring service connected: session, agent and skill events only" };
-  if (!fresh) return { level: "unknown", text: `Monitoring ${status.state} · Current behaviour assessment unavailable` };
-  const total = cumulativeRisk(state.readings, windowStart, now);
-  const previous = tool ? previousAttemptRisk(state.readings, tool.id, gap) : null;
-  if (previous && previous.seconds >= 1) {
-    return { level: "normal", text: `Previous ${attemptLabel(toolById(state, previous.tool))}: ${signalLabel(previous.signal).toLowerCase()} elevated for ${Math.round(previous.seconds)} s · New attempt running` };
+  for (const i of state.incidents) {
+    const kind = { recovery_start: "recovery_started", recovery_ok: "recovery_completed", recovery_fail: "failed", replan: "recovery_started",
+      stop: "human", reset: "human", pause: i.initiator === "Live monitor" ? null : "human", resume: "human" }[i.tag];
+    if (kind) add(i.id, i.t, kind, { incident: i.id, tool: i.tool, detail: i.title });
   }
-  if (total) return { level: "normal", text: `Current condition normal · elevated risk for ${total} s of the last 60 s` };
-  return { level: "normal", text: "Monitoring active · No anomalies detected in the last minute" };
+  return out.sort((a, b) => a.t - b.t);
+}
+
+/** MARKERS at x positions (X(t)) grouped where they would overlap (closer than PX): [{x, t, items}], none hidden. */
+export function clusterMarkers(markers, x, px = 12) {
+  const clusters = [];
+  for (const m of markers) {
+    const at = x(m.t);
+    const last = clusters.at(-1);
+    if (last && at - last.x1 < px) {
+      last.items.push(m);
+      last.x1 = at;
+      last.x = (last.x0 + at) / 2;
+    } else clusters.push({ x: at, x0: at, x1: at, t: m.t, items: [m] });
+  }
+  return clusters;
 }

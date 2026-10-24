@@ -41,7 +41,7 @@ class MonitorApp:
         self.make_client = make_client or self._connect
         self.harness_state = harness_state or (lambda harness: harness_status(harness).detail or None)
         self.watcher = watcher or Watcher(self.config, on_change=self._statuses)
-        self.video = video or SimVideo(self.on_frame)
+        self.video = video or SimVideo(self.on_frame, on_error=lambda error: self.console.frame_undecodable(error))
         self.client, self.harness, self.sim = None, None, None
         self.running = threading.Lock()  # one scenario at a time
         self.message = ""

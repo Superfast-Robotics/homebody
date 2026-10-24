@@ -19,6 +19,7 @@ const ERRORS = {
   CHECK_FAILED: "The goal's check does not hold", RECOVERY_LIMIT: "Recovery limit reached", ERROR: "Skill error",
   MONITOR_STOPPED: "Stopped by monitor", OPERATOR_STOPPED: "Stopped by operator",
 };
+const DETERMINERS = new Set(["a", "an", "the", "one", "some", "any"]);
 // where a goal's sentence leaves its action for the details (where to, how, with what kept in place)
 const CLAUSE = [",", ";", " from ", " to the ", " into ", " inside ", " onto ", " on the ", " in the ", " with ", " while ",
   " keeping ", " without ", " so that "];
@@ -42,7 +43,11 @@ export function shortLabel(text, limit = 42) {
 export function goalLabel(text, limit = 42) {
   const clean = String(text || "").trim().replace(/\.$/, "");
   const cuts = CLAUSE.map((c) => clean.toLowerCase().indexOf(c)).filter((i) => i > 0 && clean.slice(0, i).trim().split(/\s+/).length >= 2);
-  return shortLabel(cuts.length ? clean.slice(0, Math.min(...cuts)) : clean, limit);
+  const head = cuts.length ? clean.slice(0, Math.min(...cuts)) : clean;
+  // "Pick one accessible jam jar" -> "Pick accessible jam jar": determiners and counts after the verb carry no action
+  const words = head.split(/\s+/);
+  const kept = [words[0], ...words.slice(1).filter((w, i) => i > 0 || !DETERMINERS.has(w.toLowerCase()))];
+  return shortLabel(kept.length >= 2 ? kept.join(" ") : head, limit);
 }
 
 const STATUS = { running: "Running", success: "Completed", failure: "Failed", pending: "Pending", skipped: "Ended" };
@@ -69,7 +74,7 @@ export function operatorText(node, elapsed) {
     return { label, meta: STATUS[node.status] || node.status };
   }
   if (node.type === "attempts") {
-    const reasons = [...new Set(d.codes.map(errorText))].join(", ");
+    const reasons = [...new Set(d.codes.filter((code) => code && code !== "OK").map(errorText))].join(", ");
     return { label: `${d.count} earlier attempt${d.count > 1 ? "s" : ""}`,
       meta: d.failed === d.count ? `All failed · ${reasons}` : `${d.failed} failed · ${reasons}` };
   }

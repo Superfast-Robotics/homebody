@@ -2,7 +2,7 @@
 // replanning. Collapsing is the operator's; following the running node pauses while the operator looks around.
 import { $, clock, duration, h, icon, setIcon, setText, storage, toggleClass } from "./dom.js";
 import { retrySummary } from "./execution.js";
-import { operatorText } from "./story.js";
+import { goalLabel, operatorText } from "./story.js";
 
 const STATE_ICON = { success: "check", failure: "x", skipped: "skip", paused: "pause" };
 const KIND_ICON = { root: "tree", sequence: "sequence", fallback: "fallback", attempts: "list" };
@@ -287,9 +287,11 @@ export class TreeView {
     }
     const elapsed = start ? duration((end ?? now) - start) : "";
     const text = operatorText(node, elapsed);
-    if (node.type === "goal" && d.used > 1) { // the goal's retries, from its recorded attempts
+    if (node.type === "goal" && d.used > 0) { // the goal's attempts, from its recorded calls
       const tools = state.tools.filter((t) => t.goal === d.goal && state.task && t.start >= state.task.start);
-      text.meta = `${STATUS_TEXT[node.status] || node.status} · ${retrySummary(tools, d.budget)}${elapsed ? ` · ${elapsed}` : ""}`;
+      const [count, ...previous] = retrySummary(tools, d.budget).split(" · ");
+      if (d.used > 1 || node.status === "running") text.label = `${goalLabel(node.label, 24)} · ${count}`;
+      text.meta = [STATUS_TEXT[node.status] || node.status, ...previous, elapsed].filter(Boolean).join(" · ");
     }
     if (node.type === "goal" && d.recovers) {
       const started = state.incidents.findLast((i) => i.tag === "recovery_start" && i.node === d.goal);

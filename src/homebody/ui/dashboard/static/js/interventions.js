@@ -86,10 +86,18 @@ export function activeIntervention(state) {
     (["failed", "rejected"].includes(row.state) && incidents.get(row.incident)?.state !== "resolved"))) || null;
 }
 
-/** Open alerts grouped by incident: each {incident, interventions}, newest first; an alert without a shared
- * incident stands alone. */
+/** Open alerts grouped by what they are about: the alerts of one attempt (a detection and what followed on it) are
+ * one group with a count, newest first; an alert without an attempt stands alone, and unrelated ones never merge.
+ * Each {incident: the newest, incidents, interventions}. */
 export function alertGroups(state) {
   const rows = state.interventions || [];
-  return state.incidents.filter((i) => i.alert && i.state !== "resolved").reverse()
-    .map((incident) => ({ incident, interventions: rows.filter((row) => row.incident === incident.id) }));
+  const groups = new Map();
+  for (const incident of state.incidents.filter((i) => i.alert && i.state !== "resolved").reverse()) {
+    const key = incident.tool ? `tool:${incident.tool}` : `incident:${incident.id}`;
+    if (!groups.has(key)) groups.set(key, { incident, incidents: [], interventions: [] });
+    const group = groups.get(key);
+    group.incidents.push(incident);
+    for (const row of rows) if (row.incident === incident.id && !group.interventions.includes(row)) group.interventions.push(row);
+  }
+  return [...groups.values()];
 }

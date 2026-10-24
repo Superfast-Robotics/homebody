@@ -65,6 +65,15 @@ simulation server; a local run's controller is in-process). Tolerances are `[das
 suspected mismatch, a controller that reports stopped or failed under a running attempt a confirmed one (critical
 while a stop on that attempt is open), and a controller status older than `stale_s` is Unknown, never a mismatch.
 
+**Execution certainty** (`executionCertainty`) adds the executor's report freshness (`report_overdue_s`): an attempt
+whose executor has not reported for that long is "execution status uncertain", never stopped or moving; its severity
+grows with how overdue it is, with stale monitoring, and with an open stop on that attempt.
+
+**Camera frames** (`ui/dashboard/frames.py`) are checked as they arrive: blank, dimensionless or undecodable frames are
+invalid; a nearly uniform frame (`frame_uniform_std`) or the same image for `frame_repeat_s` of simulated time is
+suspected invalid. Each monitor reading records the frame quality when it arrived, so a verdict on unusable frames is
+marked. Transport, freshness and usability are shown apart.
+
 **Task impact of a degraded service** (`ui/servers.py`) comes from established links only: the harness the dashboard
 drives runs the task, and a simulation server is a critical dependency when that harness reports being attached to
 its endpoint; without that report the impact is unknown.
@@ -102,5 +111,7 @@ What the dashboard cannot show yet, and shows as Unknown or Unverified instead:
   is lost; the client keeps the harness's number beside its own (`HarnessClient.calls`) but readings carry the client's.
 * **Controller on `homebody connect`.** The harness's controller status is not sent to a connect dashboard, so its
   Controller row is Unknown; the monitor app reads it from the simulation server.
+* **Frames the monitor itself read.** The frame check sees the frames the dashboard receives; on a local run the
+  monitor reads the session's own captures, which are the same camera but not provably the same frames.
 * **Event sequence numbers.** Events are ordered by arrival and their recorded times; a sequence number from the
   harness would make out-of-order detection exact after a reconnect.

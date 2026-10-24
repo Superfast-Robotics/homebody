@@ -113,8 +113,9 @@ class SimVideo:
     """The active simulation server's camera stream: ON_FRAME({camera, stamp, rgb}) for each frame received.
     `watch(endpoint)` switches servers (None: none)."""
 
-    def __init__(self, on_frame):
-        self.on_frame, self.endpoint = on_frame, None
+    def __init__(self, on_frame, on_error=lambda error: None):
+        """ON_ERROR(text) for a frame that arrived but could not be decoded."""
+        self.on_frame, self.on_error, self.endpoint = on_frame, on_error, None
         self.frames, self.error = 0, ""
         self._lock, self._stop, self._changed = threading.Lock(), threading.Event(), threading.Event()
         self._thread = threading.Thread(target=self._run, name="sim-video", daemon=True)
@@ -153,6 +154,7 @@ class SimVideo:
                         frame = decode(payload)
                     except ValueError as error:
                         self.error = str(error)[:200]
+                        self.on_error(self.error)
                         continue
                     self.frames += 1
                     self.on_frame(frame)

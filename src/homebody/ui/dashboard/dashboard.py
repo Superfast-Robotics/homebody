@@ -10,6 +10,7 @@ from threading import Condition, Thread
 from homebody.session.settings import Topdown
 from homebody.skills import navigate, pick, place
 from homebody.ui.controls import capabilities
+from homebody.ui.dashboard.frames import FrameCheck
 from homebody.ui.dashboard.server import Hub
 from homebody.ui.dashboard.session_state import session_state
 from homebody.ui.dashboard.store import PLANNER, Store
@@ -51,6 +52,7 @@ class Dashboard:
                            timing=timing)
         self.overlays = Overlays(topdown_settings if topdown_settings is not None else Topdown())
         self.history = History()
+        self.frames = FrameCheck(self.store.timing)  # whether the robot camera's frames are usable
         self.places = places  # the scene's fixtures, for a location label grounded in its own metadata
         self.scene_view = self.session = self._scene_server = None
         self.remote_state = None  # the task, plan and hands a harness server sent, for a session elsewhere
@@ -127,6 +129,7 @@ class Dashboard:
         a redraw request) skips the frame-rate limit, for overlays that just changed."""
         force, self._force, now = force or self._force, False, self.clock()
         meta = {"t": now, "sim": float(frame.time), "seq": int(frame.sequence), "epoch": int(frame.epoch)}
+        self.check_frame(frame.rgb, now, float(frame.time))
         wanted = self.hub.wanted() & set(LIVE)
         for view in wanted:
             if force or now - self._sent.get(view, float("-inf")) >= FRAME_PERIOD:
@@ -242,8 +245,9 @@ class Dashboard:
 
     def monitor(self, reading: dict):
         """The adapter a monitoring service feeds: one reading (t, level, kind observation or heartbeat, source,
-        risk, threshold, confidence, reason, synthetic). Raises ValueError for a malformed reading."""
-        self.store.monitor(reading)
+        risk, threshold, confidence, reason, synthetic). Raises ValueError for a malformed reading. The camera's
+        frame quality when it arrived goes with it, so a visual verdict on unusable frames can be told apart."""
+        self.store.monitor({**reading, "frame_quality": self.frames.quality.state})
         self.hub.changed()
 
     def monitor_update(self, view):
@@ -265,8 +269,26 @@ class Dashboard:
                            initial_task=initial_task, clock=clock, timing=self.store.timing)
         self.history.clear()
         self.overlays.clear()
+        self.frames = FrameCheck(self.store.timing)
         self._stills, self._sent, self._telemetry_at, self.remote_state = {}, {}, float("-inf"), None
         self.hub.changed()
+
+    def check_frame(self, rgb, now, sim_time=None):
+        """The robot camera's frame quality after RGB; a change is logged and sent."""
+        before = self.frames.quality.state
+        quality = self.frames.check(rgb, now, sim_time)
+        if quality.state != before:
+            self.store.log("warning" if quality.state != "valid" else "info", "camera",
+                           f"Camera frames {quality.state.replace('_', ' ')}{': ' + quality.reason if quality.reason else ''}")
+            self.hub.changed()
+
+    def frame_undecodable(self, error: str):
+        """A stream frame that could not be decoded."""
+        before = self.frames.quality.state
+        self.frames.undecodable(self.clock(), error)
+        if before != "invalid":
+            self.store.log("warning", "camera", f"Undecodable camera frame: {error}")
+            self.hub.changed()
 
     # --- frames from elsewhere (a harness server, a simulation server's stream) ---
     def remote_frame(self, view, rgb, meta=None):
@@ -280,6 +302,7 @@ class Dashboard:
             self.hub.frame(view, {"t": now, **meta}, jpeg(rgb))
         if view != "robot":
             return
+        self.check_frame(rgb, now, meta.get("sim"))
         if self.history.due(now):
             self.store.frame_id = self.history.add(now, jpeg(rgb, HISTORY_QUALITY, HISTORY_WIDTH))
         if now - self._telemetry_at < TELEMETRY_PERIOD:
@@ -392,6 +415,7 @@ class Dashboard:
         views = {name: {"label": label, "available": live or self._stills.get(name, False)}
                  for name, (label, live) in VIEWS.items()}
         extras = {name: provide() for name, provide in self.extras.items()}
+        extras["frame_quality"] = self.frames.snapshot()
         return {**state, **extras, "views": views, "history": self.history.index(), "auto_cameras": AUTO_CAMERAS,
                 "scene_port": self.scene_port if self._scene_server is not None else None}
 

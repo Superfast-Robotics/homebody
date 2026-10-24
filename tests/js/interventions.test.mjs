@@ -70,3 +70,13 @@ test("signals are named, sustained risk is measured, and alerts group by their i
   const groups = alertGroups(state);
   assert.deepEqual(groups.map((g) => [g.incident.id, g.interventions.map((r) => r.id)]), [["x3", ["v2"]], ["x1", ["v1"]]]);
 });
+
+test("alerts on one attempt group with a count, and unrelated alerts stay apart", () => {
+  const state = { incidents: [
+    { id: "x1", alert: true, state: "active", tool: "t4" }, { id: "x2", alert: true, state: "active", tool: "t4" },
+    { id: "x3", alert: true, state: "active", tool: "t3" }, { id: "x4", alert: true, state: "active", tool: null }],
+  interventions: [row("requested", [requested], { id: "v4", incident: "x1" })] };
+  const groups = alertGroups(state);
+  assert.deepEqual(groups.map((g) => [g.incident.id, g.incidents.length, g.interventions.map((r) => r.id)]),
+    [["x4", 1, []], ["x3", 1, []], ["x2", 2, ["v4"]]]);
+});
