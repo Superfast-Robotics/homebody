@@ -5,7 +5,7 @@ import { clock, duration, tokens } from "./dom.js";
 import { MARKERS, attemptLabel, clusterMarkers, eventMarkers, incidentCard } from "./execution.js";
 import { signalLabel, stateText } from "./interventions.js";
 import { observationSegments, riskBuckets, riskSources, spans } from "./model.js";
-import { TIMELINE, activityText, observationLabel, segmentLabel, segmentStyle } from "./timeline_style.js";
+import { INSPECT_ROWS, TIMELINE, activityText, observationLabel, rowAt, segmentLabel, segmentStyle } from "./timeline_style.js";
 
 const ROWS = [["goal", 26], ["skill", 26], ["decisions", 26], ["readings", 26], ["risk", 30], ["interventions", 34], ["axis", 20]];
 const LEFT = 8, RIGHT = 8; // px margins of the plot
@@ -33,7 +33,7 @@ export class Timeline {
     this.running = true;
     new ResizeObserver(() => this.resize()).observe(canvas.parentElement);
     canvas.addEventListener("mousemove", (event) => this.move(event));
-    canvas.addEventListener("mouseleave", () => { this.hover = null; this.tooltip.hidden = true; });
+    canvas.addEventListener("mouseleave", () => { this.hover = this.mouse = null; this.tooltip.hidden = true; });
     canvas.addEventListener("click", (event) => this.click(event));
     canvas.addEventListener("keydown", (event) => this.keys(event));
     this.loop = this.loop.bind(this);
@@ -115,7 +115,30 @@ export class Timeline {
     this.transitions(view, state);
     this.interventions(view, state);
     this.axis(view);
+    this.rows = view.rows;
+    this.focused(view);
     this.cursors(view);
+  }
+
+  /** The bar under the cursor in a row that does not inspect (goal, skill, decisions, readings, risk): outlined, so
+   * the operator sees which bar the tooltip's full text belongs to. */
+  focused({ ctx, c }) {
+    if (!this.mouse || INSPECT_ROWS.includes(rowAt(this.rows, this.mouse.y))) return;
+    const hit = this.hitAt(this.mouse.x, this.mouse.y);
+    if (!hit || hit.weak) return;
+    ctx.save();
+    ctx.shadowColor = "rgba(167, 139, 250, 0.45)";
+    ctx.shadowBlur = 8;
+    ctx.strokeStyle = c.violet || "#A78BFA";
+    ctx.lineWidth = 1.5;
+    this.rect(ctx, hit.x0 + 0.5, hit.y0 + 2.5, Math.max(4, hit.x1 - hit.x0 - 1), hit.y1 - hit.y0 - 5, 4);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  hitAt(x, y) {
+    const hits = this.hits.filter((hit) => x >= hit.x0 && x <= hit.x1 && y >= hit.y0 && y <= hit.y1);
+    return hits.findLast((h) => !h.weak) || hits[0] || null;
   }
 
   /** The selected attempt's interval (else the running one's), faintly across the tracks, so its readings and markers
@@ -533,16 +556,20 @@ export class Timeline {
   at(event) {
     const box = this.canvas.getBoundingClientRect();
     const x = event.clientX - box.left, y = event.clientY - box.top;
-    const hits = this.hits.filter((hit) => x >= hit.x0 && x <= hit.x1 && y >= hit.y0 && y <= hit.y1);
-    const hit = hits.findLast((h) => !h.weak) || hits[0] || null;
-    return { x, hit, t: this.time(x, this.end(), this.canvas.clientWidth) };
+    return { x, y, hit: this.hitAt(x, y), t: this.time(x, this.end(), this.canvas.clientWidth),
+      inspects: INSPECT_ROWS.includes(rowAt(this.rows, y)) };
   }
 
   move(event) {
-    const { x, hit, t } = this.at(event);
-    this.hover = x >= LEFT ? t : null;
-    this.tooltip.hidden = false;
-    this.tooltip.textContent = hit ? this.describe(hit) : `${clock(t)}\nClick to inspect this moment`;
+    const { x, y, hit, t, inspects } = this.at(event);
+    this.mouse = { x, y };
+    this.hover = inspects && x >= LEFT ? t : null; // the inspect line only where a click inspects
+    this.canvas.style.cursor = inspects && x >= LEFT ? "pointer" : "default";
+    const text = inspects ? (hit ? this.describe(hit) : `${clock(t)}\nClick to inspect this moment`)
+      : hit && !hit.weak ? this.describe(hit).replace(/\n?Click to inspect$/, "") : "";
+    this.tooltip.hidden = !text;
+    if (!text) return;
+    this.tooltip.textContent = text;
     const left = Math.min(event.clientX + 14, innerWidth - this.tooltip.offsetWidth - 8);
     this.tooltip.style.left = `${left}px`;
     this.tooltip.style.top = `${Math.max(8, event.clientY - this.tooltip.offsetHeight - 12)}px`;
@@ -615,8 +642,8 @@ export class Timeline {
   }
 
   click(event) {
-    const { x, hit, t } = this.at(event);
-    if (x < LEFT) return;
+    const { x, hit, t, inspects } = this.at(event);
+    if (x < LEFT || !inspects) return; // the other rows only highlight and explain what is under the cursor
     if (hit && !hit.weak && hit.kind !== "transition") {
       if (!this.app.open(hit.kind, hit.item)) this.app.inspect(hit.t);
     } else {

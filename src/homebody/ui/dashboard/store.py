@@ -117,7 +117,7 @@ class Store(PlanTracking, InterventionTracking):
     # --- intervals ---
     def _begin(self, track, label, detail=None):
         self._end(track, "ended")
-        interval = Interval(self._id("i"), track, clip(label, 120), self.clock(), detail=detail or {})
+        interval = Interval(self._id("i"), track, clip(label, 600), self.clock(), detail=detail or {})
         self.intervals[interval.id] = interval
         self._open[track] = interval.id
 

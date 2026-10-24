@@ -83,3 +83,12 @@ export function observationLabel(segment) {
   const rate = seconds >= 1 ? ` · ${(n / seconds).toFixed(1)}/s` : "";
   return `${LEVELS[segment.level] || segment.level} · ${n} reading${n === 1 ? "" : "s"}${rate}`;
 }
+
+/** The timeline rows a click inspects: only the interventions row, where the moments worth inspecting are marked. The
+ * other rows (goal, skill, decisions, readings, risk) only highlight the bar under the cursor and show its full text. */
+export const INSPECT_ROWS = ["interventions"];
+
+/** The name of the row of ROWS ({name: {y, h}}) at Y, or null outside them. */
+export function rowAt(rows, y) {
+  return Object.entries(rows || {}).find(([, r]) => y >= r.y && y < r.y + r.h)?.[0] ?? null;
+}

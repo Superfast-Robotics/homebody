@@ -104,3 +104,12 @@ test("an observation bar names the decision model's held activity, and a new act
   assert.equal(observationLabel(segments[1]), "grasp jar · 0.90");
   assert.equal(activityText("none_of_these"), "None of the labels");
 });
+
+test("only the interventions row inspects on click; the other rows highlight and explain", async () => {
+  const { INSPECT_ROWS, rowAt } = await import("../../src/homebody/ui/dashboard/static/js/timeline_style.js");
+  const rows = { goal: { y: 0, h: 26 }, skill: { y: 26, h: 26 }, interventions: { y: 52, h: 34 } };
+  assert.equal(rowAt(rows, 10), "goal");
+  assert.equal(rowAt(rows, 60), "interventions");
+  assert.equal(rowAt(rows, 200), null);
+  assert.deepEqual(INSPECT_ROWS, ["interventions"]);
+});
