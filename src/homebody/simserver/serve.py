@@ -17,10 +17,10 @@ def sim_serve(args, settings) -> int:
     stopped = threading.Event()
     for signum in (signal.SIGTERM, signal.SIGINT):
         signal.signal(signum, lambda *_: stopped.set())
-    print(f"Loading {args.scene.name}: physics, then the render process…", flush=True)
+    print(f"Loading {args.scene.name}: physics, then the render processes (calls, stream)…", flush=True)
     backend = MujocoBackend(args.root, settings, scene=args.scene, render=False)
-    renderer = RenderProcess(args.root, settings, args.scene)
-    server = SimServer(backend, renderer, settings, args.scene).start()
+    renderer, streamer = RenderProcess(args.root, settings, args.scene), RenderProcess(args.root, settings, args.scene)
+    server = SimServer(backend, renderer, settings, args.scene, stream_renderer=streamer).start()
     described = server.rpc_describe()
     print(json.dumps({"endpoint": settings.sim_server.endpoint, "camera_stream": settings.sim_server.stream,
                       "scene": described["scene"], "scene_identity": described["scene_identity"],

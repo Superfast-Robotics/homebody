@@ -79,6 +79,8 @@ test("execution certainty: confirmed, overdue (uncertain, never stopped), and co
   assert.match(overdue.reasons[0], /Executor report overdue \(35 s\)/);
   assert.equal(executionCertainty(running, 45).severity, "info"); // overdue, but briefly and the monitor watches
   assert.equal(executionCertainty(running, 45, { monitorFresh: false }).severity, "warning");
+  const held = executionCertainty({ ...running, controls: { ...running.controls, paused: true } }, 60);
+  assert.deepEqual([held.state, held.severity], ["paused", "info"]); // the operator's pause: a quiet executor is expected
   const ended = base({ status: "Thinking", tools: [tool("t1", "failed", { code: "NO_GRASP", end: 20 })] });
   assert.equal(executionCertainty(ended, 30).state, "confirmed_stopped");
   assert.equal(executionCertainty(base({ status: "Ready" }), 30).state, "unknown");

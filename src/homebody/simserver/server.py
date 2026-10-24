@@ -2,8 +2,10 @@
 
 The physics thread steps the backend (MujocoBackend: the walking policy and the arm and hand servos) one controller
 period at a time against the wall clock, whether or not a client is attached. Commands (base_velocity, arm_target,
-grip, stop) take effect at once; `advance(epoch, seconds)` waits until simulated time has moved on by SECONDS, as on
-the real robot. A velocity command expires after physics.command_timeout without a new one, so a client that goes
+grip, stop) take effect at once; `advance(epoch, seconds)` waits for simulated time on a fixed timeline, as a real
+controller ticks: each advance ends SECONDS after the previous one ended, so a client's own work between two advances
+(a measurement, a servo step) does not stretch its control period; a client further behind than one step starts the
+timeline again from now. A velocity command expires after physics.command_timeout without a new one, so a client that goes
 away leaves the robot standing. Renders (the head frame, the wrists, the observer) run in a render process on a copy
 of the state, and the cameras are published on the stream in warehouse-sim's format, so the monitor app shows this
 server like a warehouse-sim one. `describe` says what the monitor app reads of a warehouse-sim server, plus the engine
@@ -32,16 +34,21 @@ SAMPLES = 4096  # evaluation samples kept for the client to collect
 
 class SimServer:
     """BACKEND (a MujocoBackend or a stand-in) stepped at real time, served on SETTINGS.sim_server's addresses.
-    RENDERER renders sent states (render.RenderProcess). CLOCK and SLEEP are the wall clock (tests pass fakes)."""
+    RENDERER renders sent states for the Robot calls (render.RenderProcess) and STREAM_RENDERER those of the camera
+    stream (by default the same), so a call's render never waits behind the stream's. CLOCK and SLEEP are the wall
+    clock (tests pass fakes)."""
 
-    def __init__(self, backend, renderer, settings, scene: Path, *, clock=time.monotonic, sleep=time.sleep):
+    def __init__(self, backend, renderer, settings, scene: Path, *, stream_renderer=None, clock=time.monotonic,
+                 sleep=time.sleep):
         self.backend, self.renderer, self.settings, self.scene = backend, renderer, settings, Path(scene)
+        self.stream_renderer = stream_renderer or renderer
         self.config = settings.sim_server
         self.clock, self.sleep = clock, sleep
         self.identity = protocol.scene_identity(self.scene) if self.scene.is_dir() else ""
         self.episode = uuid.uuid4().hex
         self.lock = threading.Condition()  # held for every touch of the backend; notified after each step
         self.fault: str | None = None  # why physics stopped (PhysicsInvalid) until a reset
+        self.timeline: tuple[int, float] | None = None  # (epoch, simulated time the last advance ended at)
         self.samples: deque = deque(maxlen=SAMPLES)
         self.steps, self.dropped_s, self.started = 0, 0.0, clock()
         self.stream_errors, self.stream_error = 0, ""  # stream frames not rendered, and why the last one was not
@@ -166,7 +173,11 @@ class SimServer:
             self._check()
             self.backend.limits.epoch(epoch, self.backend.epoch)
             seconds = self.backend.limits.duration(seconds)
-            until = self.backend.time + seconds - 0.5 / self.settings.physics.control_hz
+            now = self.backend.time
+            last = self.timeline[1] if self.timeline is not None and self.timeline[0] == epoch else None
+            end = (last if last is not None and 0 <= now - last < seconds else now) + seconds
+            self.timeline = (epoch, end)
+            until = end - 0.5 / self.settings.physics.control_hz
             while self.backend.time < until and self.fault is None and not self._stop.is_set():
                 self.lock.wait(1.0)
             self._check()
@@ -255,7 +266,7 @@ class SimServer:
             try:
                 with self.lock:
                     state = state_of(self.backend)
-                views = self.renderer.render("stream", state)
+                views = self.stream_renderer.render("stream", state)
             except Exception as error:  # noqa: BLE001 -- a missed stream frame is only a missed frame; the next follows
                 self.stream_errors, self.stream_error = self.stream_errors + 1, f"{type(error).__name__}: {error}"[:200]
                 continue
@@ -276,3 +287,5 @@ class SimServer:
             os.close(self._wake_read)
             os.close(self._wake)
         self.renderer.close()
+        if self.stream_renderer is not self.renderer:
+            self.stream_renderer.close()

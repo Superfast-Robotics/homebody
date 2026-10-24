@@ -184,7 +184,8 @@ export function lastExecutorReport(state) {
 }
 
 /**
- * How certain the dashboard is about execution: confirmed executing (a running attempt, the executor reporting within
+ * How certain the dashboard is about execution: paused (the operator's pause holds the running attempt, so a quiet
+ * executor is expected), confirmed executing (a running attempt, the executor reporting within
  * report_overdue_s, nothing disagreeing), transitioning, uncertain (an overdue executor report, a mismatch, or an
  * unknown controller under a running attempt), confirmed stopped (the last attempt ended by its own result and nothing
  * executes) or unknown. Returns {state, severity, reasons, attempt, overdue}. Uncertain never claims the robot moved
@@ -198,6 +199,7 @@ export function executionCertainty(state, now, { monitorFresh = true } = {}) {
   const overdue = tool && report !== null ? Math.max(0, now - report) : null;
   const out = (s, severity, reasons = []) => ({ state: s, severity, reasons, attempt: tool, overdue, check });
   if (check.state === "transitioning") return out("transitioning", "info", [check.rule]);
+  if (tool && state.controls?.paused) return out("paused", "info", ["Paused by the operator: the skill holds"]);
   if (tool) {
     const reasons = [];
     if (overdue !== null && overdue > timing.report_overdue_s) reasons.push(`Executor report overdue (${Math.round(overdue)} s)`);

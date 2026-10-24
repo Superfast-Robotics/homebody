@@ -198,3 +198,18 @@ def test_a_harness_refuses_a_server_serving_another_scene(served, tmp_path):
 def test_a_server_that_does_not_answer_is_a_lost_link():
     with pytest.raises(sim_client.SimLinkLost):
         sim_client.Link(f"tcp://127.0.0.1:{port()}", timeout_s=0.3).call("describe")
+
+
+def test_advance_keeps_a_fixed_control_period_however_long_the_client_works_between_steps(served):
+    _, _, robot, _ = served
+    epoch = robot.epoch
+    robot.advance(epoch, 0.04)
+    start = robot.time
+    for _ in range(10):
+        time.sleep(0.02)  # the client's own work inside its 40 ms period
+        robot.advance(epoch, 0.04)
+    assert robot.time - start == pytest.approx(0.40, abs=0.03)  # ten periods, not ten periods plus the work
+    time.sleep(0.3)  # far behind: the timeline starts again from now rather than catching up
+    before = robot.time
+    robot.advance(epoch, 0.04)
+    assert robot.time - before == pytest.approx(0.04, abs=0.02)

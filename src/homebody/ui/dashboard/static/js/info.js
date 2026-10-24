@@ -13,7 +13,8 @@ const OUTCOME = { success: "success", success_with_recoveries: "success", partia
 const SKILLS = { navigate: "Navigate", pick: "Pick", place: "Place", call_coder: "Coding assistant" };
 const CAMERA = { live: "success", stale: "warning", reconnecting: "warning", offline: "danger", unknown: "" };
 const QUALITY = { valid: "Valid", suspected_invalid: "Suspected invalid", invalid: "Invalid", unknown: "Not checked yet" };
-const CERTAINTY = { confirmed_executing: ["success", "Confirmed executing"], transitioning: ["", "Transitioning"],
+const CERTAINTY = { confirmed_executing: ["success", "Confirmed executing"], paused: ["warning", "Paused (skill held)"],
+  transitioning: ["", "Transitioning"],
   uncertain: ["warning", "Execution status uncertain"], confirmed_stopped: ["success", "Confirmed stopped"],
   unknown: ["", "Unknown"] };
 
