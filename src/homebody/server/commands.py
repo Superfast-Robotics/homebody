@@ -179,10 +179,12 @@ def connect(args, settings, output) -> int:
     client = HarnessClient(args.url, token_file.read_text().strip(), folder=output / "remote")
     controls = RemoteControls(client)
     console = Dashboard(controls, host=args.host, port=args.port, scene_name="Harness",
-                        monitor=settings.monitor if settings.monitor.enabled else None)
+                        monitor=settings.monitor if settings.monitor.enabled else None, timing=settings.dashboard)
     console.extras["scenarios"] = lambda: client.presets
     console.extras["robot_link"] = lambda: {"state": "lost" if client.closed.is_set() else "connected",
                                             "detail": f"Harness at {args.url}"}
+    console.extras["controller"] = lambda: {"state": "unknown", "checked": None,
+                                            "detail": "This dashboard does not see the harness's controller"}
     console.handlers["run_scenario"] = lambda request: run_preset(controls, request)
     rollouts(console, settings, output)
     client.console = console
@@ -234,7 +236,7 @@ def monitor(args, settings, output) -> int:
         return 2
     controls = MonitorControls(None)
     console = Dashboard(controls, host=args.host, port=args.port, scene_name="Monitor app",
-                        monitor=settings.monitor if settings.monitor.enabled else None)
+                        monitor=settings.monitor if settings.monitor.enabled else None, timing=settings.dashboard)
     watch = None
     if settings.monitor.enabled:
         watch = Monitor(settings.monitor, VocabularyModel(settings.monitor), OpenAiDecisions(settings.monitor),

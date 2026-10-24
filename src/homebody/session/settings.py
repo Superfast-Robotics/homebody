@@ -12,6 +12,7 @@ from .config import (
     Coder,
     Collision,
     Curobo,
+    Dashboard,
     Grasp,
     Monitor,
     Navigate,
@@ -90,6 +91,7 @@ class Settings:
     monitor: Monitor = field(default_factory=Monitor)
     rollouts: Rollouts = field(default_factory=Rollouts)
     server: Server = field(default_factory=Server)
+    dashboard: Dashboard = field(default_factory=Dashboard)
     robot: Robot = field(default_factory=Robot)
 
     def __post_init__(self):

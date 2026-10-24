@@ -132,14 +132,18 @@ def test_the_servers_rows_say_who_answers_what_runs_where_and_the_harness_link()
                                                   {"profile": "homebody-warehouse_cart", "controller": {"running": True},
                                                    "stream": "tcp://127.0.0.1:5721", "overshoot": {"left_ankle_roll_joint": 0.04}},
                                                   checked=100.0)}
-    harness, cart, kitchen = server_rows(config, statuses, "demo_with_monitor", "warehouse_cart", now=101.0)
-    assert harness["health"] == "down" and "lost its simulation server tcp://127.0.0.1:5720" in harness["detail"]
-    assert harness["error"] == "does not answer" and harness["active"]
-    assert cart["health"] == "up" and "controller running" in cart["detail"] and "video on" in cart["detail"]
-    assert "left_ankle_roll_joint 0.040" in cart["detail"]
-    assert kitchen["name"] == "kitchen_baskets" and kitchen["detail"] == "not checked yet"
-    stalled = server_rows(config, statuses, now=200.0)[0]  # a stalled watcher shows as down
-    assert stalled["health"] == "down" and "no status for" in stalled["error"]
+    harness, cart, kitchen = server_rows(config, statuses, "demo_with_monitor", "warehouse_cart", now=101.0,
+                                         last_ok={("sim", "warehouse_cart"): 100.0})
+    assert harness["health"] == "degraded" and "lost its simulation server tcp://127.0.0.1:5720" in harness["detail"]
+    assert harness["error"] == "does not answer" and harness["active"] and harness["impact"] == "critical"
+    assert cart["health"] == "healthy" and "controller running" in cart["detail"] and "video on" in cart["detail"]
+    assert "left_ankle_roll_joint 0.040" in cart["detail"] and cart["last_ok"] == 100.0
+    assert cart["impact"] == "critical" and "active harness runs on it" in cart["dependency"]  # the harness says so
+    assert kitchen["name"] == "kitchen_baskets" and kitchen["health"] == "unknown"
+    assert kitchen["impact"] == "noncritical"  # not the active harness's server
+    stalled = server_rows(config, statuses, now=200.0)[0]  # a stalled watcher shows as unavailable
+    assert stalled["health"] == "unavailable" and "no status for" in stalled["error"]
+    assert server_rows(config, {}, None, "warehouse_cart", now=101.0)[1]["impact"] == "unknown"  # link not confirmed
 
 
 def test_the_robot_row_says_which_harness_runs_where_and_when_its_simulation_server_is_lost(tmp_path):
@@ -152,3 +156,14 @@ def test_the_robot_row_says_which_harness_runs_where_and_when_its_simulation_ser
     link = made.robot_link()
     assert link == {"state": "lost", "detail": "Harness demo_with_monitor on tcp://127.0.0.1:5720: does not answer"}
     assert made.console._snapshot()["robot_link"] == link
+
+
+def test_the_controller_state_is_the_simulation_servers_own_report(tmp_path):
+    made, _, _ = app(tmp_path, [])
+    assert made.controller_state()["state"] == "unknown"
+    made.sim = made.config.sims["warehouse_cart"]
+    made.statuses = {("sim", "warehouse_cart"): up(controller=False)}
+    state = made.controller_state()
+    assert state["state"] == "error" and "boom" in state["detail"]
+    made.statuses = {("sim", "warehouse_cart"): up()}
+    assert made.controller_state()["state"] == "running"

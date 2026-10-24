@@ -292,6 +292,20 @@ class Server:
 
 
 @dataclass(frozen=True)
+class Dashboard:
+    """How long the operator dashboard lets sources disagree before saying so. `transition_s`: a running attempt and
+    the executor's status may disagree this long while one catches up (a decision starting its skill, a skill
+    ending); longer is a suspected mismatch. `stale_s`: a controller or server status older than this is stale, so
+    the dashboard says Unknown rather than claim a mismatch. `ack_timeout_s`: a stop request unanswered this long
+    shows as timed out (a later answer still shows). `stop_s`: an attempt still running this long after the executor
+    took a stop is suspected of not stopping."""
+    transition_s: float = 3.0
+    stale_s: float = 8.0
+    ack_timeout_s: float = 10.0
+    stop_s: float = 20.0
+
+
+@dataclass(frozen=True)
 class Robot:
     """The G1's hands: "dex3", Unitree's three-finger Dex3-1 (the robot in assets/robot), or "dex1", the Dex1-1
     parallel gripper (the robot profile assets/robot/dex1, built by tools/build_dex1_hand.py, with its own pick and

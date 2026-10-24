@@ -170,7 +170,7 @@ def run(args, settings, output):
                          model_name=model_label(settings.agent),
                          topdown_settings=settings.topdown, render_in_background=True,
                          places=Places.from_scene(args.scene, task_scene.get("name", "")),
-                         monitor=settings.monitor if settings.monitor.enabled else None)
+                         monitor=settings.monitor if settings.monitor.enabled else None, timing=settings.dashboard)
         backend = MujocoBackend(args.root, settings, scene=args.scene, spawns=args.spawns)
         scene_update = None
         if ui is not None:
@@ -190,6 +190,7 @@ def run(args, settings, output):
                           semantic_context=semantic_prior(args.scene), monitor=monitor)
         if ui is not None:
             ui.session = session  # read on the session thread only, for the plan, task and hands
+            ui.extras["controller"] = lambda: {"state": "in_process", "detail": "The robot's controller runs in this process"}
             rollouts(ui, settings, output)
         assembled = True
         print(f"Evidence: {recorder.path}")

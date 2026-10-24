@@ -147,7 +147,8 @@ class MonitorApp:
     # --- the dashboard's Servers list and scenarios ---
     def attach(self, dashboard):
         """DASHBOARD shows this app's servers and scenarios and runs its commands."""
-        dashboard.extras.update(servers=self.server_rows, scenarios=self.scenarios, robot_link=self.robot_link)
+        dashboard.extras.update(servers=self.server_rows, scenarios=self.scenarios, robot_link=self.robot_link,
+                                controller=self.controller_state)
         dashboard.handlers.update(run_scenario=self._run_command, refresh_config=self._refresh_command)
 
     def robot_link(self) -> dict:
@@ -167,7 +168,23 @@ class MonitorApp:
             {"state": "lost", "detail": f"{where}: {link.get('error', 'the simulation server does not answer')}"}
 
     def server_rows(self) -> list[dict]:
-        return server_rows(self.config, self.statuses, self.harness, self.sim.name if self.sim else None)
+        return server_rows(self.config, self.statuses, self.harness, self.sim.name if self.sim else None,
+                           last_ok=getattr(self.watcher, "last_ok", {}))
+
+    def controller_state(self) -> dict:
+        """The controller plugin as the simulation server in use reports it (warehouse-sim describe): running,
+        stopped or failed, with when that was checked; unknown without a server in use or an answer."""
+        if self.sim is None:
+            return {"state": "unknown", "detail": "No simulation server in use", "checked": None}
+        status = self.statuses.get(("sim", self.sim.name))
+        if status is None or not status.connected:
+            return {"state": "unknown", "detail": f"{self.sim.name} does not answer", "checked": status and status.checked}
+        controller = status.detail.get("controller") or {}
+        if not controller:
+            return {"state": "unknown", "detail": f"{self.sim.name} runs no controller plugin", "checked": status.checked}
+        state = "running" if controller.get("running") else "error" if controller.get("error") else "stopped"
+        return {"state": state, "checked": status.checked, "ticks": controller.get("ticks"),
+                "detail": f"{self.sim.name} controller plugin{': ' + controller['error'] if controller.get('error') else ''}"}
 
     def _run_command(self, request: dict) -> dict:
         name, text = request.get("name"), request.get("text", "")

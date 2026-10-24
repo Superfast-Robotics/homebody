@@ -9,6 +9,7 @@ from dataclasses import asdict, replace
 from itertools import count
 from threading import RLock
 
+from homebody.session.config import Dashboard
 from homebody.ui.dashboard.interventions import InterventionTracking
 from homebody.ui.dashboard.outcome import evaluate, lifecycle
 from homebody.ui.dashboard.planning import PlanTracking
@@ -20,6 +21,7 @@ from homebody.ui.dashboard.records import (
     Log,
     ToolCall,
     arguments,
+    call_number,
     clip,
     reading,
 )
@@ -51,10 +53,12 @@ def bounded(records: OrderedDict, limit: int) -> OrderedDict:
 
 
 class Store(PlanTracking, InterventionTracking):
-    def __init__(self, *, scene_name="Simulation", model_name="", initial_task="", clock=time.time):
+    def __init__(self, *, scene_name="Simulation", model_name="", initial_task="", clock=time.time, timing=None):
+        """TIMING: the [dashboard] settings (how long sources may disagree, when a request times out)."""
         self.clock, self.lock, self._ids = clock, RLock(), count(1)
         self.scene_name, self.model_name, self.initial_task = scene_name, model_name, initial_task
         self.status, self.text, self.agent_text, self.thinking = "Loading", "", "", False
+        self.status_since = clock()  # when the executor's status last changed
         self.task = None  # {"text", "start", "end", "outcome"}
         self.stop_pending = self.reset_pending = False
         self.plan = None  # {"tree", "status", "reasons", "active"} from the session's planner
@@ -64,7 +68,8 @@ class Store(PlanTracking, InterventionTracking):
         self.intervals, self.decisions, self.tools = OrderedDict(), OrderedDict(), OrderedDict()
         self.incidents, self.logs, self.instructions = OrderedDict(), OrderedDict(), OrderedDict()
         self.readings, self.tasks = [], []  # tasks: every recent task's span, for the monitoring tracks
-        self.interventions = OrderedDict()  # requests to stop the running skill, and what became of them
+        self.interventions = OrderedDict()  # requests to stop an attempt, and what became of them
+        self.timing = timing if timing is not None else Dashboard()
         self._open = {}  # track -> id of its running interval
         self._recoveries = {}  # goal id -> {"incident", "failed"} while a recovery goal runs
         self._superseded = []  # trees the agent replaced, newest last
@@ -131,6 +136,8 @@ class Store(PlanTracking, InterventionTracking):
                 self.incident("pause", "warning", "The monitor paused the task for a person", text, source="monitor",
                               node=(self.plan or {}).get("active"), tag="pause", detection="Live monitor",
                               initiator="Live monitor", executor="Session")
+            if status != self.status:
+                self.status_since = self.clock()
             self.status, self.text = status, clip(text)
             if status == "Executing" and text:
                 self.agent_text = clip(text)
@@ -197,8 +204,11 @@ class Store(PlanTracking, InterventionTracking):
             if skill not in PLANNER:
                 start = self.task["start"] if self.task else float("-inf")
                 attempt = 1 + sum(t.goal == goal and t.skill == skill and t.start >= start for t in self.tools.values())
-                tool = ToolCall(self._id("t"), skill, args, now, goal, attempt=attempt,
-                                recovery=skill == CODER or goal in self._recoveries)
+                number = 1 + sum(t.goal == goal and t.start >= start for t in self.tools.values())
+                tool_id = self._id("t")
+                tool = ToolCall(tool_id, skill, args, now, goal, attempt=attempt, number=number,
+                                recovery=skill == CODER or goal in self._recoveries,
+                                execution=f"{self.task['id'] if self.task else 'no-task'}/{tool_id}")
                 bounded(self.tools, TOOL_LIMIT)[tool.id] = tool
             mark = Decision(self._id("d"), now, skill, clip(decision.text), args, goal,
                             None if tool is None else tool.id)
@@ -211,8 +221,15 @@ class Store(PlanTracking, InterventionTracking):
             kind = event.get("type")
             tool = self._running_tool()
             if kind == "skill_started":
+                call = call_number(event.get("call"))
+                if tool is not None and call is not None:  # the attempt's identity, shared with the monitor
+                    tool = replace(tool, call=call, execution=f"{self.task['id'] if self.task else 'no-task'}/call-{call}")
+                    self.tools[tool.id] = tool
                 self._begin("skill", event.get("skill", "skill"), {} if tool is None else {
-                    "tool": tool.id, "goal": tool.goal, "attempt": tool.attempt, "recovery": tool.recovery})
+                    "tool": tool.id, "goal": tool.goal, "attempt": tool.attempt, "recovery": tool.recovery,
+                    "number": tool.number, "execution": tool.execution})
+                if tool is not None:
+                    self._retry_started(tool)
                 self.log("info", "skill", f"{event.get('skill')} started", tool and tool.goal)
             elif kind == "skill_stage":
                 if tool is not None:
@@ -223,6 +240,12 @@ class Store(PlanTracking, InterventionTracking):
             elif kind == "intervention":
                 self._intervention_event(event)
             self._touch()
+
+    def _tool_for_call(self, call):
+        """This task's attempt with skill call CALL, or None (no call, or none recorded with it)."""
+        if call is None or self.task is None:
+            return None
+        return next((t for t in reversed(self.tools.values()) if t.call == call and t.start >= self.task["start"]), None)
 
     def _running_tool(self):
         return next((t for t in reversed(self.tools.values()) if t.state == "running"), None)
@@ -274,14 +297,16 @@ class Store(PlanTracking, InterventionTracking):
     def monitor(self, value):
         """A monitor reading from an adapter, stamped with what ran; an observed anomaly raises an incident."""
         with self.lock:
-            running = self._running_tool()
-            entry = reading(value, self.clock(), during_task=self.busy, node=(self.plan or {}).get("active"),
-                            skill=running and running.skill)
+            # the attempt it watched, by its call number; a reading between skills or with no match names none
+            tool = self._tool_for_call(call_number(value.get("call")))
+            entry = reading(value, self.clock(), during_task=self.busy, node=tool.goal if tool else (self.plan or {}).get("active"),
+                            skill=tool and tool.skill, tool=tool and tool.id)
             self.readings.append(entry)
             if entry.level == "anomaly" and entry.kind == "observation" and not self._continues(entry):
                 title = entry.reason or "Anomaly detected"
                 self.incident("monitor", "critical", f"Synthetic: {title}" if entry.synthetic else title,
                               entry.reason, source=entry.source, node=entry.node, skill=entry.skill, alert=True,
+                              tool=entry.tool,
                               detection=f"Monitoring model ({entry.source})",
                               observation=asdict(entry), evidence={key: value for key, value in (
                                   ("risk", entry.risk), ("threshold", entry.threshold),
@@ -292,7 +317,7 @@ class Store(PlanTracking, InterventionTracking):
             if isinstance(request, dict) and entry.kind == "observation":
                 anomaly = self.incidents.get(self._anomalies.get(entry.source, (None,))[0])
                 self.request_intervention("monitor", str(request.get("reason") or entry.reason), incident=anomaly,
-                                          detection=f"Monitoring model ({entry.source})")
+                                          detection=f"Monitoring model ({entry.source})", tool=tool)
             self._touch()
 
     def _continues(self, entry):
@@ -301,9 +326,9 @@ class Store(PlanTracking, InterventionTracking):
         then keeps the newest observation and the peak risk."""
         incident_id, last = self._anomalies.get(entry.source, (None, None))
         incident = self.incidents.get(incident_id)
-        if incident is None or incident.state == "resolved":
-            return False
-        request = self._open_intervention("Live monitor")
+        if incident is None or incident.state == "resolved" or incident.tool != entry.tool:
+            return False  # a new attempt's anomaly is its own incident, never the previous attempt's
+        request = self._intervention_on("Live monitor", incident.tool)
         if entry.t - last > ANOMALY_GAP and (request is None or request.incident != incident_id):
             return False
         risks = [v for v in (incident.evidence.get("risk"), entry.risk) if v is not None]
@@ -378,11 +403,12 @@ class Store(PlanTracking, InterventionTracking):
             def recent(records, stamp):
                 return [asdict(r) for r in records if stamp(r) is None or stamp(r) >= keep]
             self.readings = [r for r in self.readings if r.t >= keep]
-            interventions = self.intervention_rows(now)
+            interventions = self.intervention_rows(now, self.timing.ack_timeout_s)
             tree = plan_nodes(self.plan, self.tools.values(), self.task, interventions)
             return {
                 "now": now, "version": self.version, "scene": self.scene_name, "model": self.model_name,
                 "initial_task": self.initial_task, "status": self.status, "text": self.text,
+                "status_since": self.status_since,
                 "agent_text": self.agent_text, "task": self.task, "robot": self.robot,
                 "controls": {**controls, "busy": self.busy, "stop_pending": self.stop_pending,
                              "reset_pending": self.reset_pending, "accepting": self.accepting},
@@ -397,6 +423,7 @@ class Store(PlanTracking, InterventionTracking):
                 "tools": [asdict(t) for t in self.tools.values()],
                 "incidents": [asdict(i) for i in self.incidents.values()],
                 "interventions": interventions,
+                "timing": asdict(self.timing),
                 "readings": [asdict(r) for r in self.readings],
                 "logs": [asdict(entry) for entry in self.logs.values()],
                 "instructions": [asdict(i) for i in self.instructions.values()],

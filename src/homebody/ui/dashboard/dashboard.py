@@ -42,12 +42,13 @@ def target(decision):
 class Dashboard:
     def __init__(self, controls, *, host="127.0.0.1", port=8080, initial_task="", scene_name="Simulation",
                  model_name="", topdown_settings: Topdown | None = None, render_in_background=True,
-                 scene_port=None, hub=Hub, clock=time.time, places=None, monitor=None):
+                 scene_port=None, hub=Hub, clock=time.time, places=None, monitor=None, timing=None):
         """The page is served at HOST:PORT; the 3D scene, when a SceneView asks for it, at SCENE_PORT (PORT + 1).
         MONITOR: the [monitor] settings when the live monitor feeds this dashboard (monitor_update)."""
         self.controls, self.clock = controls, clock
         self.host, self.scene_port = host, port + 1 if scene_port is None else scene_port
-        self.store = Store(scene_name=scene_name, model_name=model_name, initial_task=initial_task, clock=clock)
+        self.store = Store(scene_name=scene_name, model_name=model_name, initial_task=initial_task, clock=clock,
+                           timing=timing)
         self.overlays = Overlays(topdown_settings if topdown_settings is not None else Topdown())
         self.history = History()
         self.places = places  # the scene's fixtures, for a location label grounded in its own metadata
@@ -261,7 +262,7 @@ class Dashboard:
         """Forget everything shown and start a fresh record (a replay starts here); CLOCK stamps what comes next."""
         self.clock = clock
         self.store = Store(scene_name=scene_name or self.store.scene_name, model_name=self.store.model_name,
-                           initial_task=initial_task, clock=clock)
+                           initial_task=initial_task, clock=clock, timing=self.store.timing)
         self.history.clear()
         self.overlays.clear()
         self._stills, self._sent, self._telemetry_at, self.remote_state = {}, {}, float("-inf"), None

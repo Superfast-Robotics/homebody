@@ -45,6 +45,9 @@ class ToolCall:
     stages: tuple = ()
     attempt: int = 1  # this skill's call number within its goal
     recovery: bool = False  # run by a recovery branch or the coding assistant
+    call: int | None = None  # the task's skill call number the executor and the monitor share (None: not reported)
+    number: int = 1  # its goal's attempt number: its goal's calls so far, this one included
+    execution: str = ""  # the attempt's identity: "<task id>/call-<call>", or "<task id>/<tool id>" without a call
 
 
 @dataclass(frozen=True)
@@ -102,14 +105,16 @@ class Reading:
     node: str | None = None
     skill: str | None = None
     signal: str = ""  # what RISK measures, as the monitor names it (e.g. "stall", "unsafe", "failure:dropped")
+    call: int | None = None  # the skill call of its task it watched (Phase.call), None between skills or unknown
+    tool: str | None = None  # the attempt with that call, as the store matched it (None: no match, never guessed)
 
 
 @dataclass(frozen=True)
 class Intervention:
     """A request that a component stop or change what the robot does, and what became of it. STAGES are the
     events that established each step, oldest first: (stage, t, source, note), with stage one of "detected",
-    "requested", "accepted", "confirmed", "rejected", "failed" or "cancelled"; a step no event established is absent,
-    never assumed. INITIATOR asked for it, DECIDED_BY chose to, TARGET was asked, INCIDENT is the detection it acted
+    "decided", "requested", "accepted", "confirmed", "rejected", "failed", "cancelled", then "retry_started" and
+    "retry_finished" when the plan's goal tried again; a step no event established is absent, never assumed. INITIATOR asked for it, DECIDED_BY chose to, TARGET was asked, INCIDENT is the detection it acted
     on. PHYSICAL is whether the robot was seen to stop: "unverified" unless a motion or safety signal says so."""
     id: str
     t: float
@@ -126,6 +131,8 @@ class Intervention:
     reason: str = ""
     stages: tuple = ()
     physical: str = "unverified"
+    execution: str = ""  # the attempt's identity (ToolCall.execution); "" when no attempt could be matched
+    attempt: int | None = None  # its goal's attempt number
 
 
 @dataclass(frozen=True)
@@ -201,4 +208,9 @@ def reading(value: dict, now: float, **context) -> Reading:
                    risk=unit(value, "risk"), threshold=unit(value, "threshold"),
                    confidence=unit(value, "confidence"), reason=clip(value.get("reason", ""), 400), kind=kind,
                    received=now, elevated_threshold=unit(value, "elevated_threshold"),
-                   synthetic=bool(value.get("synthetic", False)), signal=clip(value.get("signal", ""), 80), **context)
+                   synthetic=bool(value.get("synthetic", False)), signal=clip(value.get("signal", ""), 80),
+                   call=call_number(value.get("call")), **context)
+
+
+def call_number(value) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else None

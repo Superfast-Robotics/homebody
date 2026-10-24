@@ -169,6 +169,7 @@ class Session:
         self.semantic_context = semantic_context or {}
         self.observer_frame, self.shoulder_frame, self.view_side = observer_frame, shoulder_frame, "right"
         self._running_skill = self._stop_taken = None  # the skill running now, and who stopped it (interruption)
+        self.skill_calls, self._call = 0, None  # this task's skill calls; the running one's number (Phase.call)
         self._observer_epoch = self._frame_epoch = None
         self._observer_time = self._frame_time = self._view_time = float("-inf")
         self.observed = ObservedBackend(backend, self.publish, settings.recording.publish_period,
@@ -244,6 +245,8 @@ class Session:
     def skill_event(self, event):
         if event["type"] == "observation":
             return
+        if self._call is not None and "call" not in event:
+            event = {**event, "call": self._call}  # the attempt this event belongs to
         self.recorder.event("skill", simulation_time=self.backend.time, event=event)
         try:
             self.trace.on_event(event, self.view_side)
@@ -466,6 +469,7 @@ class Session:
 
     def run_task(self, task: str) -> dict:
         task_dir = self.recorder.start_task(task, self.backend.epoch, skills=list(self.skill_lines()))
+        self.skill_calls, self._call = 0, None  # skill calls of this task, numbered as the monitor numbers them
         started_wall, started_sim = time.monotonic(), self.backend.time
         outcome = {"status": "error", "steps": 0, "model_claim": None}
         self.paused_seconds = 0.0
@@ -625,8 +629,8 @@ class Session:
                     result = self.runner.run(decision.skill, decision.arguments, frame).as_dict()
                 code = result["code"]
             finally:
-                self._running_skill = None
                 self.intervention_ended(decision.skill, code or "ERROR")
+                self._running_skill, self._call = None, None
                 if code == OPERATOR_STOPPED:
                     self.controls.skill_stop.clear()
                     self.recorder.event("operator", type="stop_skill", skill=decision.skill,
@@ -647,7 +651,11 @@ class Session:
         return result
 
     def monitor_skill(self, decision):
-        """Tell the monitor a skill starts in the current goal."""
+        """Tell the monitor a skill starts in the current goal. The task's skill calls are numbered here as the
+        monitor numbers them (Monitor.skill_started, MonitorLink.skill_started), so its readings (Phase.call) and the
+        executor's events (their "call") name the same attempt."""
+        self.skill_calls += 1
+        self._call = self.skill_calls
         task = next((entry["operator_task"] for entry in reversed(self.history) if "operator_task" in entry), "")
         request = self.goal_request(task, (), skill=decision.skill, arguments=decision.arguments)
         self.recorder.event("skill_request", simulation_time=self.backend.time,

@@ -61,6 +61,7 @@ class Watcher:
         self.config, self.on_change, self.poll_s = config, on_change, poll_s
         self._check = check or (lambda kind, server: harness_status(server) if kind == "harness" else sim_status(server))
         self.statuses: dict[tuple[str, str], Status] = {}
+        self.last_ok: dict[tuple[str, str], float] = {}  # wall time each server last answered
         self._lock, self._stop = threading.Lock(), threading.Event()
         self._thread = threading.Thread(target=self._run, name="server-watch", daemon=True)
 
@@ -87,6 +88,7 @@ class Watcher:
             results = {key: check.result() for key, check in checks.items()}
         with self._lock:
             self.statuses.update(results)
+            self.last_ok.update((key, status.checked) for key, status in results.items() if status.connected)
             statuses = dict(self.statuses)
         self.on_change(statuses)
         return statuses

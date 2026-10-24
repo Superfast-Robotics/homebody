@@ -59,8 +59,9 @@ def value(reading, vocabulary, verdict, tau: float, *, this_call: bool = False) 
     else:
         reason = "the model answered none of the questions"
     request = verdict is not None and verdict.action in ALERTS and this_call
+    call = reading.phase.call if reading.phase.name == "tool_call" else None  # the attempt it watched, if any
     return {"level": level, "kind": "observation", "source": SOURCE, "risk": risk, "threshold": tau,
-            "confidence": activity, "reason": reason, "signal": name or "",
+            "confidence": activity, "reason": reason, "signal": name or "", "call": call,
             **({"request": {"action": "stop_skill", "reason": verdict.text()}} if request else {})}
 
 

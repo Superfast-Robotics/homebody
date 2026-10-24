@@ -63,7 +63,8 @@ class MonitorLink:
                 self.stop_reason = reason
                 return
         event = {"type": "intervention", "stage": "rejected", "initiator": "monitor", "action": "stop_skill",
-                 "reason": reason, "note": f"The request named skill call {call}; call {current} runs now"}
+                 "reason": reason, "call": call if call > 0 else None,
+                 "note": f"The request named skill call {call}; call {current} runs now"}
         self.sink("skill", event=event)
         self.hub.publish(protocol.text("skill", event=event))
 
