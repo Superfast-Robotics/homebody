@@ -1,6 +1,7 @@
 // The behavior tree, updated in place by node id, through its lifecycle: no task, planning, running, recovery,
 // replanning. Collapsing is the operator's; following the running node pauses while the operator looks around.
 import { $, clock, duration, h, icon, setIcon, setText, storage, toggleClass } from "./dom.js";
+import { retrySummary } from "./execution.js";
 import { operatorText } from "./story.js";
 
 const STATE_ICON = { success: "check", failure: "x", skipped: "skip", paused: "pause" };
@@ -149,6 +150,8 @@ export class TreeView {
     const node = tree.nodes[id];
     seen.add(id);
     if (node.type === "attempts" && !this.rows.has(id)) this.collapsed.add(id); // earlier attempts start folded
+    // a recovery branch unfolds only while it runs or when the operator opens it
+    if (node.type === "goal" && node.detail.recovers && !this.rows.has(id) && node.status !== "running") this.collapsed.add(id);
     const view = this.rows.get(id) || this.create(id);
     const { wrap, row, children } = view;
     wrap.dataset.depth = depth;
@@ -227,6 +230,22 @@ export class TreeView {
     this.render(this.app.state);
   }
 
+  /** Highlight attempt TOOL_ID and its goal, unfolding the group that holds it, and bring it into view. */
+  highlightTool(toolId) {
+    const tree = this.app.state?.tree;
+    if (!tree) return;
+    const key = `tool:${toolId}`;
+    const holder = Object.values(tree.nodes).find((n) => n.children.includes(key));
+    if (!holder) return;
+    this.inspected = new Set([key]);
+    for (const n of Object.values(tree.nodes)) if (n.children.includes(holder.id)) this.inspected.add(n.id === "root" ? holder.id : n.id);
+    this.collapsed.delete(holder.id);
+    for (const n of Object.values(tree.nodes)) if (n.children.includes(holder.id)) this.collapsed.delete(n.id);
+    this.setFollow(false);
+    this.render(this.app.state);
+    this.rows.get(key)?.row.scrollIntoView({ block: "nearest" });
+  }
+
   /** Mark the goal and the tool call that ran at moment T (null clears the marks). */
   highlightAt(t) {
     const state = this.app.state;
@@ -268,6 +287,10 @@ export class TreeView {
     }
     const elapsed = start ? duration((end ?? now) - start) : "";
     const text = operatorText(node, elapsed);
+    if (node.type === "goal" && d.used > 1) { // the goal's retries, from its recorded attempts
+      const tools = state.tools.filter((t) => t.goal === d.goal && state.task && t.start >= state.task.start);
+      text.meta = `${STATUS_TEXT[node.status] || node.status} · ${retrySummary(tools, d.budget)}${elapsed ? ` · ${elapsed}` : ""}`;
+    }
     if (node.type === "goal" && d.recovers) {
       const started = state.incidents.findLast((i) => i.tag === "recovery_start" && i.node === d.goal);
       text.meta += ` · triggered by ${started?.initiator || "an unrecorded source"}`;

@@ -5,8 +5,8 @@
 // Readable text for the failure codes skills declare (skills/contract.py and each skill's FAILURES) and the plan
 // runner's own; any other code is shown as it is rather than guessed at.
 const ERRORS = {
-  CANCELLED: "Cancelled", STALE_EPOCH: "The scene changed under it", STALE_OBSERVATION: "Its observation was too old",
-  INVALID_ARGUMENT: "Invalid target or arguments", TARGET_LOST: "Target lost from view",
+  CANCELLED: "Cancelled", STALE_EPOCH: "The scene changed under it", STALE_OBSERVATION: "Observation too old",
+  INVALID_ARGUMENT: "Invalid action argument", TARGET_LOST: "Target lost from view",
   ACTION_REJECTED: "The robot rejected the action", PHYSICS_INVALID: "Physics became invalid", COLLISION: "Collision",
   NO_ROUTE: "No route to the goal", STALL: "The robot stalled", TIMEOUT: "Timed out",
   ARRIVAL_NOT_VERIFIED: "Arrival not verified", CARRY_CLEARED: "Carried object no longer held",

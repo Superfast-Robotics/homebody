@@ -6,8 +6,9 @@ import { $, clock, duration, h, setText, toggleClass } from "./dom.js";
 import { Drawer } from "./drawer.js";
 import { Header } from "./header.js";
 import { Info } from "./info.js";
-import { monitorCondition, signalLabel } from "./interventions.js";
-import { liveEnd, momentAt, monitorStatus, riskSources } from "./model.js";
+import { consistency, contextSummary, systemSummary } from "./execution.js";
+import { signalLabel } from "./interventions.js";
+import { gapFor, liveEnd, momentAt, monitorStatus, riskSources } from "./model.js";
 import { Rollouts } from "./rollouts.js";
 import { Scenarios } from "./scenarios.js";
 import { summarize } from "./story.js";
@@ -149,7 +150,10 @@ class App {
     const end = this.inspectEnd ?? this.timelineEnd().end;
     const { blocks, earlier } = summarize(state, end - 60, end);
     const live = this.inspectAt === null && !this.timelineEnd().held;
-    const condition = live ? monitorCondition(state, status, this.link.now(), end - 60) : null;
+    const now = this.link.now();
+    const condition = live ? contextSummary(state, status, now, end - 60, {
+      gap: gapFor(state.readings.filter((r) => r.kind === "observation")), check: consistency(state, now),
+      system: state.servers ? systemSummary(state.servers) : null }) : null;
     const signature = `${blocks.map((b) => `${b.id}${b.count}${b.label}`).join("|")}:${earlier}:${status.state}:${condition?.text}`;
     if (signature === this.summaryShown) return;
     this.summaryShown = signature;
@@ -238,8 +242,20 @@ class App {
     else if (kind === "goal") this.drawer.node(`goal:${item.detail.goal}`);
     else if (kind === "skill" && item.detail.tool) this.drawer.tool(item.detail.tool);
     else if (kind === "observation") this.drawer.observation(item);
-    else if (kind === "risk") this.drawer.risk(item);
-    else if (kind === "intervention") this.drawer.intervention(item.id);
+    else if (kind === "risk") {
+      const toolId = item.readings.find((r) => r.tool)?.tool || null;
+      const request = (this.state.interventions || []).findLast((r) => toolId && r.tool === toolId);
+      this.focusAttempt(toolId, item.start, () => (request ? this.drawer.intervention(request.id) : this.drawer.risk(item)));
+    }
+    else if (kind === "intervention") this.focusAttempt(item.tool, item.at ?? item.t, () => this.drawer.intervention(item.id));
+  }
+
+  /** Select moment T, highlight attempt TOOL_ID in the tree (expanding its group), then OPEN its details. The
+   * robot is never paused or moved by this; Return to live leaves the selection. */
+  focusAttempt(toolId, t, open = null) {
+    if (t !== null && t !== undefined) this.inspect(t);
+    if (toolId) this.tree.highlightTool(toolId);
+    open?.();
   }
 
   openIncident(id) {

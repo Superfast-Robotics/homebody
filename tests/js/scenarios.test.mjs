@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { keepChoice } from "../../src/homebody/ui/dashboard/static/js/rollouts.js";
-import { scenarioNamed, scenarioWhere, serversSummary } from "../../src/homebody/ui/dashboard/static/js/scenarios.js";
+import { scenarioNamed, scenarioWhere } from "../../src/homebody/ui/dashboard/static/js/scenarios.js";
 
 test("a scenario says where it runs", () => {
   const state = { scenarios: [{ name: "Jam", harness: "demo", sim: "warehouse_cart", task: "pick" }, { name: "Apple", scene: "kitchen" }] };
@@ -11,16 +11,6 @@ test("a scenario says where it runs", () => {
   assert.equal(scenarioWhere(scenarioNamed(state, "Apple")), "Runs in kitchen.");
   assert.equal(scenarioNamed(state, "nope"), null);
   assert.equal(scenarioWhere(null), "");
-});
-
-test("the system chip is quiet unless a server in use is degraded, which it names", () => {
-  const rows = [{ name: "harness", health: "up", active: true }, { name: "cart", health: "up", active: true },
-    { name: "other", health: "down", active: false }];
-  assert.deepEqual(serversSummary(rows), { text: "System · 2/3 answering", tone: "", degraded: false }); // an unused server down is diagnostics
-  rows[1].health = "down";
-  assert.deepEqual(serversSummary(rows), { text: "System degraded · cart not answering", tone: "danger", degraded: true });
-  rows[1].health = "unknown";
-  assert.equal(serversSummary(rows).tone, "warning");
 });
 
 test("the rollouts drawer keeps its choice while the list refreshes", () => {

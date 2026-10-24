@@ -2,6 +2,7 @@
 // account; once it has finished, its outcome, the unresolved alerts and a compact status. A critical alert and a
 // pause each get a fixed slot above; minor warnings never rearrange the panel. Nothing here is invented.
 import { $, ago, clock, duration, h, icon, setText, toggleClass } from "./dom.js";
+import { attemptLabel, attemptRelation, consistency, runningAttempt, toolById } from "./execution.js";
 import { activeIntervention, alertGroups, flowText, signalLabel, stateText, steps } from "./interventions.js";
 import { monitorStatus } from "./model.js";
 
@@ -11,6 +12,9 @@ const STATE = { active: "Active", acknowledged: "Acknowledged", resolved: "Resol
 const OUTCOME = { success: "success", success_with_recoveries: "success", partial: "partial", unverified: "unverified", failed: "failed" };
 const SKILLS = { navigate: "Navigate", pick: "Pick", place: "Place", call_coder: "Coding assistant" };
 const MARKS = { done: "✓", pending: "…", failed: "✗", unknown: "?", skipped: "–" };
+// a step's right edge when it has no time to show: one word; the full explanation is the step's tooltip
+const SHORT = { "accepted:pending": "Waiting", "accepted:failed": "No answer", "stopped:pending": "Not yet",
+  "physical:unknown": "Unverified", "retry:pending": "None yet", unknown: "Not reported", skipped: "—", failed: "Failed", pending: "Waiting" };
 const CAMERA = { live: "success", stale: "warning", reconnecting: "warning", offline: "danger", unknown: "" };
 const CONTROLLER_QUIET_S = 15; // s without a report from the skill executor, while a skill runs, before it is said
 
@@ -56,8 +60,13 @@ export class Info {
     $("critical-inspect").addEventListener("click", () => this.critical && app.openIncident(this.critical.id));
     $("intervention-inspect").addEventListener("click", () => this.intervention && app.drawer.intervention(this.intervention.id));
     $("intervention-trace").addEventListener("click", () => {
-      if (this.intervention?.tool) app.drawer.tool(this.intervention.tool);
+      if (this.intervention?.tool) app.focusAttempt(this.intervention.tool, null, () => app.drawer.tool(this.intervention.tool));
     });
+    $("mismatch-inspect").addEventListener("click", () => {
+      const tool = this.check?.attempt;
+      if (tool) app.focusAttempt(tool.id, null, () => app.drawer.tool(tool.id));
+    });
+    $("mismatch-controller").addEventListener("click", () => app.drawer.controller());
     $("outcome-details").addEventListener("click", () => app.drawer.outcome());
   }
 
@@ -80,6 +89,7 @@ export class Info {
     }
     this.renderOutcome(state);
     this.renderIntervention(state);
+    this.renderMismatch(state);
     this.renderRecovery(state);
     this.renderCritical(state);
     this.renderPause(state);
@@ -129,12 +139,37 @@ export class Info {
       risk !== undefined && risk !== null ? `Reported ${signalLabel(signal).toLowerCase()}: ${Number(risk).toFixed(2)}` : ""].filter(Boolean).join(" · "));
     const since = row.stages.find(([, t]) => t !== null)?.[1] ?? row.t;
     setText($("intervention-age"), ago(now - since));
-    setText($("intervention-state"), `Intervention status: ${label}`);
-    $("intervention-steps").replaceChildren(...steps(row).map((step) => h("li", { class: step.state },
-      h("span", { class: "mark", text: MARKS[step.state] || "?" }), h("span", { text: step.label }),
-      h("span", { class: "when", text: step.t !== null ? clock(step.t) : "" }),
-      h("span", { class: "note", text: [step.source && step.t !== null ? step.source : "", step.note].filter(Boolean).join(" · ") }))));
+    const tool = toolById(state, row.tool);
+    const relation = { current: "running now", previous: tool?.end ? `ended ${tool.code ? `with ${tool.code}` : ""}` : "", unknown: "" }[attemptRelation(state, row.tool)];
+    setText($("intervention-attempt"), tool ? `Affected attempt: ${attemptLabel(tool)}${relation ? ` (${relation})` : ""} · ${tool.execution}`
+      : "Affected attempt: Unknown (the reading named no skill call)");
+    setText($("intervention-state"), `Requested action: stop the skill · Status: ${label}`);
+    // one line per step; a completed step's source and note are its tooltip, an open or failed one says why
+    $("intervention-steps").replaceChildren(...steps(row).map((step) => {
+      const detail = [step.source && step.t !== null ? step.source : "", step.note].filter(Boolean).join(" · ");
+      const short = step.t !== null && step.state !== "failed" ? clock(step.t) : SHORT[`${step.key}:${step.state}`] || SHORT[step.state] || "";
+      return h("li", { class: step.state, title: detail },
+        h("span", { class: "mark", text: MARKS[step.state] || "?" }), h("span", { text: step.label }),
+        h("span", { class: "when", text: short }));
+    }));
     $("intervention-trace").disabled = !row.tool;
+  }
+
+  /** A lasting disagreement between the tree, the executor and the controller, past the configured tolerance. */
+  renderMismatch(state) {
+    const now = this.app.link.now();
+    const check = consistency(state, now);
+    this.check = check;
+    const card = $("mismatch-card");
+    card.hidden = !(check.state === "suspected" || check.state === "confirmed");
+    if (card.hidden) return;
+    card.className = `mismatch-card ${check.severity}`;
+    const rows = [["Behavior Tree", check.bt], ["Executor", check.executor], ["Controller", check.controller],
+      ["Last controller update", check.controllerAge === null ? "Not reported" : `${duration(check.controllerAge)} ago`],
+      ["Classification", `${check.state === "confirmed" ? "Confirmed" : "Suspected"} mismatch · ${check.severity}`],
+      ["Attempt", check.attempt ? `${attemptLabel(check.attempt)} · ${check.attempt.execution}` : "None running"], ["Why", check.rule]];
+    $("mismatch-facts").replaceChildren(...rows.flatMap(([k, v]) => [h("dt", { text: k }), h("dd", { text: v })]));
+    $("mismatch-inspect").disabled = !check.attempt;
   }
 
   /** A recovery the plan is running: its goal, and who started it, from the recorded recovery event. */
@@ -150,8 +185,12 @@ export class Info {
   }
 
   renderCritical(state) {
+    // only a detection on the attempt running now (or on the task itself) is current: a previous attempt's stays in
+    // the alerts list, named by its attempt; the intervention card already shows its own detection
+    const running = runningAttempt(state)?.id ?? null;
     this.critical = state.incidents.findLast((i) => i.alert && i.severity === "critical" && i.state === "active" &&
-      i.id !== this.intervention?.incident) || null; // the intervention card already shows its own detection
+      i.id !== this.intervention?.incident && (!i.tool || i.tool === running) &&
+      (i.task === null || i.task === state.task?.id)) || null;
     $("critical-banner").hidden = !this.critical;
     if (!this.critical) return;
     setText($("critical-title"), this.critical.title);
@@ -190,11 +229,20 @@ export class Info {
       offline: ["danger", "Offline"], unknown: ["", "Not connected"] }[m.state];
     const report = lastControllerReport(state);
     const quiet = report === null ? null : Math.max(0, now - report);
-    const running = state.tools.some((t) => t.state === "running");
-    const controller = report === null ? ["", "Unknown · no report yet"]
-      : running && quiet > CONTROLLER_QUIET_S ? ["warning", `No report for ${duration(quiet)}`]
-        : ["success", `${running ? "Responsive" : "Idle"} · last report ${duration(quiet)} ago`];
-    return { robot, camera, monitor, controller, cam, m, report };
+    const running = runningAttempt(state);
+    const executor = report === null ? ["", "Unknown · no report yet"]
+      : running && quiet > CONTROLLER_QUIET_S ? ["warning", `${attemptLabel(running)} · no report for ${duration(quiet)}`]
+        : ["success", `${running ? `${attemptLabel(running)} running` : "No skill running"} · last report ${duration(quiet)} ago`];
+    const c = state.controller;
+    const age = c?.checked ? Math.max(0, now - c.checked) : null;
+    const [tone, word] = !c ? ["", "Unknown · not reported"] : { in_process: ["success", "In process"], running: ["success", "Running"],
+      stopped: ["danger", "Stopped"], error: ["danger", "Failed"], unknown: ["", "Unknown"] }[c.state] || ["", c.state];
+    const controller = [tone, age !== null ? `${word} · checked ${duration(age)} ago` : word, c?.detail || ""];
+    const check = consistency(state, now);
+    const execution = [{ consistent: "success", transitioning: "", unknown: "", suspected: "warning", confirmed: "danger" }[check.state],
+      { consistent: "Consistent", transitioning: "Transitioning", unknown: "Unknown", suspected: "Suspected mismatch", confirmed: "Confirmed mismatch" }[check.state],
+      check.rule || "The tree, the executor and the controller agree"];
+    return { robot, camera, monitor, executor, controller, execution, cam, m, report };
   }
 
   renderStatus(state) {
@@ -208,7 +256,8 @@ export class Info {
     const dot = ([tone, text, title]) => row("", [h("span", { class: `status-dot ${tone}` }), text], false, title || "");
     const rows = [
       { ...dot(f.robot), label: "Robot" }, { ...dot(f.camera), label: "Camera" },
-      { ...dot(f.monitor), label: "Monitor" }, { ...dot(f.controller), label: "Controller" },
+      { ...dot(f.monitor), label: "Monitor" }, { ...dot(f.executor), label: "Executor" },
+      { ...dot(f.controller), label: "Controller" }, { ...dot(f.execution), label: "Execution" },
       row("Current skill", tool ? `${SKILLS[tool.skill] || tool.skill}${tool.recovery ? " (recovery)" : ""} · ${duration(now - tool.start)}` : "None", !tool),
       row("Location", telemetry?.place || (pose ? "Coordinates only (see Details)" : "Unavailable"), !telemetry?.place,
         pose ? coordinates(pose, telemetry.frame) : ""),
@@ -248,12 +297,16 @@ export class Info {
       const [name, label] = SEVERITY[incident.severity] || SEVERITY.info;
       const historical = incident.task !== null && incident.task !== task;
       const requests = groups.find((g) => g.incident.id === incident.id).interventions;
-      const status = historical ? "Earlier task" : incident.state === "acknowledged" ? "Acknowledged" : "Inspect";
+      const toolId = incident.tool || requests.at(-1)?.tool || null;
+      const relation = attemptRelation(state, toolId);
+      const attempt = `${attemptLabel(toolById(state, toolId))}${{ current: " · current", previous: " · previous attempt", unknown: "" }[relation]}`;
+      const status = historical ? "Earlier task" : incident.state === "acknowledged" ? "Acknowledged" : relation === "previous" ? "Historical" : "Inspect";
       return h("li", {}, h("button", {
         class: `alert ${incident.severity} ${incident.state}${historical ? " historical" : ""}`, type: "button",
         "aria-label": `${label}, ${historical ? "from an earlier task" : STATE[incident.state]}: ${incident.title}. Inspect the incident.`,
-        onclick: () => (requests.length ? this.app.drawer.intervention(requests.at(-1).id) : this.app.openIncident(incident.id)),
-      }, icon(name), h("span", {}, h("span", { class: "alert-title", text: incident.title }),
+        onclick: () => this.app.focusAttempt(toolId, incident.t,
+          () => (requests.length ? this.app.drawer.intervention(requests.at(-1).id) : this.app.drawer.incident(incident.id))),
+      }, icon(name), h("span", {}, h("span", { class: "alert-attempt", text: attempt }), h("span", { class: "alert-title", text: incident.title }),
         h("span", { class: "alert-reason", text: incident.reason || incident.action })),
       h("span", { class: "alert-when" }, ago(now - incident.t), h("br"), status),
       requests.length ? h("ul", { class: "alert-steps" }, ...requests.map((r) => h("li", {

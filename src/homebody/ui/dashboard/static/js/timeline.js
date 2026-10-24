@@ -1,6 +1,7 @@
 // The monitoring timeline: every track on one time axis, drawn on a canvas from the newest state. Readings are
 // drawn where they were made and stand only as long as their cadence allows; gaps are drawn as gaps.
 import { clock, duration, tokens } from "./dom.js";
+import { attemptLabel } from "./execution.js";
 import { signalLabel, stateText } from "./interventions.js";
 import { interventionMarker, observationSegments, riskBuckets, riskSources, spans } from "./model.js";
 
@@ -106,6 +107,7 @@ export class Timeline {
     const view = { ctx, c, end, start, width, rows: this.layout(), tasks: spans(state.tasks || [], start, end), hatch: this.hatch };
     this.hits = [];
     this.grid(view);
+    this.attemptBand(view, state);
     this.intervals(view, "goal");
     this.intervals(view, "skill");
     this.decisions(view, state);
@@ -114,6 +116,17 @@ export class Timeline {
     this.interventions(view, state);
     this.axis(view);
     this.cursors(view);
+  }
+
+  /** The running attempt's interval, faintly across the tracks, so its readings and markers read as its own. */
+  attemptBand({ ctx, c, end, start, width, rows }, state) {
+    const tool = state.tools.findLast((t) => t.state === "running");
+    if (!tool || tool.start > end) return;
+    const x0 = this.clampX(Math.max(tool.start, start), { end, width }), x1 = this.clampX(end, { end, width });
+    ctx.fillStyle = c["running-light"];
+    ctx.globalAlpha = 0.5;
+    ctx.fillRect(x0, 0, x1 - x0, rows.axis.y);
+    ctx.globalAlpha = 1;
   }
 
   pattern(ctx, colour) {
@@ -243,11 +256,11 @@ export class Timeline {
     }
     const segments = observationSegments(state.readings, state.tasks || [], start, end);
     if (!segments.length) this.empty(view, row, view.tasks.length ? "No observations in this window" : "No task in this window");
-    const colours = { expected: c.success, unknown: c.neutral, elevated: c.warning, anomaly: c.danger };
+    const colours = { expected: c["risk-low"], unknown: c["risk-missing"], elevated: c["risk-elevated"], anomaly: c["risk-high"] };
     for (const segment of segments) {
       const x0 = this.clampX(segment.start, view), x1 = Math.max(x0 + 2, this.clampX(segment.end, view));
       const missing = segment.level === "missing";
-      ctx.fillStyle = missing ? view.hatch : colours[segment.level];
+      ctx.fillStyle = missing ? view.hatch : colours[segment.level];  // quiet intervals; anomaly markers stay bright
       this.rect(ctx, x0, row.y + 7, x1 - x0 - 1, row.h - 14, 3);
       ctx.fill();
       if (missing) {
@@ -282,14 +295,15 @@ export class Timeline {
         : view.tasks.length ? "The monitor reports no risk score" : "No task in this window");
     }
     const source = sources.includes(this.app.riskSource) ? this.app.riskSource : sources.at(-1);
-    const colours = { low: c.success, elevated: c.warning, high: c.danger, missing: c.neutral };
+    const colours = { low: c["risk-low"], elevated: c["risk-elevated"], high: c["risk-high"], missing: c["risk-missing"] };
     const top = row.y + (row.h - BLOCK) / 2;
     const blocks = riskBuckets(state.readings, source, state.tasks || [], start, end);
-    blocks.forEach((block, index) => { // a tick where a known reading first reaches the threshold after a lower one
+    const rank = { low: 0, elevated: 1, high: 2 };
+    blocks.forEach((block, index) => { // a bright tick where a known reading first rises into elevated or high
       const before = blocks[index - 1];
-      if (block.state !== "high" || !before || before.state === "high" || before.state === "missing") return;
+      if (!before || before.state === "missing" || !(block.state in rank) || rank[block.state] <= rank[before.state] || block.state === "low") return;
       const x = this.clampX(block.start, view);
-      ctx.fillStyle = c.danger;
+      ctx.fillStyle = block.state === "high" ? c["event-high"] : c["event-warning"];
       ctx.beginPath();
       ctx.moveTo(x - 4, row.y);
       ctx.lineTo(x + 4, row.y);
@@ -298,14 +312,18 @@ export class Timeline {
       ctx.fill();
       this.hits.push({ x0: x - 5, x1: x + 5, y0: row.y - 1, y1: row.y + 6, kind: "crossing", item: { block, before }, t: block.start });
     });
+    const selected = this.app.inspectAt ?? this.hover;
     for (const block of blocks) {
       const x0 = this.clampX(block.start, view), x1 = this.clampX(block.end, view);
       if (x1 - x0 < 1) continue;
       ctx.fillStyle = colours[block.state];
-      ctx.globalAlpha = block.state === "missing" ? 0.45 : 1;
       this.rect(ctx, x0 + 0.75, top, x1 - x0 - 1.5, BLOCK, 2);
       ctx.fill();
-      ctx.globalAlpha = 1;
+      if (selected !== null && selected !== undefined && selected >= block.start && selected < block.end) {
+        ctx.strokeStyle = c["event-selected"];
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
       this.hits.push({ x0, x1, y0: row.y, y1: row.y + row.h, kind: "risk", item: block, t: block.start });
     }
   }
@@ -487,11 +505,13 @@ export class Timeline {
       const span = `${clock(item.start)}–${clock(item.end)}`;
       if (item.state === "missing") return `${span} · no risk sample in this second (missing, not low)`;
       const incident = state.incidents.find((i) => i.kind === "monitor" && i.t >= item.start && i.t < item.end);
-      const requests = (state.interventions || []).filter((r) => r.stages.some(([, t]) => t !== null && t >= item.start && t < item.end));
       const peak = item.readings.reduce((top, r) => (r.risk > top.risk ? r : top));
+      const requests = (state.interventions || []).filter((r) => peak.tool && r.tool === peak.tool);
       const signals = [...new Set(item.readings.map((r) => signalLabel(r.signal)))];
+      const tool = state.tools.find((t) => t.id === peak.tool);
       return [`${span} · ${RISK_TEXT[item.state]}`,
-        `${signalLabel(peak.signal)}: ${item.max.toFixed(2)} (the second's maximum of ${item.count} reading${item.count > 1 ? "s" : ""})`,
+        `${signalLabel(peak.signal)}: ${item.max.toFixed(2)} · ${item.count} reading${item.count > 1 ? "s" : ""} · aggregation: the second's maximum`,
+        `Attempt: ${tool ? `${attemptLabel(tool)} (${tool.execution})` : "Unknown (the reading named no skill call)"}`,
         signals.length > 1 ? `Signals in this second: ${signals.join(", ")}` : "",
         `Threshold ${item.threshold === null ? "none" : item.threshold.toFixed(2)} · ${item.source}${item.readings.some((r) => r.synthetic) ? " · synthetic" : ""}`,
         incident ? `Incident: ${incident.title}` : "",
@@ -499,7 +519,8 @@ export class Timeline {
     }
     if (kind === "crossing") {
       const r = item.block.readings.reduce((top, x) => (x.risk > top.risk ? x : top));
-      return `Threshold crossed at ${clock(item.block.start)}\n${signalLabel(r.signal)} ${r.risk.toFixed(2)} ≥ ${r.threshold?.toFixed(2) ?? "?"} after ${item.before.max?.toFixed(2) ?? "?"}`;
+      const what = item.block.state === "high" ? `Threshold crossed (${r.risk.toFixed(2)} ≥ ${r.threshold?.toFixed(2) ?? "?"})` : `Rose to elevated (${r.risk.toFixed(2)})`;
+      return `${what} at ${clock(item.block.start)}\n${signalLabel(r.signal)} after ${item.before.max?.toFixed(2) ?? "?"}`;
     }
     if (kind === "intervention") {
       const stage = item.stages.find(([s]) => s === item.stage);

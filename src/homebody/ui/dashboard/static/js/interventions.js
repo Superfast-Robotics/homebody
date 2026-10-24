@@ -38,9 +38,13 @@ export function steps(row) {
   const step = (key, label, state, rec, note) => ({ key, label, state, t: rec ? rec[1] : null, source: rec ? rec[2] : "",
     note: note ?? (rec ? rec[3] : "") });
   const out = [];
+  const decided = stage(row, "decided");
   out.push(detected ? step("detected", "Detection", "done", detected)
     : step("detected", "Detection", row.initiator === "Human operator" ? "skipped" : "unknown", null,
       row.initiator === "Human operator" ? "The operator acted without a monitor detection" : "Not reported"));
+  out.push(decided ? step("decided", "Intervention decision", "done", decided)
+    : step("decided", "Intervention decision", row.initiator === "Human operator" ? "done" : "unknown", null,
+      row.initiator === "Human operator" ? "The operator's own decision" : "Not reported"));
   out.push(requested && requested[1] !== null ? step("requested", `Stop request (${row.initiator})`, "done", requested)
     : step("requested", `Stop request (${row.initiator})`, "unknown", requested, "The request itself did not reach the dashboard"));
   const rejected = final && final[0] === "rejected";
@@ -52,14 +56,23 @@ export function steps(row) {
   out.push(step("stopped", "Skill stop", stopState, final && final[0] !== "rejected" ? final : null,
     final ? undefined : accepted ? "The skill is ending (returning the arm)" : "Not yet"));
   out.push(step("physical", "Physical stop", "unknown", null, "Unverified: no motion or safety telemetry reaches the dashboard"));
+  const retry = stage(row, "retry_started"), retried = stage(row, "retry_finished");
+  if (retry) {
+    out.push(step("retry", "Retry", retried ? (/ended with OK/.test(retried[3]) ? "done" : "failed") : "pending", retried || retry,
+      retried ? retried[3].replace(/ \[[^\]]+\]$/, "") : retry[3].replace(/ \[[^\]]+\]$/, " running")));
+  } else if (final && final[0] === "confirmed") {
+    out.push(step("retry", "Retry or recovery", "pending", null, "None started yet"));
+  }
   return out;
 }
 
 /** "Stall detected → Stop requested → Executor accepted → Skill stopped": the recorded stages only, in order. */
 export function flowText(row, detectedLabel = "Anomaly detected") {
-  const words = { detected: detectedLabel, requested: "Stop requested", accepted: "Executor accepted",
-    confirmed: "Skill stopped", rejected: "Rejected", failed: "Did not stop", cancelled: "Withdrawn" };
-  const parts = row.stages.filter(([, t], i) => t !== null || i > 0).map(([s]) => words[s] || s);
+  const words = { detected: detectedLabel, requested: "Abort requested", accepted: "Executor accepted",
+    confirmed: "Skill stopped", rejected: "Rejected", failed: "Did not stop", cancelled: "Withdrawn",
+    retry_started: "Retry started", retry_finished: "Retry ended" };
+  const parts = row.stages.filter(([s, t], i) => s !== "decided" && (t !== null || i > 0)).map(([s]) => words[s] || s);
+  if (row.state === "requested") parts.push("Awaiting executor");
   if (row.state === "timed_out") parts.push("Timed out");
   return parts.join(" → ");
 }
@@ -71,53 +84,6 @@ export function activeIntervention(state) {
   const incidents = new Map(state.incidents.map((i) => [i.id, i]));
   return (state.interventions || []).findLast((row) => row.task === task && (OPEN.includes(row.state) ||
     (["failed", "rejected"].includes(row.state) && incidents.get(row.incident)?.state !== "resolved"))) || null;
-}
-
-/**
- * The monitor's current condition, apart from its connectivity, by priority: an open intervention, an active
- * anomaly (the newest fresh observation), elevated risk, unknown or stale observations, then normal. Returns
- * {level: "intervention" | "anomaly" | "elevated" | "unknown" | "normal" | "unavailable", text}. HISTORY counts the
- * anomalies in the window, said beside a normal current condition rather than hidden.
- */
-export function monitorCondition(state, status, now, windowStart) {
-  const open = activeIntervention(state);
-  if (open && OPEN.includes(open.state)) {
-    const head = open.stages.find(([s]) => s === "detected")?.[3] || "Stop requested";
-    const tail = { requested: "Stop requested · Awaiting executor acknowledgement",
-      executing: "Executor accepted · Skill stopping", timed_out: "Stop requested · No executor acknowledgement" }[open.state];
-    return { level: "intervention", text: `${head} · ${tail}` };
-  }
-  const observations = state.readings.filter((r) => r.kind === "observation");
-  const latest = observations.at(-1) || null;
-  const anomalies = state.incidents.filter((i) => i.kind === "monitor" && i.t >= windowStart).length;
-  if (!state.readings.length) return { level: "unavailable", text: "No monitoring service connected: session, agent and skill events only" };
-  if (!latest) return { level: "unknown", text: "Monitoring connected · No behaviour observation yet" };
-  const fresh = status.state === "connected" && status.observationAge !== null && status.observationAge <= Math.max(3, status.staleAfter || 3);
-  if (!fresh) {
-    return { level: "unknown", text: `Monitoring ${status.state === "connected" ? "connected" : status.state} · Current behaviour assessment unavailable (last observation ${Math.round(status.observationAge ?? 0)} s ago)` };
-  }
-  const what = signalLabel(latest.signal).toLowerCase();
-  const during = latest.skill ? ` during ${latest.skill}` : "";
-  if (latest.level === "anomaly") return { level: "anomaly", text: `Anomaly: ${latest.reason || what}${during}` };
-  if (latest.level === "elevated" || (latest.risk !== null && latest.threshold !== null && latest.risk >= latest.threshold)) {
-    const sustained = sustainedFor(observations, now);
-    return { level: "elevated", text: `Elevated ${what}${during}${sustained >= 10 ? ` · sustained ${Math.round(sustained)} s` : ""}` };
-  }
-  if (latest.level === "unknown") return { level: "unknown", text: "Monitoring connected · Current behaviour assessment unavailable" };
-  return { level: "normal", text: anomalies ? `Current condition normal · ${anomalies} anomal${anomalies > 1 ? "ies" : "y"} in the last minute`
-    : "Monitoring active · No anomalies detected in the last minute" };
-}
-
-/** How long the newest run of elevated or anomalous observations has lasted, in seconds. */
-export function sustainedFor(observations, now) {
-  let start = null;
-  for (let i = observations.length - 1; i >= 0; i -= 1) {
-    const r = observations[i];
-    const high = r.level === "anomaly" || r.level === "elevated" || (r.risk !== null && r.threshold !== null && r.risk >= r.threshold);
-    if (!high) break;
-    start = r.t;
-  }
-  return start === null ? 0 : now - start;
 }
 
 /** Open alerts grouped by incident: each {incident, interventions}, newest first; an alert without a shared

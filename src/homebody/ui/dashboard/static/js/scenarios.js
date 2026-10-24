@@ -1,10 +1,12 @@
 // Scenarios and servers, when this dashboard runs beside harnesses elsewhere (homebody connect, the monitor app):
 // a scenario fills the instruction and runs on its harness and simulation server; the Servers chip opens the list
 // of harnesses and simulation servers, each with whether it answers.
-import { $, h, setText, toggleClass } from "./dom.js";
+import { $, ago, clock, h, setText, toggleClass } from "./dom.js";
+import { systemSummary } from "./execution.js";
 
 const CUSTOM = ""; // the list's first entry: the instruction as typed
-const HEALTH = { up: "Answering", down: "Not answering", unknown: "Unknown" };
+const HEALTH = { healthy: "Healthy", degraded: "Degraded", unavailable: "Unavailable", unknown: "Unknown" };
+const IMPACT = { critical: "Critical dependency", noncritical: "Noncritical", unknown: "Impact unknown" };
 
 /** The scenario named NAME in STATE, or null. */
 export function scenarioNamed(state, name) {
@@ -16,21 +18,6 @@ export function scenarioWhere(scenario) {
   if (!scenario) return "";
   if (scenario.harness) return `Runs on ${scenario.harness}${scenario.sim ? ` with ${scenario.sim}` : ""}.`;
   return scenario.scene ? `Runs in ${scenario.scene}.` : "";
-}
-
-/**
- * The System chip: quiet ("System · 2/5 answering") unless a server in use (the harness and simulation server the
- * dashboard runs on) is down or unknown, which is a visible degraded state naming it. Servers not in use answering
- * or not is diagnostics, in the menu.
- */
-export function serversSummary(rows) {
-  const up = rows.filter((r) => r.health === "up").length;
-  const used = rows.filter((r) => r.active);
-  const down = used.filter((r) => r.health === "down");
-  const unknown = used.filter((r) => r.health !== "up" && r.health !== "down");
-  if (down.length) return { text: `System degraded · ${down.map((r) => r.name).join(", ")} not answering`, tone: "danger", degraded: true };
-  if (unknown.length) return { text: `System · ${unknown.map((r) => r.name).join(", ")} unknown`, tone: "warning", degraded: true };
-  return { text: `System · ${up}/${rows.length} answering`, tone: "", degraded: false };
 }
 
 export class Scenarios {
@@ -71,11 +58,11 @@ export class Scenarios {
     const rows = state.servers;
     this.chip.hidden = !Array.isArray(rows);
     if (Array.isArray(rows)) {
-      const summary = serversSummary(rows);
+      const summary = systemSummary(rows);
       setText(this.chip, summary.text);
       for (const tone of ["success", "warning", "danger"]) toggleClass(this.chip, tone, summary.tone === tone);
       toggleClass(this.chip, "quiet", !summary.degraded);
-      this.chip.title = `${rows.map((r) => `${r.name} (${r.kind}${r.active ? ", in use" : ""}): ${r.health}${r.error ? ` · ${r.error}` : ""}`).join("\n")}\nOpen for details and Refresh config`;
+      this.chip.title = `${rows.map((r) => `${r.name} (${r.kind}): ${HEALTH[r.health] || r.health} · ${IMPACT[r.impact] || r.impact}${r.error ? ` · ${r.error}` : ""}`).join("\n")}\nOpen for details and Refresh config`;
     }
   }
 
@@ -84,12 +71,14 @@ export class Scenarios {
       const rows = this.app.state.servers || [];
       const refresh = h("button", { class: "btn", type: "button", onclick: () => this.refresh() }, "Refresh config");
       return [
-        h("p", { class: "note", text: "The harnesses and simulation servers the config names, checked every 2 s." }),
+        h("p", { class: "note", text: "The harnesses and simulation servers the config names, checked every 2 s. A dependency comes from what the harness in use reports, never from a name." }),
         h("ul", { class: "server-list" }, ...rows.map((r) => h("li", { class: `server ${r.health}` },
           h("span", { class: "dot", title: HEALTH[r.health] || r.health }),
-          h("strong", { text: r.name }), h("span", { class: "agent-meta", text: ` ${r.kind}${r.active ? " · in use" : ""}` }),
+          h("strong", { text: r.name }), h("span", { class: "agent-meta", text: ` ${r.kind} · ${HEALTH[r.health] || r.health}` }),
           h("span", { class: "latency", text: r.latency_ms === null ? "—" : `${Math.round(r.latency_ms)} ms` }),
-          h("div", { class: "server-detail", text: r.detail }),
+          h("div", { class: "server-detail", text: r.detail || "" }),
+          h("div", { class: `server-detail impact ${r.impact}`, text: `${IMPACT[r.impact] || r.impact} · ${r.dependency}` }),
+          h("div", { class: "server-detail", text: r.last_ok ? `Last answered ${clock(r.last_ok)} (${ago(this.app.link.now() - r.last_ok)})` : "Never answered" }),
           r.error ? h("div", { class: "server-error", text: r.error }) : null))),
         refresh,
       ];

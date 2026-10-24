@@ -1,7 +1,9 @@
 // The details drawer: incidents, tree nodes, decisions, tool calls, lists, diagnostics and the expanded timeline.
 import { $, ago, clock, duration, h, json } from "./dom.js";
 import { interventionView } from "./inspector.js";
+import { attemptLabel, consistency } from "./execution.js";
 import { stateText } from "./interventions.js";
+import { errorText } from "./story.js";
 import { Timeline } from "./timeline.js";
 
 const LABELS = ["Goal", "Skill", "Agent decisions", "Monitor observations", "Risk", "Interventions", ""];
@@ -256,8 +258,10 @@ export class Drawer {
     const tool = this.app.state.tools.find((t) => t.id === id);
     if (!tool) return h("p", { class: "note", text: "This tool call is no longer kept." });
     return [
-      h("h3", { text: `${tool.skill}()` }),
-      facts([["State", tool.state], ["Goal", tool.goal], ["Attempt", String(tool.attempt)], ["Recovery", tool.recovery ? "Yes" : null],
+      h("h3", { text: `${attemptLabel(tool)} · ${tool.skill}()` }),
+      facts([["State", tool.state], ["Goal", tool.goal], ["Attempt", `${tool.number} in its goal (${tool.attempt} of this skill)`],
+        ["Execution id", tool.execution || "Unknown"], ["Skill call", tool.call ?? "Not reported"],
+        ["Outcome", tool.code ? `${errorText(tool.code)} (${tool.code})` : tool.state], ["Recovery", tool.recovery ? "Yes" : null],
         ["Started", clock(tool.start)], ["Ended", tool.end ? clock(tool.end) : null],
         ["Duration", duration((tool.end ?? this.app.link.now()) - tool.start)], ["Result", tool.code], ["Message", tool.message]]),
       h("h3", { text: "Arguments" }), h("pre", { class: "json", text: json(tool.arguments) }),
@@ -345,6 +349,20 @@ export class Drawer {
       if (!list.length) return h("p", { class: "note", text: "No instructions sent from this dashboard yet." });
       return h("ol", { class: "drawer-list" }, ...list.map((i) => h("li", {}, h("strong", { text: `${clock(i.t)} · ${i.state}` }),
         h("br"), i.text, i.reason ? h("span", { class: "agent-meta", text: i.reason }) : null)));
+    });
+  }
+
+  /** The controller's own report and how it compares with the tree and the executor. */
+  controller() {
+    this.open("Controller state", "controller", null, () => {
+      const s = this.app.state;
+      const check = consistency(s, this.app.link.now());
+      return [
+        facts([["Classification", check.state], ["Severity", check.severity], ["Behavior Tree", check.bt], ["Executor", check.executor],
+          ["Controller", check.controller], ["Rule", check.rule || "None: the sources agree"],
+          ["Tolerances", `transition ${s.timing?.transition_s} s · stale ${s.timing?.stale_s} s · stop ${s.timing?.stop_s} s ([dashboard] settings)`]]),
+        h("h3", { text: "Controller report" }), h("pre", { class: "json", text: json(s.controller ?? "Not reported to this dashboard") }),
+      ];
     });
   }
 

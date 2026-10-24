@@ -8,7 +8,7 @@ const incident = (id, t, kind, extra = {}) => ({ id, t, kind, tag: "", title: ki
   initiator: "", ...extra });
 
 test("declared failure codes read as text; unknown codes stay as they are", () => {
-  assert.equal(errorText("INVALID_ARGUMENT"), "Invalid target or arguments");
+  assert.equal(errorText("INVALID_ARGUMENT"), "Invalid action argument");
   assert.equal(errorText("NO_GRASP"), "No grasp found");
   assert.equal(errorText("WEIRD_CODE"), "WEIRD_CODE");
 });
@@ -20,7 +20,7 @@ test("long goal text becomes a short label at a word boundary", () => {
 
 test("operator labels say what happened; raw codes stay in the detail", () => {
   const failed = { type: "action", label: "pick", status: "failure", detail: { code: "INVALID_ARGUMENT", attempt: 2 } };
-  assert.deepEqual(operatorText(failed), { label: "Pick · attempt 2", meta: "Failed · Invalid target or arguments" });
+  assert.deepEqual(operatorText(failed), { label: "Pick · attempt 2", meta: "Failed · Invalid action argument" });
   const stopped = { type: "action", label: "pick", status: "failure", detail: { code: "MONITOR_STOPPED", number: 1 } };
   assert.deepEqual(operatorText(stopped), { label: "Pick", meta: "Failed · Stopped by monitor" });
   const pending = { type: "action", label: "pick", status: "running", detail: { number: 4,
@@ -30,7 +30,7 @@ test("operator labels say what happened; raw codes stay in the detail", () => {
   const earlier = { type: "attempts", label: "Earlier attempts", status: "failure",
     detail: { count: 3, failed: 3, codes: ["MONITOR_STOPPED", "NO_GRASP", "STALE_OBSERVATION"] } };
   assert.deepEqual(operatorText(earlier), { label: "3 earlier attempts",
-    meta: "All failed · Stopped by monitor, No grasp found, Its observation was too old" });
+    meta: "All failed · Stopped by monitor, No grasp found, Observation too old" });
   const running = { type: "goal", label: "Pick one accessible jam jar from the shelf with the right hand, keeping the rest.",
     status: "running", detail: { used: 4, budget: 8 } };
   assert.deepEqual(operatorText(running, "1m"), { label: "Pick one accessible jam jar", meta: "Running · attempt 4 of 8 · 1m" });

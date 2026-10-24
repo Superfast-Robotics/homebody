@@ -105,7 +105,8 @@ export function tokens() {
     "app-bg", "surface", "surface-2", "surface-3", "border", "border-subtle", "text-primary", "text-secondary",
     "text-muted", "primary", "on-primary", "violet", "violet-bg", "violet-edge", "cyan", "running", "running-light",
     "success", "success-light", "state-success-edge", "warning", "warning-light", "danger", "danger-light",
-    "state-error-edge", "neutral", "font",
+    "state-error-edge", "neutral", "font", "risk-low", "risk-elevated", "risk-high", "risk-missing", "event-high",
+    "event-warning", "event-selected",
   ].map((name) => [name, read(name)]));
   return palette;
 }

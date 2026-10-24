@@ -79,8 +79,9 @@ h1 { font-size: var(--size-title); font-weight: var(--weight-title); letter-spac
 .server-list .server { display: grid; grid-template-columns: 12px auto 1fr auto; gap: 4px 8px; align-items: baseline;
   padding: 8px 0; border-bottom: 1px solid var(--border); }
 .server-list .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--text-muted); }
-.server-list .server.up .dot { background: var(--success); }
-.server-list .server.down .dot { background: var(--danger); }
+.server-list .server.healthy .dot { background: var(--success); }
+.server-list .server.unavailable .dot { background: var(--danger); }
+.server-list .server.degraded .dot { background: var(--warning); }
 .server-list .server.unknown .dot { background: var(--warning); }
 .server-list .latency { color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .server-list .server-detail, .server-list .server-error { grid-column: 2 / 5; font-size: var(--size-meta); color: var(--text-secondary); }
@@ -527,3 +528,14 @@ pre.json { margin: 4px 8px 10px; padding: 8px 10px; background: var(--surface-2)
 .servers-chip.quiet { color: var(--text-muted); border-color: var(--border-subtle); background: transparent; font-weight: 500; }
 .command-group > .controls[data-controls="header"] { border-left: 1px solid var(--border-subtle); padding-left: var(--gap); }
 .summary { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60ch; }
+/* V6: the attempt an alert or intervention belongs to, and the execution-state mismatch card */
+.alert-attempt { display: block; font-size: var(--size-small); color: var(--text-secondary); font-weight: var(--weight-strong); }
+.intervention-attempt { font-size: var(--size-meta); color: var(--text-secondary); }
+.mismatch-card { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 8px 10px; margin: 12px 12px 0; padding: 12px;
+  border-radius: var(--radius-small); background: var(--warning-light); border: 1px solid var(--state-warning-edge); }
+.mismatch-card.critical { background: var(--danger-light); border-color: var(--state-error-edge); }
+.mismatch-card > .icon { color: var(--warning-text); }
+.mismatch-card.critical > .icon { color: var(--danger); }
+.server-list .impact.critical { color: var(--warning-text); }
+.intervention-card .controls, .mismatch-card .controls { display: flex; flex-direction: row; flex-wrap: wrap; gap: 6px; }
+.intervention-head p { line-height: 1.3; }

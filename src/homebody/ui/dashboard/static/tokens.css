@@ -47,6 +47,14 @@
   --state-error-edge: rgba(240, 100, 112, 0.5);
   --violet-bg: rgba(167, 139, 250, 0.14);
   --violet-edge: rgba(167, 139, 250, 0.6);
+  /* sustained risk and observation intervals, subdued; events on them use the bright accents below */
+  --risk-low: #17493E;
+  --risk-elevated: #795823;
+  --risk-high: #63313F;
+  --risk-missing: #35394B;
+  --event-high: #F06470;
+  --event-warning: #F5A742;
+  --event-selected: #FF8597;
 
   /* semantic names the components use */
   --background: var(--app-bg);
