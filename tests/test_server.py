@@ -339,3 +339,16 @@ def test_a_pause_mid_skill_reaches_the_remote_console_at_once(harness, tmp_path)
     controls.unpause()
     assert wait_for(lambda: not controls.paused.is_set())
     client.close()
+
+
+def test_a_pause_the_session_lifts_itself_reaches_the_remote_console_with_the_next_status(harness, tmp_path):
+    client = HarnessClient(url(harness), TOKEN, folder=tmp_path / "client")
+    controls = RemoteControls(client)
+    client.connect()
+    controls.pause()
+    assert wait_for(controls.paused.is_set)
+    harness.controls.unpause()  # "continue" while paused: the session lifts the pause, no console command
+    harness.ui.session = type("Session", (), {"controls": harness.controls})()
+    harness.ui.update("Thinking")
+    assert wait_for(lambda: not controls.paused.is_set())
+    client.close()

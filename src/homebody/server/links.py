@@ -21,7 +21,9 @@ class UiLink:
     def update(self, status: str, text: str = ""):
         self.status = (status, text)
         state = None if self.session is None else plain(session_state(self.session))
-        self.hub.publish(protocol.text("status", status=status, text=text, state=state))
+        paused = getattr(getattr(self.session, "controls", None), "paused", None)  # the session may lift it itself
+        self.hub.publish(protocol.text("status", status=status, text=text, state=state,
+                                       **({"paused": paused.is_set()} if paused is not None else {})))
 
     def _view(self, rgb, label: str, t=None, **meta):
         if not self.send_views:

@@ -161,6 +161,8 @@ class HarnessClient:
             if "status" in fields:
                 self.update(fields["status"], fields.get("notice") or fields.get("text", ""))
         elif kind == "status":
+            if "paused" in fields:  # the session lifts the operator's pause itself on "continue"
+                (self.paused.set if fields["paused"] else self.paused.clear)()
             state = fields.get("state")
             self.update(fields.get("status", ""), fields.get("text", ""), state if isinstance(state, dict) else None)
         elif kind in ("notice", "refused"):
