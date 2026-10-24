@@ -1,85 +1,101 @@
-"""A recorded rollout replayed: the reader rebuilds what the console showed at a time, and the console's Rollouts
-folder opens, exports, imports and evaluates rollouts."""
-from types import SimpleNamespace
-from unittest.mock import MagicMock
+"""A recorded rollout replayed: the reader rebuilds the monitor's view at a time, a rollout replays on the
+dashboard, and the dashboard's Rollouts export, import, evaluate and open rollouts."""
+import time
 
-from fakes import mocked_console
+from fakes import fake_dashboard
 from test_monitor_offline import SETTINGS, Decisions, Vocabularies, rollout
 
 from homebody.monitor.offline import evaluate
-from homebody.rollout.bundle import export
+from homebody.rollout.app import RolloutsApp
 from homebody.rollout.reader import Rollout
-from homebody.ui.rollouts import RolloutsPanel
+from homebody.rollout.replay import replay
 
 
-def test_the_reader_rebuilds_the_plan_skill_and_monitor_at_a_time(tmp_path):
+def test_the_reader_takes_the_chosen_monitors_readings_and_verdicts(tmp_path):
     root = rollout(tmp_path)
     evaluate(root, SETTINGS, Vocabularies(), Decisions(fail_after=2.0))
-    replay = Rollout(root, source="offline")
-    assert replay.source == "offline" and replay.has_live and replay.has_offline
-    assert (replay.t0, replay.t1) == (0.0, 3.5) and replay.unreadable == 0
-    early, late = replay.view(1.0), replay.view(3.5)
-    assert early.plan["active"] == "g1" and early.goal_id == "g1" and early.phase.stage == "Approaching"
-    assert early.spans == ((0.0, None, "pick", "g1", None),) and not early.verdicts
-    assert [entry[0] for entry in early.history] == [0.5, 1.0]
-    assert late.verdicts and late.verdicts[0].action == "abort_skill" and late.history[-1][4] == "failure"
-    assert replay.frame_at(1.2).name == "rgb.png" and replay.frame_at(-1) is None
-    assert replay.doing_at(1.0) == "pick: Approaching"
+    read = Rollout(root, source="offline")
+    assert read.source == "offline" and read.has_live and read.has_offline and read.task_name == "task-000"
+    assert (read.t0, read.t1) == (0.0, 3.5) and read.unreadable == 0 and read.instruction == "pick the cup"
+    assert [r.sim_time for r, _ in read.readings][:2] == [0.5, 1.0] and read.verdicts[0].action == "abort_skill"
+    assert read.by_goal and read.records[0]["kind"] == "frame"
     live = Rollout(root)  # the fixture's live readings are not readings: counted, not trusted
     assert live.source == "live" and live.readings == [] and live.unreadable == 1
 
 
-def panel(monkeypatch, tmp_path, models=None):
-    from homebody.session.config import Monitor
-    console = mocked_console(monkeypatch, monitor=Monitor(enabled=True))
-    return console, RolloutsPanel(console, runs=tmp_path / "runs", imported=tmp_path / "imported",
-                                  settings=SETTINGS, models=models)
+def settled(app, timeout=10.0):
+    """Wait for APP's background job; its message."""
+    until = time.monotonic() + timeout
+    while app.busy.locked() and time.monotonic() < until:
+        time.sleep(0.02)
+    return app.message
 
 
-def test_the_rollouts_folder_opens_a_replay_and_returns_to_live(monkeypatch, tmp_path):
-    root = rollout(tmp_path / "runs")
-    console, rollouts = panel(monkeypatch, tmp_path)
-    assert rollouts.choice.value == root.name and "sim rollout" in rollouts.about.content
-    rollouts.open()
-    assert console.replaying and "Replay" in console.strip.content and "g1" in console.plan_view.content
-    console.update("Thinking")  # the live run goes on underneath without drawing over the replay
-    assert "Replay" in console.strip.content and console._state == "Thinking"
-    rollouts.draw(2.0)
-    assert console.ego.image.shape == (8, 8, 3) and "2.0 s" in console.ego.label
-    rollouts.close()
-    assert not console.replaying and "Replay" not in console.strip.content
+def test_a_rollout_replays_on_the_dashboard_as_it_ran(tmp_path):
+    root = rollout(tmp_path)
+    evaluate(root, SETTINGS, Vocabularies(), Decisions(fail_after=2.0))
+    dashboard = fake_dashboard()
+    replay(dashboard, Rollout(root, source="offline"), SETTINGS.monitor.tau, now=1000.0)
+    store = dashboard.store
+    assert store.task["text"] == "pick the cup" and store.task["end"] is not None and store.status == "model_done"
+    skills = [i for i in store.intervals.values() if i.track == "skill"]
+    assert [(i.label, i.status) for i in skills] == [("pick", "failure")]
+    levels = [reading.level for reading in store.readings]
+    assert "anomaly" in levels and levels[0] == "expected"
+    assert any(i.kind == "monitor" and i.alert for i in store.incidents.values())
+    assert store.task["start"] == 1000.0 - 3.5 and max(r.t for r in store.readings) <= 1000.0  # it ends "now"
+    assert dashboard.history.index() and dashboard._snapshot()["tree"] is not None
+    assert dashboard.clock is time.time  # what the operator does next happens now
 
 
-def test_the_rollouts_folder_exports_imports_and_evaluates(monkeypatch, tmp_path):
+def test_the_rollouts_export_import_evaluate_and_open(tmp_path):
     source = rollout(tmp_path / "runs")
     decisions = Decisions(fail_after=2.0)
-    _, rollouts = panel(monkeypatch, tmp_path, models=lambda: (Vocabularies(), decisions))
-    client = MagicMock()
-    rollouts.export(client)
-    name, content = client.send_file_download.call_args.args
-    assert name == f"{source.name}.tar.gz" and content[:2] == b"\x1f\x8b"
-    archive = export(source, tmp_path / "out")
-    rollouts.upload.value = SimpleNamespace(name=archive.name, content=archive.read_bytes())
-    rollouts.import_()
-    assert rollouts.choice.value == f"imported/{source.name}" and "Imported" in rollouts.message.content
-    rollouts.plan_evaluation()
-    assert "decision calls" in rollouts.message.content and rollouts.confirm_button.visible
-    rollouts.evaluate()
-    assert "interventions it would have made" in rollouts.message.content and decisions.requests
-    assert "evaluated offline" in rollouts.about.content
+    dashboard = fake_dashboard()
+    app = RolloutsApp(dashboard, runs=tmp_path / "runs", imported=tmp_path / "imported", settings=SETTINGS,
+                      models=lambda: (Vocabularies(), decisions), replays=True)
+    (row,) = dashboard._snapshot()["rollouts"]["list"]
+    assert row == {"name": source.name, "tasks": ["task-000"]}
+    pick = {"name": source.name, "task": "task-000"}
+    assert "sim rollout" in dashboard.command({"type": "rollout_describe", **pick})["message"]
+    assert dashboard.command({"type": "rollout_export", **pick})["ok"]
+    assert "Exported" in settled(app)
+    (archive,) = (tmp_path / "runs/exports").glob("*.tar.gz")
+    assert dashboard.command({"type": "rollout_import", "path": str(archive)})["ok"]
+    assert "Imported" in settled(app)
+    imported = {"name": f"imported/{source.name}", "task": "task-000"}
+    app._listed_at = float("-inf")
+    assert imported["name"] in [r["name"] for r in dashboard._snapshot()["rollouts"]["list"]]
+    estimate = dashboard.command({"type": "rollout_evaluate", **imported})
+    assert "decision calls" in estimate["message"] and estimate["calls"] > 0 and not decisions.requests
+    assert dashboard.command({"type": "rollout_evaluate", "confirm": True, **imported})["ok"]
+    assert "would have made" in settled(app) and decisions.requests
     assert (tmp_path / "imported" / source.name / "tasks/task-000/monitor-offline/report.json").is_file()
+    assert dashboard.command({"type": "rollout_open", "source": "offline", **imported})["ok"]
+    assert "Showing" in settled(app) and dashboard.store.task["text"] == "pick the cup"
+    assert not dashboard.command({"type": "rollout_open", "name": "nonsense"})["ok"]
+    assert not dashboard.command({"type": "rollout_import", "path": str(tmp_path / "missing.tar.gz")})["ok"]
 
 
-def test_a_rollout_without_turns_takes_its_goals_from_the_readings_and_its_decisions_from_the_agent(tmp_path):
+def test_a_live_dashboard_does_not_open_replays_over_its_session(tmp_path):
+    source = rollout(tmp_path / "runs")
+    dashboard = fake_dashboard()
+    RolloutsApp(dashboard, runs=tmp_path / "runs", imported=tmp_path / "imported", settings=SETTINGS)
+    reply = dashboard.command({"type": "rollout_open", "name": source.name})
+    assert not reply["ok"] and "homebody rollout view" in reply["message"]
+    assert not dashboard.command({"type": "rollout_evaluate", "name": source.name})["ok"]  # no monitor models
+
+
+def test_a_rollout_without_turns_replays_its_decisions_without_a_plan(tmp_path):
     import json
     root = rollout(tmp_path, turns=False)
     with (root / "events.jsonl").open("a") as events:
         events.write(json.dumps({"kind": "decision", "simulation_time": 1.0,
                                  "decision": {"text": "Pick it.", "skill": "pick"}}) + "\n")
-    evaluate(root, SETTINGS, Vocabularies(), Decisions(fail_after=99))
-    view = Rollout(root, source="offline").view(2.0)
-    assert view.plan is None and view.goals == ((0.0, "task"),) and view.decisions == (1.0,)
-    assert view.spans[0][3] == "task" and view.skill_call == view.reading.phase.call
+    dashboard = fake_dashboard()
+    replay(dashboard, Rollout(root), SETTINGS.monitor.tau, now=50.0)
+    (decision,) = dashboard.store.decisions.values()
+    assert decision.skill == "pick" and decision.t == 50.0 - 3.5 + 1.0 and dashboard.store.plan is None
 
 
 def test_a_replay_skips_frames_and_events_an_imported_rollout_points_elsewhere(tmp_path):
@@ -96,3 +112,16 @@ def test_a_replay_skips_frames_and_events_an_imported_rollout_points_elsewhere(t
     replay = Rollout(root)
     assert all(secret not in path.parents and path != secret for _, path in replay.frames)
     assert replay.t1 == 3.5 and replay.verdicts == []
+
+
+def test_a_replay_dashboard_runs_no_robot_and_shows_the_last_recorded_frame(tmp_path):
+    root = rollout(tmp_path)
+    dashboard = fake_dashboard()
+    dashboard.read_only = True
+    replay(dashboard, Rollout(root), SETTINGS.monitor.tau)
+    reply = dashboard.command({"type": "submit", "text": "pick it again"})
+    assert not reply["ok"] and "recorded rollout" in reply["message"] and dashboard.controls.next() is None
+    controls = dashboard._snapshot()["controls"]
+    assert not controls["accepting"] and not controls["pause"] and not controls["stop_task"]
+    view, meta, data = dashboard.hub.frames[-1]
+    assert view == "robot" and meta["label"] == "Last recorded frame" and data[:2] == b"\xff\xd8"

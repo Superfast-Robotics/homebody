@@ -1,15 +1,12 @@
 """Shared test fakes: a planning arm with no collision geometry, and a dashboard over a recording
 server hub. Used by tests of the skill framework, the dashboard and the session."""
 
-from unittest.mock import MagicMock
-
 import numpy as np
 from scipy.spatial.transform import Rotation
 
 from homebody.helpers.geometry import transform
 from homebody.session.settings import Topdown
 from homebody.skills.contract import SkillFailure
-from homebody.ui.console import Console
 from homebody.ui.controls import Controls
 from homebody.ui.dashboard import Dashboard
 
@@ -60,22 +57,6 @@ class SceneRecorder:
 
     def last(self, name):
         return next(args for called, args, _ in reversed(self.calls) if called == name)
-
-
-def mocked_console(monkeypatch, settings=None, monitor=None, controls=None):
-    """A real Console over a mocked web server, with a recording 3D view."""
-    import socket
-
-    import viser
-    server = MagicMock()
-    for widget in ("add_image", "add_html", "add_markdown", "add_button", "add_text", "add_dropdown", "add_slider",
-                   "add_upload_button"):
-        getattr(server.gui, widget).side_effect = lambda *args, kind=widget, **kwargs: MagicMock(kind=kind)
-    monkeypatch.setattr(socket, "socket", MagicMock())
-    monkeypatch.setattr(viser, "ViserServer", MagicMock(return_value=server))
-    console = Console(controls or Controls(), topdown_settings=settings or Topdown(pixels_per_metre=100.), monitor=monitor)
-    console.scene_view = SceneRecorder()
-    return console
 
 
 class FakeHub:

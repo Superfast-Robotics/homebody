@@ -30,11 +30,14 @@ def verdict_for(view, reading):
 
 def feed(view, tau: float) -> dict | None:
     """VIEW's newest reading as a dashboard reading (ui/dashboard/records.reading), or None without one."""
-    reading = view.reading
-    if reading is None:
+    if view.reading is None:
         return None
-    name, risk = strongest(reading, view.vocabulary)
-    verdict = verdict_for(view, reading)
+    return value(view.reading, view.vocabulary, verdict_for(view, view.reading), tau)
+
+
+def value(reading, vocabulary, verdict, tau: float) -> dict:
+    """READING (with the VERDICT it gave, if any) as a dashboard reading."""
+    name, risk = strongest(reading, vocabulary)
     activity = max(reading.activity.values(), default=None) if reading.activity else None
     if verdict is not None and verdict.action in ALERTS:
         level = "anomaly"

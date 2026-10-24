@@ -38,7 +38,7 @@ git clone https://github.com/Stanford-TML/homebody.git && cd homebody
 conda create -n homebody python=3.11 -y && conda activate homebody
 ```
 
-**2.** Install the package (it brings MuJoCo, PyTorch and the console). Keep `-e`: it runs
+**2.** Install the package (it brings MuJoCo, PyTorch and the dashboard). Keep `-e`: it runs
 from this folder's assets.
 ```bash
 pip install -e .
@@ -101,7 +101,7 @@ timeline; the 3D scene is a camera choice, served on the next port. It has no lo
 homebody --env src_kitchen --model astra
 ```
 
-**Run one task without the console:**
+**Run one task without the dashboard:**
 ```bash
 homebody --headless --env src_kitchen --model opus --task "Put the coffee bags on the island and throw away the used cartons."
 ```
@@ -123,7 +123,7 @@ python tools/compose_cockpit.py $run     # a replay video, cockpit.mp4
 <details>
 <summary>Things to try</summary>
 
-Type any of these into the console, or pass one with `--task`. Each worked for both models
+Type any of these into the dashboard, or pass one with `--task`. Each worked for both models
 in every run (two runs per model, scored by `configs/waves/fun.json`).
 
 - *The juice is for whoever sits at the round table nearest the recycling bin. Take it to them.*
@@ -175,8 +175,9 @@ actions the robot may be seen doing for it. While the robot works, the OpenAI De
 for each action, for `unsafe`, for `human_needed`, for whether each done goal still holds, and for progress. Calls
 never overlap; the next one waits for the p95 latency. A failure the readings agree on for several calls in a row
 stops the running skill (`MONITOR_STOPPED`), marks the goal in the plan, or reopens a done goal, and the agent
-decides what to do next. `human_needed` pauses a console run until **Resume**. The console's Monitor panel shows
-the plan, the live reading, the labels and a timeline. Each task writes `monitor/readings.jsonl`.
+decides what to do next. `human_needed` pauses the run until **Resume**. On the dashboard each reading joins the
+Automatic Monitoring timeline (risk, threshold, what the model saw), an abort or reopened goal raises an alert, and
+resolving it dismisses the monitor's mark on the plan. Each task writes `monitor/readings.jsonl`.
 
 ```bash
 python tools/monitor_probe.py decisions                     # latency and cost per call
@@ -200,24 +201,26 @@ number of calls and the cost first, and stops at `rollouts.offline_max_cost_usd`
 homebody rollout export runs/session-*             # light by default; --full keeps sensors.npz and depth
 homebody rollout import session-*.tar.gz
 homebody rollout --settings configs/monitor.toml evaluate runs/imported/session-* --dry-run
-homebody rollout view                              # the console on recorded and imported rollouts
+homebody rollout view [runs/session-*]             # a dashboard on recorded and imported rollouts
 ```
 
-The console's **Rollouts** folder does the same: open a replay (the plan, timeline, camera and agent at any time,
-on a slider or played), export, import a bundle, and evaluate. Rollouts recorded before plans were saved replay
-without the tree.
+On every dashboard, **More → Rollouts** exports a session (to `runs/exports/`), imports a bundle by its path, and
+evaluates with the monitor (the cost is shown before it runs). `homebody rollout view` also opens them: the task
+appears as it ran, and clicking the timeline inspects any moment (camera frame, plan, alerts). Rollouts recorded
+before plans were saved replay without the tree.
 
 </details>
 
 <details>
 <summary>A harness server (start a rollout from another machine)</summary>
 
-`homebody serve` runs the harness without a console and listens on `server.host`:`server.port` (this machine
-only by default; reach it through an SSH tunnel). `homebody connect` runs the console and the monitor on your
-machine: the harness sends them the camera, the agent's progress and the frames to watch, and they send back the
-operator's commands and the monitor's stops and verdicts. The harness and its skills cannot tell the monitor is
-remote. A client needs the server's token (`server.token_file`, made owner-only on first start). One client
-commands; others watch. When the commanding console goes away mid-task the run pauses (`server.on_disconnect`).
+`homebody serve` runs the harness without a dashboard and listens on `server.host`:`server.port` (this machine
+only by default; reach it through an SSH tunnel). `homebody connect` runs the dashboard and the monitor on your
+machine: the harness sends them the camera (the view the page watches: robot, observer or hand), the plan, the
+agent's decisions and skills, and the frames to watch, and they send back the operator's commands and the
+monitor's stops and verdicts. The harness and its skills cannot tell the monitor is remote. A client needs the
+server's token (`server.token_file`, made owner-only on first start). One client commands; others watch. When the
+commanding dashboard goes away mid-task the run pauses (`server.on_disconnect`).
 
 ```bash
 homebody serve --settings configs/monitor.toml                    # on the simulator host
@@ -242,16 +245,16 @@ monitor app watches every harness and simulation server named in one config and 
 | --- | --- | --- |
 | Simulation | `python -m warehouse_sim.cli serve --profile P --cameras --evaluation --endpoint tcp://127.0.0.1:5720 --stream tcp://127.0.0.1:5721 --controller warehouse_homebody.plugin:make_plugin --controller-config C` | 5720 (RPC), 5721 (video) |
 | Harness | `homebody serve --sim tcp://127.0.0.1:5720 --sim-profile P --sim-root HOMEBODY_EFFECTIVE_ROOT=E --scene S --settings configs/warehouse_sim.toml` | 8765 (`[server] port`) |
-| Monitor app | `homebody monitor --config configs/servers_lambda.toml --settings configs/monitor_warehouse_sim.toml` | 8080 (the console) |
+| Monitor app | `homebody monitor --config configs/servers_lambda.toml --settings configs/monitor_warehouse_sim.toml` | 8080 (the dashboard) |
 
 A scene is exported for warehouse-sim with `warehouse_homebody.export` (its `profile.toml` and `effective.mjb`);
 the harness and the simulation server read the same files, so they share a volume. Every port is loopback-only:
 from another machine, tunnel the harness ports and the simulation ports to the `local_endpoint` / `local_stream`
-the config names. The config (`[[harness]]`, `[[sim]]`, `[[scenario]]`) is read again with **Refresh config**; the
-Servers section shows whether each harness and simulation server answers, which server each harness runs on, and
-whether the controller plugin is running. **Run scenario** attaches the scenario's harness to its simulation server
-(only when that harness is idle), switches the video to that server's stream and submits the task. The monitor
-watches the frames from the stream.
+the config names. The dashboard's **Servers** chip opens the list: whether each harness and simulation server
+answers, which server each harness runs on, whether the controller plugin is running, and **Refresh config**, which
+reads the config (`[[harness]]`, `[[sim]]`, `[[scenario]]`) again. Choosing a scenario above the instruction fills
+it; sending runs it: its harness attaches to its simulation server (only when idle), the camera views switch to that
+server's stream and the task is submitted. The monitor watches the frames from the stream.
 
 The `demo_openmodels-server` and `demo-homebody-baseline-server` branches carry `homebody serve` (with `--sim`)
 without the live monitor, so the monitor app can run scenarios on those harnesses too.

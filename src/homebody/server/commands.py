@@ -142,6 +142,7 @@ def run_scene(args, target, task: str | None, output, *, controls, ui, monitor, 
 
 def connect(args, settings, output) -> int:
     """A dashboard (and, with [monitor] enabled, the monitor) on this machine, driving a harness server."""
+    from homebody.__main__ import rollouts
     from homebody.monitor.decision import OpenAiDecisions
     from homebody.monitor.monitor import Monitor
     from homebody.monitor.vocabulary import VocabularyModel
@@ -159,6 +160,7 @@ def connect(args, settings, output) -> int:
                         monitor=settings.monitor if settings.monitor.enabled else None)
     console.extras["scenarios"] = lambda: client.presets
     console.handlers["run_scenario"] = lambda request: run_preset(controls, request)
+    rollouts(console, settings, output)
     client.console = console
     if settings.monitor.enabled:
         client.monitor = Monitor(settings.monitor, VocabularyModel(settings.monitor),
@@ -194,6 +196,7 @@ def run_preset(controls, request: dict) -> dict:
 
 def monitor(args, settings, output) -> int:
     """The monitor app: a dashboard and the monitor here, over the harnesses and simulation servers --config names."""
+    from homebody.__main__ import rollouts
     from homebody.monitor.decision import OpenAiDecisions
     from homebody.monitor.monitor import Monitor
     from homebody.monitor.vocabulary import VocabularyModel
@@ -218,6 +221,7 @@ def monitor(args, settings, output) -> int:
         return 2
     controls.app = app
     app.attach(console)
+    rollouts(console, settings, output)
     app.watcher.start()
     app.video.start()
     first = next(iter(app.config.harnesses), None)

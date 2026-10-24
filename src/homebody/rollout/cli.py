@@ -3,17 +3,16 @@
     homebody rollout export runs/session-*  [--task task-000] [--full] [--out DIR]
     homebody rollout import bundle.tar.gz   [--into runs/imported] [--replace]
     homebody rollout evaluate ROLLOUT       [--task task-000] [--dry-run] [--settings F.toml]
-    homebody rollout view                   [--runs runs] [--port 8090] [--settings F.toml]
+    homebody rollout view [ROLLOUT]         [--task task-000] [--runs runs] [--port 8090] [--settings F.toml]
 
 `evaluate` runs the monitor over the recorded frames (monitor/offline.py) after printing its cost; it needs the
-monitor's models: the vocabulary server and OPENAI_DECISIONS_API_KEY. `view` opens the console on recorded and
-imported rollouts without a simulator.
+monitor's models: the vocabulary server and OPENAI_DECISIONS_API_KEY. `view` opens the dashboard on recorded and
+imported rollouts without a simulator (More → Rollouts), with ROLLOUT already open.
 """
 import argparse
 import json
 import sys
 import time
-from dataclasses import replace
 from pathlib import Path
 
 from homebody.rollout import bundle
@@ -39,7 +38,9 @@ def parser():
     evaluate.add_argument("rollout", type=Path)
     evaluate.add_argument("--task", help="Only this task, e.g. task-000")
     evaluate.add_argument("--dry-run", action="store_true", help="Print the calls and cost, ask nothing")
-    view = commands.add_parser("view", help="The console on recorded and imported rollouts, without a simulator")
+    view = commands.add_parser("view", help="The dashboard on recorded and imported rollouts, without a simulator")
+    view.add_argument("rollout", type=Path, nargs="?", help="A rollout folder to open first")
+    view.add_argument("--task", help="Its task (default: the last)")
     view.add_argument("--runs", type=Path, help="Recorded sessions (default: ROOT/runs)")
     view.add_argument("--host", default="127.0.0.1")
     view.add_argument("--port", type=int, default=8090)
@@ -85,24 +86,26 @@ def evaluate(args, settings) -> int:
 
 
 def view(args, settings, runs: Path) -> int:
-    from homebody.ui.console import Console
+    from homebody.rollout.app import RolloutsApp
+    from homebody.rollout.reader import Rollout
+    from homebody.rollout.replay import replay
     from homebody.ui.controls import Controls
-    from homebody.ui.rollouts import RolloutsPanel
-    monitor = replace(settings.monitor, enabled=True)
-    console = Console(Controls(), host=args.host, port=args.port, scene_name="Rollouts", monitor=monitor)
-    for widget in (console.task, console.submit_button, console.stop_button, console.pause_button,
-                   console.stop_skill_button, console.note, console.send_note, console.run_heading):
-        widget.visible = False
-    RolloutsPanel(console, runs=runs, imported=runs / "imported", settings=replace(settings, monitor=monitor),
-                  models=lambda: models(settings))
-    print(f"Rollouts: http://{console.server.get_host()}:{console.server.get_port()} (open the Rollouts folder)")
+    from homebody.ui.dashboard import Dashboard
+    dashboard = Dashboard(Controls(), host=args.host, port=args.port, scene_name="Rollouts")
+    dashboard.read_only = True
+    dashboard.update("Ready", "Open a rollout: More → Rollouts.")
+    RolloutsApp(dashboard, runs=runs, imported=runs / "imported", settings=settings,
+                models=lambda: models(settings), replays=True)
+    if args.rollout is not None:
+        replay(dashboard, Rollout(args.rollout, args.task), settings.monitor.tau)
+    print(f"Rollouts: {dashboard.url} (More → Rollouts)")
     try:
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
         return 0
     finally:
-        console.close()
+        dashboard.close()
 
 
 def main(argv) -> int:

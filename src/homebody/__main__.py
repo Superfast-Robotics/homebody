@@ -131,6 +131,14 @@ def live_monitor(settings, recorder, ui):
                    sink=recorder.event, on_update=ui.monitor_update if ui is not None else None)
 
 
+def rollouts(dashboard, settings, output):
+    """The dashboard's Rollouts (export, import, evaluate) over OUTPUT's recorded sessions."""
+    from homebody.rollout.app import RolloutsApp
+    from homebody.rollout.cli import models
+    return RolloutsApp(dashboard, runs=output, imported=output / "imported", settings=settings,
+                       models=lambda: models(settings))
+
+
 def robot_profile(root, settings):
     """The arms' kinematics and the robot's calibration."""
     from homebody.helpers.kinematics import Arm
@@ -182,6 +190,7 @@ def run(args, settings, output):
                           semantic_context=semantic_prior(args.scene), monitor=monitor)
         if ui is not None:
             ui.session = session  # read on the session thread only, for the plan, task and hands
+            rollouts(ui, settings, output)
         assembled = True
         print(f"Evidence: {recorder.path}")
         if args.headless:

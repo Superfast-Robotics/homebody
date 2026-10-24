@@ -466,3 +466,10 @@ pre.json { margin: 4px 8px 10px; padding: 8px 10px; background: var(--surface-2)
   .track-labels { font-size: var(--size-small); }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } .spinner { animation: none; } }
+
+.drawer-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: var(--gap) 0; }
+.path-input { flex: 1 1 240px; min-width: 0; padding: 6px 8px; background: var(--surface-2); color: var(--text-primary);
+  border: 1px solid var(--border); border-radius: var(--radius-small); }
+/* a frozen or inspected timeline keeps its Return to live button whole; the legend gives way */
+.inspect-bar { flex: 0 0 auto; }
+.monitor-head .legend { flex: 0 1 auto; min-width: 0; overflow: hidden; }

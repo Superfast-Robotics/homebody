@@ -63,6 +63,7 @@ export class Controls {
       if (ok) this.send("reset");
     }
     if (item === "instructions") this.app.drawer.instructions();
+    if (item === "rollouts") this.app.rollouts.open();
     if (item === "diagnostics") this.app.drawer.diagnostics();
   }
 

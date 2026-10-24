@@ -75,6 +75,11 @@ class History:
                 self.frames.popitem(last=False)
             return frame_id
 
+    def clear(self):
+        with self.lock:
+            self.frames.clear()
+            self.last = float("-inf")
+
     def get(self, frame_id):
         with self.lock:
             return self.frames.get(frame_id, (None, None))[1]

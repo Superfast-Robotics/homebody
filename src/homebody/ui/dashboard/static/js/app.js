@@ -7,6 +7,7 @@ import { Drawer } from "./drawer.js";
 import { Header } from "./header.js";
 import { Info } from "./info.js";
 import { liveEnd, momentAt, monitorStatus, riskSources } from "./model.js";
+import { Rollouts } from "./rollouts.js";
 import { Scenarios } from "./scenarios.js";
 import { summarize } from "./story.js";
 import { Link } from "./socket.js";
@@ -36,6 +37,7 @@ class App {
     this.drawer = new Drawer(this);
     this.header = new Header(this);
     this.scenarios = new Scenarios(this);
+    this.rollouts = new Rollouts(this);
     this.controls = new Controls(this);
     this.camera = new Camera(this);
     this.tree = new TreeView(this);
@@ -63,6 +65,7 @@ class App {
       }
     }
     $("logs-empty").hidden = state.logs.length > 0;
+    $("menu-rollouts").hidden = !state.rollouts;
     this.renderMonitor(state);
     this.drawer.refresh();
   }

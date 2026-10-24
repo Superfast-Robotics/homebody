@@ -53,6 +53,7 @@ class Dashboard:
         self.places = places  # the scene's fixtures, for a location label grounded in its own metadata
         self.scene_view = self.session = self._scene_server = None
         self.remote_state = None  # the task, plan and hands a harness server sent, for a session elsewhere
+        self.read_only = False  # a recorded rollout's dashboard: no robot behind it, no session commands
         self.extras: dict = {}  # name -> callable: more state for the page (the monitor app's servers, scenarios)
         self.handlers: dict = {}  # command type -> callable(request) -> reply: the page's commands beyond the session's
         self._feed = None
@@ -256,6 +257,16 @@ class Dashboard:
     def _active_goal(self):
         return ((self.session_state() or {}).get("plan") or {}).get("active")
 
+    def reset(self, *, scene_name=None, initial_task="", clock=time.time):
+        """Forget everything shown and start a fresh record (a replay starts here); CLOCK stamps what comes next."""
+        self.clock = clock
+        self.store = Store(scene_name=scene_name or self.store.scene_name, model_name=self.store.model_name,
+                           initial_task=initial_task, clock=clock)
+        self.history.clear()
+        self.overlays.clear()
+        self._stills, self._sent, self._telemetry_at, self.remote_state = {}, {}, float("-inf"), None
+        self.hub.changed()
+
     # --- frames from elsewhere (a harness server, a simulation server's stream) ---
     def remote_frame(self, view, rgb, meta=None):
         """RGB for VIEW from a camera elsewhere, sent while someone watches it; the robot view is also kept in
@@ -284,6 +295,8 @@ class Dashboard:
                    "acknowledge": self._acknowledge, "resolve": self._resolve, "pause": self._optional("pause", "Pause requested"),
                    "resume": self._optional("resume", "Resume requested"),
                    "stop_skill": self._optional("stop_skill", "Stop requested for the current skill")}.get(kind)
+        if self.read_only and handler is not None:
+            return {"ok": False, "message": "This dashboard shows a recorded rollout; it runs no robot."}
         handler = handler or self.handlers.get(kind)
         if handler is None:
             return {"ok": False, "message": f"Unknown command {str(kind)[:40]!r}"}
@@ -363,7 +376,11 @@ class Dashboard:
         paused = getattr(self.controls, "paused", None)
         # paused: the operator's pause, or one the monitor asked for (status Paused until Resume)
         held = (paused is not None and paused.is_set()) or self.store.status == "Paused"
+        if self.read_only:
+            controls = {name: False for name in controls}
         state = self.store.snapshot({**controls, "paused": held})
+        if self.read_only:
+            state["controls"] = {**state["controls"], "accepting": False}
         views = {name: {"label": label, "available": live or self._stills.get(name, False)}
                  for name, (label, live) in VIEWS.items()}
         extras = {name: provide() for name, provide in self.extras.items()}
