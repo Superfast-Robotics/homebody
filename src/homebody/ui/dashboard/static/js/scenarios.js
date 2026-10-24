@@ -1,12 +1,10 @@
-// Scenarios and servers, when this dashboard runs beside harnesses elsewhere (homebody connect, the monitor app):
-// a scenario fills the instruction and runs on its harness and simulation server; the Servers chip opens the list
-// of harnesses and simulation servers, each with whether it answers.
-import { $, ago, clock, h, setText, toggleClass } from "./dom.js";
-import { systemSummary } from "./execution.js";
+// Scenarios, when this dashboard runs beside harnesses elsewhere (homebody connect, the monitor app): a scenario
+// fills the instruction and runs on its harness and simulation server. Which servers the session uses, and their
+// health, is the Session Configuration (session.js).
+import { $ } from "./dom.js";
+import { Select } from "./select.js";
 
-const CUSTOM = ""; // the list's first entry: the instruction as typed
-const HEALTH = { healthy: "Healthy", degraded: "Degraded", unavailable: "Unavailable", unknown: "Unknown" };
-const IMPACT = { critical: "Critical dependency", noncritical: "Noncritical", unknown: "Impact unknown" };
+const CUSTOM = "custom"; // the list's first entry: the instruction as typed
 
 /** The scenario named NAME in STATE, or null. */
 export function scenarioNamed(state, name) {
@@ -23,20 +21,18 @@ export function scenarioWhere(scenario) {
 export class Scenarios {
   constructor(app) {
     this.app = app;
-    this.select = $("scenario");
-    this.chip = $("servers-chip");
-    this.signature = "";
-    this.select.addEventListener("change", () => this.choose());
-    this.chip.addEventListener("click", () => this.open());
+    this.host = $("scenario");
+    this.select = new Select(this.host, { label: "Scenario", onChange: (id) => this.choose(id) });
+    this.select.value = CUSTOM;
   }
 
   /** The chosen scenario's name, or null for a custom instruction. */
   chosen() {
-    return this.select.hidden || this.select.value === CUSTOM ? null : this.select.value;
+    return this.host.hidden || this.select.value === CUSTOM ? null : this.select.value;
   }
 
-  choose() {
-    const scenario = scenarioNamed(this.app.state, this.select.value);
+  choose(name) {
+    const scenario = scenarioNamed(this.app.state, name);
     if (scenario) {
       this.app.header.input.value = scenario.task;
       this.app.header.resize();
@@ -46,47 +42,9 @@ export class Scenarios {
 
   render(state) {
     const scenarios = state.scenarios || [];
-    this.select.hidden = scenarios.length === 0 || Boolean(state.controls.busy); // task setup folds while a task runs
-    const signature = scenarios.map((s) => s.name).join("|");
-    if (signature !== this.signature) {
-      const keep = this.select.value;
-      this.signature = signature;
-      this.select.replaceChildren(h("option", { value: CUSTOM, text: "Custom instruction" }),
-        ...scenarios.map((s) => h("option", { value: s.name, text: s.name })));
-      this.select.value = scenarios.some((s) => s.name === keep) ? keep : CUSTOM;
-    }
-    const rows = state.servers;
-    this.chip.hidden = !Array.isArray(rows);
-    if (Array.isArray(rows)) {
-      const summary = systemSummary(rows);
-      setText(this.chip, summary.text);
-      for (const tone of ["success", "warning", "danger"]) toggleClass(this.chip, tone, summary.tone === tone);
-      toggleClass(this.chip, "quiet", !summary.degraded);
-      this.chip.title = `${rows.map((r) => `${r.name} (${r.kind}): ${HEALTH[r.health] || r.health} · ${IMPACT[r.impact] || r.impact}${r.error ? ` · ${r.error}` : ""}`).join("\n")}\nOpen for details and Refresh config`;
-    }
-  }
-
-  open() {
-    this.app.drawer.open("System status", "servers", null, () => {
-      const rows = this.app.state.servers || [];
-      const refresh = h("button", { class: "btn", type: "button", onclick: () => this.refresh() }, "Refresh config");
-      return [
-        h("p", { class: "note", text: "The harnesses and simulation servers the config names, checked every 2 s. A dependency comes from what the harness in use reports, never from a name." }),
-        h("ul", { class: "server-list" }, ...rows.map((r) => h("li", { class: `server ${r.health}` },
-          h("span", { class: "dot", title: HEALTH[r.health] || r.health }),
-          h("strong", { text: r.name }), h("span", { class: "agent-meta", text: ` ${r.kind} · ${HEALTH[r.health] || r.health}` }),
-          h("span", { class: "latency", text: r.latency_ms === null ? "—" : `${Math.round(r.latency_ms)} ms` }),
-          h("div", { class: "server-detail", text: r.detail || "" }),
-          h("div", { class: `server-detail impact ${r.impact}`, text: `${IMPACT[r.impact] || r.impact} · ${r.dependency}` }),
-          h("div", { class: "server-detail", text: r.last_ok ? `Last answered ${clock(r.last_ok)} (${ago(this.app.link.now() - r.last_ok)})` : "Never answered" }),
-          r.error ? h("div", { class: "server-error", text: r.error }) : null))),
-        refresh,
-      ];
-    }, { signature: () => JSON.stringify(this.app.state.servers || []) });
-  }
-
-  async refresh() {
-    const reply = await this.app.link.request("refresh_config");
-    this.app.notify(reply.ok ? "pending" : "bad", reply.message || "The request failed.");
+    this.host.hidden = scenarios.length === 0 || Boolean(state.controls.busy); // task setup folds while a task runs
+    this.select.setOptions([{ id: CUSTOM, label: "Custom instruction", description: "The instruction as typed" },
+      ...scenarios.map((s) => ({ id: s.name, label: s.name, description: s.scene ? `Scene ${s.scene}` : "" }))]);
+    if (!scenarios.some((s) => s.name === this.select.value)) this.select.value = CUSTOM;
   }
 }

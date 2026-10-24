@@ -52,14 +52,36 @@
         <span class="outcome-badge" id="outcome-badge" role="status" hidden title="Task outcome, from the plan's verified goals"><span class="mark"></span><span class="outcome-text"></span></span>
         <span class="elapsed" id="elapsed" title="Time since the task started"></span>
         <button class="alert-chip" id="alert-chip" type="button" hidden></button>
-        <button class="servers-chip" id="servers-chip" type="button" hidden aria-label="System status"></button>
+        <button class="servers-chip" id="servers-chip" type="button" hidden aria-haspopup="dialog" aria-expanded="false" aria-controls="session-panel"></button>
       </div>
       <p class="summary" id="summary">Connecting to the session…</p>
+      <section class="session-panel" id="session-panel" role="dialog" aria-labelledby="session-title" hidden>
+        <div class="session-head">
+          <div><h2 id="session-title">Session configuration</h2><p class="note">Select the servers for this monitoring session.</p></div>
+          <button class="btn icon-only small" type="button" id="session-close" aria-label="Close"><svg class="icon"><use href="#i-x"/></svg></button>
+        </div>
+        <label class="session-label">Harness server</label>
+        <div id="session-harness"></div>
+        <p class="note" id="session-harness-empty"></p>
+        <label class="session-label">Simulation server</label>
+        <div id="session-sim"></div>
+        <p class="note" id="session-sim-empty"></p>
+        <p class="note warn" id="session-draft-note"></p>
+        <div class="session-current" id="session-current"><span class="dot"></span><div><span class="label">Current session</span>
+          <strong class="pair"></strong><span class="session-state"></span></div></div>
+        <p class="note warn" id="session-warnings"></p>
+        <p class="note bad" id="session-error" role="alert"></p>
+        <div class="session-actions">
+          <button class="btn primary" type="button" id="session-apply">Apply selection</button>
+          <button class="btn" type="button" id="session-refresh">Refresh config</button>
+        </div>
+        <p class="note" id="session-apply-reason"></p>
+        <p class="note muted" id="session-refreshed"></p>
+      </section>
     </div>
     <div class="command-group">
       <form class="command" id="command" autocomplete="off">
-        <label class="visually-hidden" for="scenario">Scenario</label>
-        <select class="scenario-select" id="scenario" hidden title="A scenario fills the instruction and runs on its harness and simulation server"></select>
+        <div class="scenario-select" id="scenario" hidden title="A scenario fills the instruction and runs on its harness and simulation server"></div>
         <label class="visually-hidden" for="instruction">Instruction for the agent</label>
         <div class="command-input">
           <svg class="icon accent"><use href="#i-sparkle"/></svg>
@@ -106,8 +128,7 @@
       </div>
       <div class="camera-top">
         <span class="live-badge" id="live-badge"><span class="dot"></span><span>Connecting</span></span>
-        <label class="visually-hidden" for="camera-select">Camera</label>
-        <div class="select-wrap dark"><select id="camera-select"></select><svg class="icon"><use href="#i-chevron"/></svg></div>
+        <div id="camera-select" class="camera-select"></div>
         <span class="camera-freshness" id="camera-freshness"></span>
         <span class="spacer"></span>
         <button class="btn-glass" type="button" id="camera-fullscreen" aria-label="Fullscreen" title="Fullscreen"><svg class="icon"><use href="#i-expand"/></svg></button>
@@ -161,10 +182,7 @@
       </div>
       <div class="pane" role="tabpanel" id="pane-logs" aria-labelledby="tab-logs" hidden>
         <div class="filters" id="log-filters">
-          <div class="select-wrap"><select id="log-severity" aria-label="Severity"><option value="">All severities</option><option value="info">Info</option><option value="warning">Warning</option><option value="error">Error</option></select><svg class="icon"><use href="#i-chevron"/></svg></div>
-          <div class="select-wrap"><select id="log-source" aria-label="Source"><option value="">All sources</option><option value="session">Session</option><option value="agent">Agent</option><option value="skill">Skill</option><option value="operator">Operator</option><option value="monitor">Monitor</option></select><svg class="icon"><use href="#i-chevron"/></svg></div>
-          <div class="select-wrap"><select id="log-node" aria-label="Behavior tree goal"><option value="">All goals</option></select><svg class="icon"><use href="#i-chevron"/></svg></div>
-          <div class="select-wrap"><select id="log-time" aria-label="Time"><option value="">All time</option><option value="60">Last 1 min</option><option value="300">Last 5 min</option></select><svg class="icon"><use href="#i-chevron"/></svg></div>
+          <div id="log-severity"></div><div id="log-source"></div><div id="log-node"></div><div id="log-time"></div>
         </div>
         <ol class="log-list scroll" id="logs" aria-live="off"></ol>
         <div class="empty" id="logs-empty">No log entries yet.</div>
@@ -244,7 +262,7 @@
       <span class="pill timeline-mode" id="timeline-mode" title="Timeline mode"><span class="pill-text">Live timeline</span></span>
       <span class="badge synthetic" id="monitor-synthetic" hidden title="Readings marked synthetic by their source: test data, not a real safety or execution outcome">Synthetic data</span>
 
-      <div class="select-wrap" id="risk-source-wrap" hidden><select id="risk-source" aria-label="Risk score source"></select><svg class="icon"><use href="#i-chevron"/></svg></div>
+      <div id="risk-source-wrap" hidden><div id="risk-source"></div></div>
       <span class="spacer"></span>
       <div class="inspect-bar" id="monitor-inspect" hidden>
         <span id="monitor-inspect-text"></span>

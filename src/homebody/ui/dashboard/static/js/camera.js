@@ -1,6 +1,8 @@
 // The camera panel: view choice, the JPEG stream, freshness, history frames for inspection, the 3D scene.
 import { $, clock, duration, h, setText, storage, toggleClass } from "./dom.js";
+import { cameraGroups, triggerLabel } from "./camera_views.js";
 import { cameraEvidence } from "./evidence.js";
+import { Select } from "./select.js";
 import { cameraFor } from "./story.js";
 
 const STALE = 2.5; // s without a frame of a live view before it is labelled stale
@@ -15,7 +17,10 @@ export class Camera {
     this.image = $("camera-image");
     this.scene = $("camera-scene");
     this.empty = $("camera-empty");
-    this.select = $("camera-select");
+    this.shownLabel = "Robot camera (head)";
+    this.select = new Select($("camera-select"), { label: "Camera or visualization", variant: "dark",
+      onChange: (id) => this.choose(id), trigger: (option) => triggerLabel(this.choice, this.shownLabel, option) });
+    $("camera-select").dataset.menuWidth = "340";
     this.choice = storage.get("camera", AUTO);
     this.view = "robot"; // the view shown: the choice, or Auto's pick
     this.url = null;
@@ -27,7 +32,6 @@ export class Camera {
     this.recorded = null; // the recorded frame shown while inspecting ({id, t, sim}), or null when none is near
     this.evidence = null; // what that frame is to the detection (evidence.js)
     this.peek = false; // the live stream in this panel only, while the investigation stays
-    this.select.addEventListener("change", () => this.choose(this.select.value));
     $("camera-fullscreen").addEventListener("click", () => this.fullscreen());
     $("camera-snapshot").addEventListener("click", () => this.snapshot());
     $("camera-settings").addEventListener("click", (event) => this.settings(event.currentTarget));
@@ -59,15 +63,10 @@ export class Camera {
       this.clearFrame();
     }
     const shown = views.find((v) => v.name === this.view)?.label || this.view;
-    const signature = `${views.map((v) => `${v.name}:${v.available}`).join("|")}:${shown}`;
-    if (signature !== this.signature) {
-      this.signature = signature;
-      this.select.replaceChildren(h("option", { value: AUTO, text: `Auto · ${shown}` }), ...views.map((v) => h("option", {
-        value: v.name, text: v.available ? v.label : `${v.label} (none yet)`,
-      })));
-    }
+    this.shownLabel = shown;
+    // grouped: cameras, then visualizations; each with its availability from frames that arrived (camera_views.js)
+    this.select.setOptions(cameraGroups(state, this.app.link.now(), this.choice, { name: this.view, label: shown, ...this.freshness() }));
     if (this.select.value !== this.choice) this.select.value = this.choice;
-    this.select.title = this.choice === AUTO ? "Auto: the camera follows the running skill; choose one to keep it" : "Chosen camera; Auto follows the skill";
     if (this.app.link.view !== this.wire()) this.app.link.setView(this.wire());
   }
 
@@ -214,6 +213,7 @@ export class Camera {
     overlay.hidden = !lasting || this.inspecting !== null;
     setText(overlay, lasting ? `Camera frames invalid: ${quality.reason}` : "");
     if (!$("camera-popover").hidden) this.renderStats(state);
+    if (this.select.isOpen() && state) this.renderOptions(state); // the open menu's freshness stays current
   }
 
   renderEmpty() {
@@ -235,7 +235,7 @@ export class Camera {
   renderStats() {
     const fps = this.rate.length > 1 ? (this.rate.length - 1) / (this.rate.at(-1) - this.rate[0]) : null;
     const rows = [
-      ["View", this.select.selectedOptions[0]?.textContent || this.view],
+      ["View", this.select.option()?.label || this.view],
       ["Resolution", this.image.naturalWidth ? `${this.image.naturalWidth} × ${this.image.naturalHeight}` : "—"],
       ["Frame rate", fps ? `${fps.toFixed(1)} fps` : "—"],
       ["Last frame", this.frameAt ? clock(this.frameAt) : "—"],

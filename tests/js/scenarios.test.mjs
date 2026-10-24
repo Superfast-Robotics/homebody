@@ -1,4 +1,4 @@
-// The scenario list and servers chip's pure helpers, and the Rollouts drawer's choice.
+// The scenario list's pure helpers, and the Rollouts drawer's choice.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 

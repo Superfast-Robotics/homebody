@@ -16,6 +16,7 @@ from homebody.ui.dashboard.session_state import session_state
 from homebody.ui.dashboard.store import PLANNER, Store
 from homebody.ui.dashboard.views import (
     AUTO_CAMERAS,
+    CAMERAS,
     HISTORY_QUALITY,
     HISTORY_WIDTH,
     LIVE,
@@ -64,6 +65,7 @@ class Dashboard:
             from homebody.ui.dashboard.monitor_feed import MonitorFeed
             self._feed = MonitorFeed(self, monitor)
         self._stills, self._sent, self._telemetry_at, self._force = {}, {}, float("-inf"), False
+        self._seen = {}  # view -> when its newest frame reached this dashboard (streamed views only)
         self.hub = hub(host, port, snapshot=self._snapshot, on_command=self.command, history=self.history).start()
         self._pending, self._latest, self._closing, self._render_failed = Condition(), None, False, False
         self._renderer = Thread(target=self._render_newest, name="dashboard-render", daemon=True) \
@@ -129,6 +131,7 @@ class Dashboard:
         a redraw request) skips the frame-rate limit, for overlays that just changed."""
         force, self._force, now = force or self._force, False, self.clock()
         meta = {"t": now, "sim": float(frame.time), "seq": int(frame.sequence), "epoch": int(frame.epoch)}
+        self._seen["robot"] = now
         self.check_frame(frame.rgb, now, float(frame.time))
         wanted = self.hub.wanted() & set(LIVE)
         for view in wanted:
@@ -293,7 +296,7 @@ class Dashboard:
         self.history.clear()
         self.overlays.clear()
         self.frames = FrameCheck(self.store.timing)
-        self._stills, self._sent, self._telemetry_at, self.remote_state = {}, {}, float("-inf"), None
+        self._stills, self._sent, self._telemetry_at, self.remote_state, self._seen = {}, {}, float("-inf"), None, {}
         self.hub.changed()
 
     def check_frame(self, rgb, now, sim_time=None):
@@ -318,6 +321,7 @@ class Dashboard:
         """RGB for VIEW from a camera elsewhere, sent while someone watches it; the robot view is also kept in
         the history and its pose (META base_pose) is the telemetry."""
         now, meta = self.clock(), dict(meta or {})
+        self._seen[view] = now
         if view not in LIVE:
             self._stills[view] = True
         if view in self.hub.wanted() and now - self._sent.get(view, float("-inf")) >= FRAME_PERIOD:
@@ -442,7 +446,10 @@ class Dashboard:
         state = self.store.snapshot({**controls, "paused": held})
         if self.read_only:
             state["controls"] = {**state["controls"], "accepting": False}
-        views = {name: {"label": label, "available": live or self._stills.get(name, False)}
+        # each view: its group, whether it can be shown, and when a frame of it last arrived (streams only; a view
+        # rendered on demand has no frame time until it is watched)
+        views = {name: {"label": label, "available": live or self._stills.get(name, False),
+                        "group": "camera" if name in CAMERAS else "visualization", "last_frame": self._seen.get(name)}
                  for name, (label, live) in VIEWS.items()}
         extras = {name: provide() for name, provide in self.extras.items()}
         extras["frame_quality"] = self.frames.snapshot()

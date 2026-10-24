@@ -1,5 +1,13 @@
 // The Logs and Tools tabs: rows keyed by id, appended or updated in place so scroll and open rows survive.
 import { $, clock, duration, h, icon, json, setIcon, setText, toggleClass } from "./dom.js";
+import { Select } from "./select.js";
+
+const FILTERS = [
+  ["log-severity", "Severity", [["", "All severities"], ["info", "Info"], ["warning", "Warning"], ["error", "Error"]]],
+  ["log-source", "Source", [["", "All sources"], ["session", "Session"], ["agent", "Agent"], ["skill", "Skill"], ["operator", "Operator"], ["monitor", "Monitor"]]],
+  ["log-node", "Behavior tree goal", [["", "All goals"]]],
+  ["log-time", "Time", [["", "All time"], ["60", "Last 1 min"], ["300", "Last 5 min"]]],
+];
 
 const TOOL_STATE = { running: "running", succeeded: "success", failed: "failure" };
 
@@ -8,8 +16,12 @@ export class Logs {
     this.app = app;
     this.list = $("logs");
     this.rows = new Map();
-    this.filters = ["log-severity", "log-source", "log-node", "log-time"].map($);
-    this.filters.forEach((select) => select.addEventListener("change", () => this.filter()));
+    this.filters = FILTERS.map(([id, label, options]) => {
+      const select = new Select($(id), { label, onChange: () => this.filter() });
+      select.setOptions(options.map(([value, text]) => ({ id: value, label: text })));
+      select.value = "";
+      return select;
+    });
     this.goals = "";
   }
 
@@ -36,15 +48,14 @@ export class Logs {
     const signature = goals.map((g) => g.detail.goal).join("|");
     if (signature === this.goals) return;
     this.goals = signature;
-    const select = $("log-node");
+    const select = this.filters[2];
     const value = select.value;
-    select.replaceChildren(h("option", { value: "", text: "All goals" }),
-      ...goals.map((g) => h("option", { value: g.detail.goal, text: `${g.detail.goal}: ${g.label}` })));
+    select.setOptions([{ id: "", label: "All goals" }, ...goals.map((g) => ({ id: g.detail.goal, label: `${g.detail.goal}: ${g.label}` }))]);
     select.value = goals.some((g) => g.detail.goal === value) ? value : "";
   }
 
   apply(row) {
-    const [severity, source, node, time] = this.filters.map((select) => select.value);
+    const [severity, source, node, time] = this.filters.map((select) => select.value || "");
     const recent = !time || this.app.link.now() - Number(row.dataset.t) <= Number(time);
     row.hidden = (severity && row.dataset.severity !== severity) || (source && row.dataset.source !== source) ||
       (node && row.dataset.node !== node) || !recent;

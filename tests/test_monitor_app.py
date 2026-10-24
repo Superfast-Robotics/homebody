@@ -167,3 +167,84 @@ def test_the_controller_state_is_the_simulation_servers_own_report(tmp_path):
     assert state["state"] == "error" and "boom" in state["detail"]
     made.statuses = {("sim", "warehouse_cart"): up()}
     assert made.controller_state()["state"] == "running"
+
+
+def test_apply_binds_the_pair_and_the_session_is_what_the_harness_confirms(tmp_path):
+    attached = {"status": "Ready", "sim": {"endpoint": "tcp://127.0.0.1:5720", "connected": True}}
+    made, sent, video = app(tmp_path, [{"status": "Ready", "sim": None}, attached])
+    made.wait_attached = lambda harness, sim: MonitorApp.wait_attached(made, harness, sim, timeout=5, poll=0)
+    assert made.session()["harness"] is None  # nothing active before an Apply
+    assert made.apply_session("demo_with_monitor", "warehouse_cart")
+    assert [kind for kind, _ in sent] == ["attach_sim"] and video.watched == "tcp://127.0.0.1:15721"
+    made.statuses[("harness", "demo_with_monitor")] = Status("demo_with_monitor", "harness", True, 1.0, attached)
+    session = made.session()
+    assert (session["harness"], session["sim"], session["sim_confirmed"], session["lifecycle"]) == \
+        ("demo_with_monitor", "warehouse_cart", True, "Ready")
+    assert session["applying"] is None and session["error"] == ""
+
+
+def test_apply_is_refused_for_a_server_that_does_not_answer_or_under_a_running_task(tmp_path):
+    down = Status("warehouse_cart", "sim", False, error="TimeoutError: describe timed out")
+    made, sent, _ = app(tmp_path, [], sim=down)
+    assert "does not answer" in made.apply_refusal("demo_with_monitor", "warehouse_cart")
+    reply = made.console.command({"type": "apply_session", "harness": "demo_with_monitor", "sim": "warehouse_cart"})
+    assert not reply["ok"] and "does not answer" in reply["message"] and sent == []
+    assert "not a configured" in made.apply_refusal("nonsense", "warehouse_cart")
+    made, sent, _ = app(tmp_path, [])
+    made.harness, made.client = "demo_with_monitor", types.SimpleNamespace(closed=types.SimpleNamespace(is_set=lambda: False))
+    made.statuses[("harness", "demo_with_monitor")] = Status("demo_with_monitor", "harness", True, 1.0, {"status": "Executing"})
+    assert "running a task" in made.apply_refusal("demo_with_monitor", "warehouse_cart")
+    assert not made.apply_session("demo_with_monitor", "warehouse_cart") and "running a task" in made.session()["error"]
+
+
+def test_a_refresh_never_drops_the_active_session_but_warns_when_the_config_no_longer_names_it(tmp_path):
+    made, _, _ = app(tmp_path, [])
+    made.harness = "demo_with_monitor"
+    made.client = types.SimpleNamespace(closed=types.SimpleNamespace(is_set=lambda: False), close=lambda: None)
+    made.sim = made.config.sims["warehouse_cart"]
+    made.config_path.write_text(CONFIG.replace("demo_with_monitor", "renamed_harness"))  # the harness and its scenario
+    made.watcher.refresh = lambda: made.statuses
+    assert made.console.command({"type": "refresh_config"})["ok"]
+    session = made.session()
+    assert session["harness"] == "demo_with_monitor" and made.client is not None  # still active
+    assert any("no longer in the configuration" in w for w in session["warnings"]) and session["refreshed"]
+
+
+SECOND = '\n[[harness]]\nname = "demo_openmodels"\nurl = "ws://127.0.0.1:8766"\ntoken_file = "~/.homebody/server_token"\n'
+
+
+def with_second_harness(made):
+    made.config_path.write_text(CONFIG + SECOND)
+    made.watcher.refresh = lambda: made.statuses
+    assert made.console.command({"type": "refresh_config"})["ok"] and "demo_openmodels" in made.config.harnesses
+
+
+def test_a_failed_apply_returns_to_the_harness_it_was_on_and_a_busy_target_or_second_click_is_refused(tmp_path):
+    made, _, video = app(tmp_path, [{"status": "Ready", "sim": None}])
+    with_second_harness(made)
+    old = types.SimpleNamespace(closed=types.SimpleNamespace(is_set=lambda: False), close=lambda: None, send=lambda kind, **f: None)
+    made.harness, made.client = "demo_with_monitor", old
+    connected = []
+    made.make_client = lambda harness: connected.append(harness.name) or old
+    made.wait_attached = lambda harness, sim: (_ for _ in ()).throw(TimeoutError("never attached"))
+    assert not made.apply_session("demo_openmodels", "warehouse_cart")
+    assert made.harness == "demo_with_monitor" and connected == ["demo_openmodels", "demo_with_monitor"]
+    assert "never attached" in made.session()["error"] and video.watched is None  # the video never moved
+    made.watcher.statuses[("harness", "demo_openmodels")] = Status(
+        "demo_openmodels", "harness", True, 1.0, {"status": "Executing", "sim": {"endpoint": "tcp://elsewhere:1"}})
+    assert "on another server" in made.apply_refusal("demo_openmodels", "warehouse_cart")
+    made.running.acquire()  # an Apply already in progress: the second click is refused at once
+    reply = made.console.command({"type": "apply_session", "harness": "demo_with_monitor", "sim": "warehouse_cart"})
+    assert not reply["ok"] and "Another session change" in reply["message"]
+    made.running.release()
+
+
+def test_an_active_harness_dropped_from_the_config_keeps_its_running_task_guard(tmp_path):
+    made, _, _ = app(tmp_path, [])
+    with_second_harness(made)
+    made.harness = "demo_with_monitor"
+    made.client = types.SimpleNamespace(closed=types.SimpleNamespace(is_set=lambda: False), close=lambda: None)
+    made.statuses = {("harness", "demo_with_monitor"): Status("demo_with_monitor", "harness", True, 1.0, {"status": "Executing"})}
+    assert made.lifecycle() == "Executing"
+    made.statuses = {}  # a refresh pruned it
+    assert "running a task" in made.apply_refusal("demo_openmodels", "warehouse_cart")

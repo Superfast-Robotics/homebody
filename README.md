@@ -250,9 +250,10 @@ monitor app watches every harness and simulation server named in one config and 
 A scene is exported for warehouse-sim with `warehouse_homebody.export` (its `profile.toml` and `effective.mjb`);
 the harness and the simulation server read the same files, so they share a volume. Every port is loopback-only:
 from another machine, tunnel the harness ports and the simulation ports to the `local_endpoint` / `local_stream`
-the config names. The dashboard's **Servers** chip opens the list: whether each harness and simulation server
-answers, which server each harness runs on, whether the controller plugin is running, and **Refresh config**, which
-reads the config (`[[harness]]`, `[[sim]]`, `[[scenario]]`) again. Choosing a scenario above the instruction fills
+the config names. The header's session chip (`harness → simulation server`) opens **Session configuration**: a
+harness and a simulation server chosen from the config, each with its health, controller and video readiness;
+**Apply selection** attaches them (refused while a task runs, and the active pair changes only when the harness
+confirms the attachment), and **Refresh config** reads the config (`[[harness]]`, `[[sim]]`, `[[scenario]]`) again. Choosing a scenario above the instruction fills
 it; sending runs it: its harness attaches to its simulation server (only when idle), the camera views switch to that
 server's stream and the task is submitted. The monitor watches the frames from the stream.
 

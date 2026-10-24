@@ -15,6 +15,8 @@ import { coverage, gapFor, liveEnd, momentAt, monitorStatus, riskSources } from 
 import { Rollouts } from "./rollouts.js";
 import { Scenarios } from "./scenarios.js";
 import { resolveSelection } from "./selection.js";
+import { Select } from "./select.js";
+import { SessionPanel } from "./session.js";
 import { Link } from "./socket.js";
 import { Timeline } from "./timeline.js";
 import { TreeView, setupTabs } from "./tree.js";
@@ -43,6 +45,7 @@ class App {
     this.drawer = new Drawer(this);
     this.header = new Header(this);
     this.scenarios = new Scenarios(this);
+    this.session = new SessionPanel(this);
     this.rollouts = new Rollouts(this);
     this.controls = new Controls(this);
     this.camera = new Camera(this);
@@ -62,7 +65,7 @@ class App {
       toggle.setAttribute("aria-expanded", String(!legend.hidden));
     });
     document.addEventListener("keydown", (event) => { if (event.key === "Escape") { legend.hidden = true; toggle.setAttribute("aria-expanded", "false"); } });
-    $("risk-source").addEventListener("change", (event) => { this.riskSource = event.target.value; });
+    this.riskSelect = new Select($("risk-source"), { label: "Risk score source", onChange: (id) => { this.riskSource = id; } });
     setInterval(() => this.tick(), TICK_MS);
     this.banner("loading", "Connecting to the session…");
     this.link.connect();
@@ -74,7 +77,7 @@ class App {
     if (this.selection) { // the same records by identity, with what they say now; the inspected moment stays
       this.selection = { ref: this.selection.ref, ...resolveSelection(state, this.selection.ref, this.timelineEnd().end) };
     }
-    for (const part of [this.header, this.scenarios, this.controls, this.camera, this.tree, this.logs, this.tools, this.info]) {
+    for (const part of [this.header, this.scenarios, this.session, this.controls, this.camera, this.tree, this.logs, this.tools, this.info]) {
       try {
         part.render(state);
       } catch (error) {
@@ -206,11 +209,8 @@ class App {
   renderRiskSources(state) {
     const sources = riskSources(state.readings);
     $("risk-source-wrap").hidden = sources.length < 2;
-    const select = $("risk-source");
-    if (select.options.length !== sources.length || [...select.options].some((o, i) => o.value !== sources[i])) {
-      select.replaceChildren(...sources.map((s) => h("option", { value: s, text: `Risk: ${s}` })));
-    }
-    select.value = sources.includes(this.riskSource) ? this.riskSource : sources.at(-1) || "";
+    this.riskSelect.setOptions(sources.map((s) => ({ id: s, label: `Risk: ${s}` })));
+    this.riskSelect.value = sources.includes(this.riskSource) ? this.riskSource : sources.at(-1) || null;
   }
 
   /** Where the live timeline ends: the clock while a task runs, held once the run stops. */

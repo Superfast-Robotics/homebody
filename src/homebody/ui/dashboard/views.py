@@ -21,6 +21,7 @@ VIEWS = {
     "topdown": ("Place target (top-down)", False),
 }
 LIVE = tuple(name for name, (_, live) in VIEWS.items() if live)
+CAMERAS = ("robot", "observer", "hand")  # camera streams; the other views are visualizations of the robot's data
 # Auto camera: the views each activity prefers, best first; the page takes the first this robot has. Extend it as a
 # robot gains cameras (a "wrist_right" view, say): names that are not served are skipped, never assumed.
 AUTO_CAMERAS = {

@@ -10,9 +10,13 @@ import time
 from homebody.server.watch import stale
 
 
-def row(name, kind, health, latency, detail, error="", active=False, last_ok=None, dependency="", impact="unknown"):
+def row(name, kind, health, latency, detail, error="", active=False, last_ok=None, dependency="", impact="unknown",
+        connected=None, controller="unknown", video="unknown", checking=False):
+    """CONNECTED: the server answered its last check (None: not checked yet, CHECKING); CONTROLLER (running, stopped,
+    none, unknown) and VIDEO (on, ready, none, unknown) are a simulation server's readiness, apart from its health."""
     return {"name": name, "kind": kind, "health": health, "latency_ms": latency, "detail": detail, "error": error,
-            "active": active, "last_ok": last_ok, "dependency": dependency, "impact": impact}
+            "active": active, "last_ok": last_ok, "dependency": dependency, "impact": impact, "connected": connected,
+            "controller": controller, "video": video, "checking": checking}
 
 
 def harness_row(name, status, active, last_ok=None) -> dict:
@@ -20,9 +24,9 @@ def harness_row(name, status, active, last_ok=None) -> dict:
         else ("Not used by this dashboard", "noncritical")
     extra = {"active": active, "last_ok": last_ok, "dependency": dependency, "impact": impact}
     if status is None:
-        return row(name, "harness", "unknown", None, "not checked yet", **extra)
+        return row(name, "harness", "unknown", None, "not checked yet", checking=True, **extra)
     if not status.connected:
-        return row(name, "harness", "unavailable", None, "", status.error or "no answer", **extra)
+        return row(name, "harness", "unavailable", None, "", status.error or "no answer", connected=False, **extra)
     state = status.detail
     link = state.get("sim")
     if link is None:
@@ -32,7 +36,8 @@ def harness_row(name, status, active, last_ok=None) -> dict:
     else:
         where, health = f"lost its simulation server {link.get('endpoint', '?')}", "degraded"
     error = link.get("error", "") if link and not link.get("connected") else ""
-    return row(name, "harness", health, status.latency_ms, f"{state.get('status', '?')} · {where}", error, **extra)
+    return row(name, "harness", health, status.latency_ms, f"{state.get('status', '?')} · {where}", error,
+               connected=True, **extra)
 
 
 def sim_dependency(sim, harness_status, active_sim):
@@ -51,9 +56,9 @@ def sim_row(sim, status, active, harness_status=None, active_sim=None, last_ok=N
     dependency, impact = sim_dependency(sim, harness_status, active_sim)
     extra = {"active": active, "last_ok": last_ok, "dependency": dependency, "impact": impact}
     if status is None:
-        return row(sim.name, "simulation", "unknown", None, "not checked yet", **extra)
+        return row(sim.name, "simulation", "unknown", None, "not checked yet", checking=True, **extra)
     if not status.connected:
-        return row(sim.name, "simulation", "unavailable", None, "", status.error or "no answer", **extra)
+        return row(sim.name, "simulation", "unavailable", None, "", status.error or "no answer", connected=False, **extra)
     detail = status.detail
     controller = detail.get("controller") or {}
     if not controller:
@@ -67,7 +72,9 @@ def sim_row(sim, status, active, harness_status=None, active_sim=None, last_ok=N
     video = f"video {'on' if active else 'ready'}" if detail.get("stream") else "no stream"
     text = " · ".join([detail.get("profile", "?"), control, video]
                       + ([f"largest overshoot {worst[0]} {worst[1]:.3f}"] if worst else []))
-    return row(sim.name, "simulation", health, status.latency_ms, text, controller.get("error") or "", **extra)
+    return row(sim.name, "simulation", health, status.latency_ms, text, controller.get("error") or "", connected=True,
+               controller="none" if not controller else "running" if controller.get("running") else "stopped",
+               video=("on" if active else "ready") if detail.get("stream") else "none", **extra)
 
 
 def server_rows(config, statuses: dict, active_harness=None, active_sim=None, now=None, last_ok=None) -> list[dict]:
