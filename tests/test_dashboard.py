@@ -216,11 +216,17 @@ def test_instructions_are_queued_only_when_the_agent_can_take_them():
     reply = dashboard.command({"type": "submit", "text": " Pick the jar "})
     assert reply["ok"] and dashboard.controls.next().text == "Pick the jar"
     dashboard.update("Thinking")
-    reply = dashboard.command({"type": "submit", "text": "Another"})
-    assert not reply["ok"] and "working on a task" in reply["message"]
-    assert dashboard.controls.next() is None
+    reply = dashboard.command({"type": "submit", "text": "Another"})  # these controls take notes for the agent
+    assert reply["ok"] and dashboard.controls.next() is None and dashboard.controls.take_notes() == ["Another"]
     states = [i["state"] for i in dashboard._snapshot()["instructions"]]
-    assert states == ["rejected", "running", "rejected"]
+    assert states == ["rejected", "running", "sent"]
+
+    class Basic(Controls):  # controls without notes refuse an instruction while a task runs
+        tell = None
+    basic = fake_dashboard(controls=Basic())
+    basic.update("Thinking")
+    reply = basic.command({"type": "submit", "text": "Another"})
+    assert not reply["ok"] and "working on a task" in reply["message"] and basic.controls.next() is None
 
 
 def test_stop_reset_and_unsupported_controls():

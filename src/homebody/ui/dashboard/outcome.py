@@ -21,7 +21,7 @@ def lifecycle(status, controls, tree_mode=None):
     Interrupted or Error."""
     if status == "Loading":
         return "Loading"
-    if controls.get("paused"):
+    if controls.get("paused") or status == "Paused":  # the operator's pause, or one the monitor asked for
         return "Paused"
     if status in BUSY:
         if controls.get("stop_pending"):

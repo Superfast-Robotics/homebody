@@ -116,6 +116,7 @@ export const STATUS = {
   Ready: ["Ready", ""],
   Thinking: ["Thinking", "running"],
   Executing: ["Running", "running"],
+  Paused: ["Paused", "warning"],
   Stopped: ["Stopped", ""],
   Resetting: ["Resetting", "warning"],
   "Reset required": ["Reset required", "danger"],

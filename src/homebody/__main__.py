@@ -128,7 +128,7 @@ def live_monitor(settings, recorder, ui):
     from homebody.monitor.monitor import Monitor
     from homebody.monitor.vocabulary import VocabularyModel
     return Monitor(settings.monitor, VocabularyModel(settings.monitor), OpenAiDecisions(settings.monitor),
-                   sink=recorder.event, on_update=ui.monitor_update if ui is not None else None)
+                   sink=recorder.event, on_update=ui.monitor_feed(settings.monitor) if ui is not None else None)
 
 
 def robot_profile(root, settings):

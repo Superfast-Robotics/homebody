@@ -143,6 +143,23 @@ class Dashboard:
             place = None if self.places is None else self.places.near(x, y)
             self.hub.telemetry({**meta, "pose": [x, y, yaw], "frame": "map", "place": place})
 
+    @property
+    def camera(self):
+        """The extra camera the session should render (session.show_camera): "observer", "hand" or "robot"."""
+        wanted = self.hub.wanted()
+        if "observer" in wanted:
+            return "observer"
+        return "hand" if "hand" in wanted else "robot"
+
+    def show_camera(self, rgb, label):
+        """An observer or hand camera image the session rendered because someone watches that view."""
+        view = "observer" if label.lower().startswith("observer") else "hand"
+        now = self.clock()
+        if now - self._sent.get(view, float("-inf")) >= FRAME_PERIOD:
+            self._sent[view] = now
+            self._stills[view] = True
+            self.hub.frame(view, {"t": now, "label": label}, jpeg(rgb))
+
     def _redraw(self, frame):
         if frame is not None:
             self._force = True
@@ -271,6 +288,10 @@ class Dashboard:
         text = text.strip()
         if len(text) > INSTRUCTION_LIMIT:
             return {"ok": False, "message": f"Instructions are limited to {INSTRUCTION_LIMIT} characters."}
+        if self.store.busy and capabilities(self.controls)["tell"]:
+            self.controls.tell(text)
+            self.store.instruction(text, "sent", "The agent reads it before its next decision.")
+            return {"ok": True, "message": "Sent. The agent reads it before its next decision."}
         if not self.store.accepting:
             reason = self._busy_reason()
             self.store.instruction(text, "rejected", reason)
@@ -278,6 +299,11 @@ class Dashboard:
         self.controls.submit(text)
         self.store.instruction(text, "pending")
         return {"ok": True, "message": "Queued. The agent starts it next."}
+
+    def monitor_feed(self, settings):
+        """The live monitor's on_update for this dashboard ([monitor] SETTINGS)."""
+        from homebody.ui.dashboard.monitor_feed import MonitorFeed
+        return MonitorFeed(self, settings)
 
     def _busy_reason(self):
         status = self.store.status
@@ -308,8 +334,11 @@ class Dashboard:
 
     def _resolve(self, request):
         incident = request.get("incident")
-        if not isinstance(incident, str) or not self.store.resolve(incident):
+        found = self.store.incidents.get(incident) if isinstance(incident, str) else None
+        if found is None or not self.store.resolve(incident):
             return {"ok": False, "message": "That alert is already resolved or does not exist."}
+        if found.kind == "monitor" and capabilities(self.controls)["dismiss"]:
+            self.controls.dismiss()  # the live monitor clears its alert and its mark on the plan
         return {"ok": True, "message": "Resolved."}
 
     def _optional(self, name, done):
@@ -324,7 +353,9 @@ class Dashboard:
     def _snapshot(self):
         controls = capabilities(self.controls)
         paused = getattr(self.controls, "paused", None)
-        state = self.store.snapshot({**controls, "paused": bool(paused is not None and paused.is_set())})
+        # paused: the operator's pause, or one the monitor asked for (status Paused until Resume)
+        held = (paused is not None and paused.is_set()) or self.store.status == "Paused"
+        state = self.store.snapshot({**controls, "paused": held})
         views = {name: {"label": label, "available": live or self._stills.get(name, False)}
                  for name, (label, live) in VIEWS.items()}
         return {**state, "views": views, "history": self.history.index(), "auto_cameras": AUTO_CAMERAS,

@@ -24,7 +24,7 @@ from homebody.ui.dashboard.records import (
 )
 from homebody.ui.dashboard.tree import plan_nodes
 
-BUSY = ("Thinking", "Executing")
+BUSY = ("Thinking", "Executing", "Paused")  # a paused task is still the running task
 CODER = "call_coder"  # session.coder.CALL: the coding assistant, a recovery tool
 PLANNER = ("plan", "goal_done", "goal_failed", "done")  # decisions the session answers itself, not tools
 # a task's end status: its tone and, for a failure, the incident it raises
@@ -117,7 +117,7 @@ class Store(PlanTracking):
                 self._task_started(task or self.text)
             self._plan(plan if plan is None or busy else {**plan, "active": None})  # idle: no goal runs
             self._thinking(status == "Thinking")
-            if status != "Executing":
+            if status not in ("Executing", "Paused"):
                 self._close_tools("ended")
             if not busy:
                 self.stop_pending = False
@@ -125,6 +125,10 @@ class Store(PlanTracking):
                 self._task_ended(status, text)
             if status == "Ready":
                 self.reset_pending = False
+            if status == "Paused" and self.status != "Paused" and "monitor" in text.lower():
+                self.incident("pause", "warning", "The monitor paused the task for a person", text, source="monitor",
+                              node=(self.plan or {}).get("active"), tag="pause", detection="Live monitor",
+                              initiator="Live monitor", executor="Session")
             self.status, self.text = status, clip(text)
             if status == "Executing" and text:
                 self.agent_text = clip(text)

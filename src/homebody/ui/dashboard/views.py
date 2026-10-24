@@ -15,6 +15,8 @@ VIEWS = {
     "depth": ("Depth", True),
     "labels": ("Segmentation", True),
     "map": ("Navigation map", True),
+    "observer": ("Observer (behind the robot)", False),  # rendered by the session while watched
+    "hand": ("Hand camera (the working hand)", False),
     "decision": ("Decision click", False),
     "topdown": ("Place target (top-down)", False),
 }

@@ -10,6 +10,7 @@ const STATES = {
   stopped: ["", "Stopped."],
   failed: ["bad", "Ended without success."],
   rejected: ["bad", "Rejected."],
+  sent: ["pending", "Sent to the running agent."],
 };
 // the executor's lifecycle, apart from the task's outcome: finishing is not succeeding
 const LIFECYCLE = {
@@ -21,6 +22,10 @@ const OUTCOME = {
   unverified: ["unverified", "?"], failed: ["failed", "✗"], cancelled: ["", "–"],
 };
 const BUSY_HINT = "The agent is working on a task. Stop it to give a new instruction.";
+const NOTE_HINT = "Send to the running agent: it reads this before its next decision (Enter).";
+
+/** Whether an instruction now goes to the running agent as a note (its controls take notes). */
+const noting = (state) => Boolean(state?.controls.busy && state.controls.tell);
 
 export class Header {
   constructor(app) {
@@ -56,7 +61,7 @@ export class Header {
     const text = raw.trim();
     const state = this.app.state;
     if (this.sending || !text) return;
-    if (!state?.controls.accepting) return this.show("bad", state?.controls.busy ? BUSY_HINT : "The session cannot take a task now.");
+    if (!state?.controls.accepting && !noting(state)) return this.show("bad", state?.controls.busy ? BUSY_HINT : "The session cannot take a task now.");
     this.sending = true;
     this.renderControls(state);
     this.show("pending", "Sending…");
@@ -88,12 +93,14 @@ export class Header {
   renderControls(state) {
     const connected = this.app.link.connected;
     const busy = Boolean(state?.controls.busy);
-    const accepting = Boolean(state?.controls.accepting) && connected && !this.sending;
+    const note = noting(state);
+    const accepting = (Boolean(state?.controls.accepting) || note) && connected && !this.sending;
     this.send.disabled = !accepting || !this.input.value.trim();
-    this.send.title = accepting ? "Start this instruction as a task (Enter). Shift+Enter adds a line."
+    this.send.title = note ? NOTE_HINT : accepting ? "Start this instruction as a task (Enter). Shift+Enter adds a line."
       : busy ? BUSY_HINT : "The session cannot take a task now";
-    this.send.setAttribute("aria-label", accepting ? "Start task with this instruction" : this.send.title);
-    this.input.placeholder = busy ? "The agent is working… stop the task to give a new instruction" : "Tell the agent what to do...";
+    this.send.setAttribute("aria-label", note ? "Send to the running agent" : accepting ? "Start task with this instruction" : this.send.title);
+    this.input.placeholder = note ? "Tell the running agent something (it reads it before its next decision)…"
+      : busy ? "The agent is working… stop the task to give a new instruction" : "Tell the agent what to do...";
     const action = primaryAction(state, this.input.value, connected);
     this.primary.hidden = action.kind === "none";
     this.primary.disabled = !action.enabled || this.sending;
