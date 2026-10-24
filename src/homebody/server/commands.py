@@ -220,6 +220,8 @@ def run_preset(controls, request: dict) -> dict:
 
 def monitor(args, settings, output) -> int:
     """The monitor app: a dashboard and the monitor here, over the harnesses and simulation servers --config names."""
+    from websockets.exceptions import WebSocketException
+
     from homebody.__main__ import rollouts
     from homebody.monitor.decision import OpenAiDecisions
     from homebody.monitor.monitor import Monitor
@@ -252,8 +254,8 @@ def monitor(args, settings, output) -> int:
     if first is not None:
         try:
             app.use_harness(first)
-        except (OSError, ConnectionError, ValueError) as error:
-            app.say("Ready", f"Harness {first} is not reachable yet: {error}")
+        except (OSError, ConnectionError, ValueError, WebSocketException) as error:  # a tunnel with no harness behind
+            app.say("Ready", f"Harness {first} is not reachable yet: {type(error).__name__}: {error}")
     print(f"Monitor app: {console.url} "
           f"({len(app.config.harnesses)} harnesses, {len(app.config.sims)} simulation servers, "
           f"{len(app.config.scenarios)} scenarios from {args.config})", flush=True)
