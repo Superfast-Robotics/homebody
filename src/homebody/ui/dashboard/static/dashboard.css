@@ -523,3 +523,7 @@ pre.json { margin: 4px 8px 10px; padding: 8px 10px; background: var(--surface-2)
 .risk-label.high .risk-now { color: var(--danger); } .risk-label.elevated .risk-now { color: var(--warning-text); }
 .risk-label.low .risk-now { color: var(--success); }
 .risk-label .risk-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+/* header: the System chip stays quiet unless a server in use is degraded; robot controls sit apart from the agent's input */
+.servers-chip.quiet { color: var(--text-muted); border-color: var(--border-subtle); background: transparent; font-weight: 500; }
+.command-group > .controls[data-controls="header"] { border-left: 1px solid var(--border-subtle); padding-left: var(--gap); }
+.summary { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60ch; }

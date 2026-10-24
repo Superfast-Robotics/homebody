@@ -18,11 +18,19 @@ export function scenarioWhere(scenario) {
   return scenario.scene ? `Runs in ${scenario.scene}.` : "";
 }
 
-/** The servers chip's text and tone: how many of the servers answer. */
+/**
+ * The System chip: quiet ("System · 2/5 answering") unless a server in use (the harness and simulation server the
+ * dashboard runs on) is down or unknown, which is a visible degraded state naming it. Servers not in use answering
+ * or not is diagnostics, in the menu.
+ */
 export function serversSummary(rows) {
   const up = rows.filter((r) => r.health === "up").length;
-  const down = rows.some((r) => r.health === "down");
-  return { text: `Servers ${up}/${rows.length}`, tone: down ? "danger" : up === rows.length ? "success" : "warning" };
+  const used = rows.filter((r) => r.active);
+  const down = used.filter((r) => r.health === "down");
+  const unknown = used.filter((r) => r.health !== "up" && r.health !== "down");
+  if (down.length) return { text: `System degraded · ${down.map((r) => r.name).join(", ")} not answering`, tone: "danger", degraded: true };
+  if (unknown.length) return { text: `System · ${unknown.map((r) => r.name).join(", ")} unknown`, tone: "warning", degraded: true };
+  return { text: `System · ${up}/${rows.length} answering`, tone: "", degraded: false };
 }
 
 export class Scenarios {
@@ -51,7 +59,7 @@ export class Scenarios {
 
   render(state) {
     const scenarios = state.scenarios || [];
-    this.select.hidden = scenarios.length === 0;
+    this.select.hidden = scenarios.length === 0 || Boolean(state.controls.busy); // task setup folds while a task runs
     const signature = scenarios.map((s) => s.name).join("|");
     if (signature !== this.signature) {
       const keep = this.select.value;
@@ -66,12 +74,13 @@ export class Scenarios {
       const summary = serversSummary(rows);
       setText(this.chip, summary.text);
       for (const tone of ["success", "warning", "danger"]) toggleClass(this.chip, tone, summary.tone === tone);
-      this.chip.title = rows.filter((r) => r.health !== "up").map((r) => `${r.name}: ${r.error || r.detail}`).join("\n") || "Every server answers";
+      toggleClass(this.chip, "quiet", !summary.degraded);
+      this.chip.title = `${rows.map((r) => `${r.name} (${r.kind}${r.active ? ", in use" : ""}): ${r.health}${r.error ? ` · ${r.error}` : ""}`).join("\n")}\nOpen for details and Refresh config`;
     }
   }
 
   open() {
-    this.app.drawer.open("Servers", "servers", null, () => {
+    this.app.drawer.open("System status", "servers", null, () => {
       const rows = this.app.state.servers || [];
       const refresh = h("button", { class: "btn", type: "button", onclick: () => this.refresh() }, "Refresh config");
       return [

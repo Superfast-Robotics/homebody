@@ -13,10 +13,14 @@ test("a scenario says where it runs", () => {
   assert.equal(scenarioWhere(null), "");
 });
 
-test("the servers chip counts the servers that answer and turns red when one does not", () => {
-  assert.deepEqual(serversSummary([{ health: "up" }, { health: "up" }]), { text: "Servers 2/2", tone: "success" });
-  assert.deepEqual(serversSummary([{ health: "up" }, { health: "unknown" }]), { text: "Servers 1/2", tone: "warning" });
-  assert.equal(serversSummary([{ health: "up" }, { health: "down" }]).tone, "danger");
+test("the system chip is quiet unless a server in use is degraded, which it names", () => {
+  const rows = [{ name: "harness", health: "up", active: true }, { name: "cart", health: "up", active: true },
+    { name: "other", health: "down", active: false }];
+  assert.deepEqual(serversSummary(rows), { text: "System · 2/3 answering", tone: "", degraded: false }); // an unused server down is diagnostics
+  rows[1].health = "down";
+  assert.deepEqual(serversSummary(rows), { text: "System degraded · cart not answering", tone: "danger", degraded: true });
+  rows[1].health = "unknown";
+  assert.equal(serversSummary(rows).tone, "warning");
 });
 
 test("the rollouts drawer keeps its choice while the list refreshes", () => {

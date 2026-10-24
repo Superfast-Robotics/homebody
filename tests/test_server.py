@@ -175,7 +175,10 @@ def test_malformed_and_binary_client_messages_are_refused_without_dropping_the_c
     assert "text messages only" in json.loads(commander.recv(timeout=5))["reason"]
     commander.send(protocol.text("monitor_stop", reason="x", call="not a number"))
     commander.send(protocol.text("monitor_verdicts", verdicts=[{"action": "abort_skill"}]))
-    assert json.loads(commander.recv(timeout=5))["type"] == "refused"
+    replies = [json.loads(commander.recv(timeout=5)) for _ in range(2)]
+    # the unnamed stop is refused by the harness (an intervention event); the malformed verdicts are refused outright
+    assert sorted(r["type"] for r in replies) == ["refused", "skill"]
+    assert next(r for r in replies if r["type"] == "skill")["event"]["stage"] == "rejected"
     commander.send(protocol.text("pause", epoch=1))
     assert wait_for(harness.controls.paused.is_set) and harness.commander is not None
     commander.close()

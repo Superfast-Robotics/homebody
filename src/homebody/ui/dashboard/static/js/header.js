@@ -112,7 +112,7 @@ export class Header {
     this.send.title = note ? NOTE_HINT : accepting ? "Start this instruction as a task (Enter). Shift+Enter adds a line."
       : busy ? BUSY_HINT : "The session cannot take a task now";
     this.send.setAttribute("aria-label", note ? "Send to the running agent" : accepting ? "Start task with this instruction" : this.send.title);
-    this.input.placeholder = note ? "Tell the running agent something (it reads it before its next decision)…"
+    this.input.placeholder = note ? "Message the agent (not a robot command): it reads it before its next decision"
       : busy ? "The agent is working… stop the task to give a new instruction" : "Tell the agent what to do...";
     const action = primaryAction(state, this.input.value, connected);
     this.primary.hidden = action.kind === "none";
