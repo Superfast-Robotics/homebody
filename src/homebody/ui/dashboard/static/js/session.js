@@ -105,6 +105,12 @@ export class SessionPanel {
     this.chip.hidden = !Array.isArray(rows);
     if (!Array.isArray(rows)) return;
     const session = state.session || {};
+    if (this.awaiting && session.applying) this.awaiting = { ...this.awaiting, started: true };
+    if (this.awaiting?.started && !session.applying) { // the Apply ended: its "Applying…" note gives way to the outcome
+      const { harness, sim } = this.awaiting;
+      this.awaiting = null;
+      this.app.notify(session.error ? "bad" : "", session.error || `Session: ${harness} → ${sim}`);
+    }
     const now = this.app.link.now();
     const active = (kind, name) => rows.find((r) => r.kind === kind && r.name === name);
     const pair = [active("harness", session.harness), active("simulation", session.sim)].filter(Boolean);
@@ -149,6 +155,7 @@ export class SessionPanel {
     } catch (error) {
       reply = { ok: false, message: `Unable to activate the selected session: ${error?.message || error}` };
     }
+    this.awaiting = reply.ok ? { ...this.draft, started: false } : null;
     this.app.notify(reply.ok ? "pending" : "bad", reply.message || "Unable to activate the selected session");
     if (!reply.ok) setText($("session-error"), reply.message || "Unable to activate the selected session");
   }
