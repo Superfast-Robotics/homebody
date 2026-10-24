@@ -165,6 +165,10 @@ its endpoint; without that report the impact is unknown.
 
 The plan node's status stays the tree runtime's: a request is shown beside a running call, never as its failure.
 
+A stall (no progress for `stall_s` simulation seconds while a skill runs) is only flagged: the monitor labels it,
+the agent's next prompt mentions it, and monitoring goes on. It never stops the skill, spends no abort, and raises no
+alert; the monitoring summary says "Stalled for N s · <attempt> · monitoring continues".
+
 What the dashboard cannot show yet, and shows as Unknown or Unverified instead:
 
 * **Physical stop.** No base velocity, arm motion or safety-state telemetry reaches the dashboard, so a stopped skill

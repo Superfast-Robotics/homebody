@@ -51,10 +51,10 @@ test("continuous risk restarts per attempt and differs from cumulative risk", ()
 test("the summary gives one conclusion by priority and still says when the monitor or camera is degraded", () => {
   const tools = [tool("t1", "failed", { code: "MONITOR_STOPPED", end: 5 }), tool("t2", "running", { number: 2, start: 6 })];
   const readings = [r(10, "elevated", 0.85, "t2"), r(28, "anomaly", 0.97, "t2")];
-  assert.equal(contextSummary(base({ tools, readings }), live, 28.5, 0, { gap: 30 }).text, "Stall risk high for 18 s · Pick attempt 2");
+  assert.equal(contextSummary(base({ tools, readings }), live, 28.5, 0, { gap: 30 }).text, "Stalled for 18 s · Pick attempt 2 · monitoring continues");
   const incidents = [{ id: "x1", observation: { signal: "stall" }, evidence: { risk: 1 } }];
   const pending = { tools, readings, incidents, interventions: [{ id: "v1", tool: "t2", task: "k1", incident: "x1", initiator: "Live monitor", state: "requested", stages: [] }] };
-  assert.equal(contextSummary(base(pending), live, 28.5, 0).text, "Stall risk high · Pick attempt 2 · 1 open intervention");
+  assert.equal(contextSummary(base(pending), live, 28.5, 0).text, "Stalled · Pick attempt 2 · monitoring continues · 1 open intervention");
   const stopped = { tools, readings: [r(9, "expected", 0.1, "t2")], incidents,
     interventions: [{ id: "v1", tool: "t1", task: "k1", incident: "x1", initiator: "Live monitor", state: "confirmed", stages: [["retry_started", 6, "", ""]] }] };
   assert.equal(contextSummary(base(stopped), live, 9.2, 0).text, "Monitoring active · No significant concerns · Pick attempt 2");
@@ -66,9 +66,9 @@ test("the summary gives one conclusion by priority and still says when the monit
   assert.equal(contextSummary(camera, live, 9.2, 0).text, "Monitoring active · No significant concerns · Pick attempt 2 · Robot camera quality warning: invalid frames");
   const mismatch = { state: "confirmed", rule: "Behavior Tree: Pick attempt 2 running · Controller: error" };
   assert.match(contextSummary(base({ tools, readings: [r(9, "elevated", 0.5, "t2")] }), live, 9.2, 0, { check: mismatch }).text, /^Execution state mismatch/);
-  assert.equal(contextSummary(base({ tools, readings: [r(9, "anomaly", 0.9, "t2")] }), live, 9.2, 0).text, "Stall risk high · Pick attempt 2"); // one reading: no duration
+  assert.equal(contextSummary(base({ tools, readings: [r(9, "anomaly", 0.9, "t2")] }), live, 9.2, 0).text, "Stalled · Pick attempt 2 · monitoring continues"); // one reading: no duration
   const previous = base({ tools, readings: [r(4, "anomaly", 0.9, "t1")] });
-  assert.match(contextSummary(previous, live, 4.5, 0).text, /^Previous Pick attempt 1: stall risk high · Current Pick attempt 2: assessment unknown/);
+  assert.match(contextSummary(previous, live, 4.5, 0).text, /^Previous Pick attempt 1: stalled · Current Pick attempt 2: assessment unknown/);
 });
 
 test("execution certainty: confirmed, overdue (uncertain, never stopped), and confirmed stopped", () => {

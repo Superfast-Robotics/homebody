@@ -130,12 +130,12 @@ const live = { state: "connected", observationAge: 0.5, staleAfter: 3 };
 test("risk names its context; a previous attempt's risk is not a fresh assessment of the current one", () => {
   const tools = [tool("t3", "pick", 3, 0, 20), tool("t4", "navigate", 4, 21)];
   const current = base({ tools, readings: [r(10, "anomaly", 0.95, "t4"), r(19, "anomaly", 1, "t4")] });
-  assert.equal(contextSummary(current, live, 19.5, 0, { gap: 30 }).text, "Stall risk high for 9 s · Navigate attempt 4");
+  assert.equal(contextSummary(current, live, 19.5, 0, { gap: 30 }).text, "Stalled for 9 s · Navigate attempt 4 · monitoring continues");
   const previous = base({ tools, readings: [r(10, "anomaly", 0.95, "t3"), r(19, "anomaly", 1, "t3")] });
   assert.equal(contextSummary(previous, live, 19.5, 0, { gap: 30 }).text,
-    "Previous Pick attempt 3: stall risk high · Current Navigate attempt 4: assessment unknown");
+    "Previous Pick attempt 3: stalled · Current Navigate attempt 4: assessment unknown");
   const between = base({ tools, readings: [r(19, "anomaly", 1, null, { scope: "unknown" })] });
-  assert.equal(contextSummary(between, live, 19.5, 0).text, "Stall risk high · Attempt unknown");
+  assert.equal(contextSummary(between, live, 19.5, 0).text, "Stalled · Attempt unknown · monitoring continues");
 });
 
 test("goal- or task-scoped risk continues across attempts; attempt-scoped risk restarts", () => {
@@ -146,14 +146,14 @@ test("goal- or task-scoped risk continues across attempts; attempt-scoped risk r
   const attempt = [r(0, "anomaly", 0.9, "t3"), r(5, "anomaly", 0.9, "t4")];
   assert.equal(continuousRisk(attempt, 6).seconds, 0);
   const tools = [tool("t3", "pick", 3, 0, 4), tool("t4", "pick", 4, 4.5)];
-  assert.equal(contextSummary(base({ tools, readings: goal }), live, 5.5, 0, { gap: 6 }).text, "Stall risk high for 5 s · Goal g2");
+  assert.equal(contextSummary(base({ tools, readings: goal }), live, 5.5, 0, { gap: 6 }).text, "Stalled for 5 s · Goal g2 · monitoring continues");
 });
 
 test("the summary is the current assessment, with an open intervention counted, not described again", () => {
   const tools = [tool("t4", "pick", 4, 0)];
   const pending = base({ tools, readings: [r(9, "anomaly", 1, "t4")], incidents: [{ id: "x1", observation: { signal: "stall" }, evidence: { risk: 1 } }],
     interventions: [{ id: "v1", tool: "t4", task: "k1", incident: "x1", initiator: "Live monitor", state: "requested", stages: [] }] });
-  assert.equal(contextSummary(pending, live, 9.5, 0).text, "Stall risk high · Pick attempt 4 · 1 open intervention");
+  assert.equal(contextSummary(pending, live, 9.5, 0).text, "Stalled · Pick attempt 4 · monitoring continues · 1 open intervention");
   const bad = base({ tools, readings: [r(9, "expected", 0.1, "t4", { frame_quality: "invalid" })] });
   assert.equal(contextSummary(bad, live, 9.5, 0).text, "Monitoring active · No significant concerns · Pick attempt 4 · Robot camera quality warning: invalid frames");
 });

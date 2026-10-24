@@ -286,14 +286,16 @@ export function contextSummary(state, status, now, windowStart, { gap = 3, syste
   const run = fresh ? continuousRisk(state.readings, gap) : null;
   if (check && check.state === "confirmed" && !run?.high) return said("anomaly", `Execution state mismatch · ${check.rule}`);
   if (run) {
-    const word = `${riskWord(run.signal)} risk ${run.high ? "high" : "elevated"}`;
-    const level = run.high ? "anomaly" : "elevated";
+    // a stall is a label, not an alert: the monitor flags it and keeps watching, the skill is not stopped
+    const stall = run.signal === "stall";
+    const word = stall ? "Stalled" : `${riskWord(run.signal)} risk ${run.high ? "high" : "elevated"}`;
+    const level = run.high && !stall ? "anomaly" : "elevated";
     const previous = run.scope === "skill_attempt" && run.tool && tool && run.tool !== tool.id;
     if (previous) {
       return said(level, `Previous ${contextLabel(state, run.latest)}: ${word.toLowerCase()} · Current ${attemptLabel(tool)}: assessment unknown`);
     }
     const lasting = run.seconds >= 1 ? ` for ${Math.round(run.seconds)} s` : "";
-    return said(level, `${word}${lasting} · ${contextLabel(state, run.latest)}`);
+    return said(level, `${word}${lasting} · ${contextLabel(state, run.latest)}${stall ? " · monitoring continues" : ""}`);
   }
   if (system?.required) return said("elevated", `Required service unavailable: ${system.names.join(", ")}`);
   if (!state.readings.length) return said("unavailable", "No monitoring service connected: session, agent and skill events only");

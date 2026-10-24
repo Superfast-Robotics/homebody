@@ -210,7 +210,8 @@ class Monitor:
     max(`min_period_s`, rolling p95 latency x `p95_margin`). A signal fires when its average (weight `ema` on the
     newest reading) crosses `tau` for `ticks` readings in a row (`tau_unsafe`, `ticks_unsafe` for unsafe;
     `stall_s` simulation seconds for no progress); a firing aborts the running skill at most `max_aborts_per_goal` times per goal
-    (0: flag only), never within `grace_s` of a skill's start nor `cooldown_s` after an abort. `max_cost_usd` caps
+    (0: flag only), never within `grace_s` of a skill's start nor `cooldown_s` after an abort. A stall is only flagged:
+    labelled on the dashboard, never a stop. `max_cost_usd` caps
     one task's decision spend (0: no cap)."""
     enabled: bool = False
     vocab_model: str = "qwen3.8-27b"

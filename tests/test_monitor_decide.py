@@ -105,7 +105,10 @@ def test_stall_needs_tool_call_and_stall_s_of_simulation_time():
     _, verdicts = run([reading(t * 0.4, progress=stalled) for t in range(8)])  # 2.8 s: a skill planning its grasp
     assert {v.action for v in verdicts} == {"continue"}
     _, verdicts = run([reading(t, progress=stalled) for t in range(4)])  # 3 s still
-    assert [v.action for v in verdicts] == ["continue"] * 3 + ["abort_skill"]
+    assert [v.action for v in verdicts] == ["continue"] * 3 + ["flag"]  # a stall is labelled, never a stop
+    assert verdicts[-1].label == "stall"
+    state, verdicts = run([reading(t, progress=stalled) for t in range(12)])
+    assert "abort_skill" not in {v.action for v in verdicts} and not state.aborts  # monitoring goes on; no abort spent
     moving = {"no_change": 0.1, "some": 0.8, "clear": 0.1}
     _, verdicts = run([reading(t, progress=stalled if t != 2 else moving) for t in range(5)])
     assert {v.action for v in verdicts} == {"continue"}  # progress in between restarts the clock

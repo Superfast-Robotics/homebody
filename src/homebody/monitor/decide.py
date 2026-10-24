@@ -11,9 +11,10 @@ too. A probability below its threshold never acts. In order:
    the goal is done again;
 2. unsafe -> abort the running skill, whatever the grace, cooldown or budget;
 3. human_needed -> the same, until the operator resumes (then not again for that goal);
-4. a failure label, or no progress while a skill runs -> abort the skill, or only flag the goal during the
-   agent's planning, within `grace_s` of the skill's start, within `cooldown_s` of an abort, or once the goal has
-   used its `max_aborts_per_goal`.
+4. a failure label -> abort the skill, or only flag the goal during the agent's planning, within `grace_s` of the
+   skill's start, within `cooldown_s` of an abort, or once the goal has used its `max_aborts_per_goal`;
+5. no progress while a skill runs (`stall`) -> flag only: the stall is labelled and monitoring goes on, since a
+   skill can stand still for a long time while it plans, verifies or squeezes; it never stops the skill.
 """
 from dataclasses import dataclass, field, replace
 
@@ -104,7 +105,9 @@ def observe(state: MonitorState, reading: Reading, vocabulary: Vocabulary, setti
     label = name.split(":", 1)[1] if name.startswith("failure:") else name
     described = vocabulary.label(label)
     reason = described.description if described else ""
-    if name in URGENT:
+    if name == "stall":
+        action = "flag"  # labelled, never a stop (rule 5)
+    elif name in URGENT:
         action = "abort_skill" if working else "flag"
     else:
         spent = state.aborts.get(goal, 0) >= settings.max_aborts_per_goal
