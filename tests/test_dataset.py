@@ -92,8 +92,8 @@ def test_each_type_previews_its_most_telling_sample_with_key_frames_and_what_it_
     types = {row["id"]: row for row in dashboard.command({"type": "dataset_types"})["types"]}
     failure = types["failure_recovery"]["preview"]
     assert failure["name"] == "failure_recovery_episode_0000"
-    assert [f["caption"] for f in failure["frames"]] == ["1. Pick attempt 1", "2. Pick failed: NO_GRASP",
-                                                          "3. Recovery: pick ok"]
+    assert [f["caption"] for f in failure["frames"]] == ["1. Pick approach", "2. Pick failed", "3. Recovery & retry"]
+    assert len({f["id"] for f in failure["frames"]}) == 3  # three distinct frames even when moments share one
     assert failure["record"]["failure_type"] == "NO_GRASP" and failure["record"]["outcome"] == "recovered"
     assert failure["record"]["task"] == "Pick the jam jar" and failure["thumbnail"] is not None
     assert {"camera frames", "actions", "monitor events", "outcome label"} <= set(failure["includes"])

@@ -4,6 +4,7 @@ extraction writes (dataset.py), from the most telling one of each type."""
 import time
 
 INCLUDES = ("camera frames", "robot state", "actions", "monitor events", "outcome label", "language")
+SHORT = 34  # characters of a text value shown in the preview's record (the extraction keeps the whole text)
 
 
 def nearest(frames, t, ids=None):
@@ -13,14 +14,24 @@ def nearest(frames, t, ids=None):
 
 
 def keyframes(frames, ids, points):
-    """[{id, caption}] for each (t, caption) of POINTS: the stored frame of IDS nearest t (repeats dropped)."""
-    chosen, seen = [], set()
+    """[{id, caption}] for each (t, caption) of POINTS: the stored frame of IDS nearest t that no earlier point took
+    (frames are a second apart, so two moments can share one)."""
+    chosen, free = [], set(ids)
     for number, (t, caption) in enumerate(points, 1):
-        frame_id = nearest(frames, t, set(ids)) if ids else None
-        if frame_id is not None and frame_id not in seen:
-            seen.add(frame_id)
+        frame_id = nearest(frames, t, free) if free else None
+        if frame_id is not None:
+            free.discard(frame_id)
             chosen.append({"id": frame_id, "caption": f"{number}. {caption}"})
-    return chosen
+    return sorted(chosen, key=lambda f: next(ft for fid, ft, _ in frames if fid == f["id"]))
+
+
+def short(value):
+    """VALUE with long text cut for the preview."""
+    if isinstance(value, str) and len(value) > SHORT:
+        return value[:SHORT - 1].rstrip() + "…"
+    if isinstance(value, list):
+        return [short(item) for item in value]
+    return value
 
 
 def spread(frames, ids):
@@ -40,11 +51,11 @@ def failure_recovery(state, rows, frames):
     row = next((r for r in rows if r["recovered"]), rows[0])
     failure, recovery = row["failure"], row["recovery"]
     end = failure["end"] or failure["start"]
-    points = [(failure["start"], f"{failure['skill'].capitalize()} attempt {failure['attempt']}"),
-              (end, f"{failure['skill'].capitalize()} failed: {failure['code'] or 'failed'}")]
+    points = [(failure["start"], f"{failure['skill'].capitalize()} approach"),
+              (end, f"{failure['skill'].capitalize()} failed")]
     if recovery:
-        points.append((recovery["end"] or recovery["start"],
-                       f"Recovery: {recovery['skill']} {(recovery['code'] or recovery['state']).lower()}"))
+        points.append((recovery["end"] or recovery["start"], "Recovery & retry" if row["recovered"]
+                       else f"Retry: {(recovery['code'] or recovery['state']).replace('_', ' ').lower()}"))
     record = {"task": task_of(state, failure["start"]), "skill": failure["skill"],
               "failure_type": failure["code"] or "failed",
               "recovery": f"{recovery['skill']} attempt {recovery['attempt']}" if recovery else None,
@@ -134,6 +145,7 @@ def preview(kind, state, rows, frames) -> dict | None:
         return None
     index, points, record, row = BUILDERS[kind](state, rows, frames)
     shown = keyframes(frames, row.get("frames", []), points)
-    return {"name": f"{NAMES[kind]}_{index:04d}", "frames": shown, "record": record, "includes": includes(row),
+    return {"name": f"{NAMES[kind]}_{index:04d}", "frames": shown, "includes": includes(row),
+            "record": {key: short(value) for key, value in record.items()},
             "thumbnail": shown[len(shown) // 2]["id"] if shown else None,
             "text": record.get("instruction") or record.get("task") or ""}
