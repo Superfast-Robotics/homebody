@@ -107,3 +107,26 @@ def test_closing_hands_the_server_back_even_when_the_adapter_fails_to_close():
     backend.client.release = lambda: calls.append("release") or {"released": True}
     backend.close()
     assert calls == ["close", "release"]
+
+
+class ObservationUnavailable(ValueError):
+    """warehouse_sim.contracts.ObservationUnavailable, by name: the server has no fresh camera frame."""
+
+
+def test_a_late_camera_frame_is_waited_for_and_one_that_never_comes_stops_the_task(monkeypatch):
+    from homebody.backends import warehouse
+    monkeypatch.setattr(warehouse, "STALE_POLL_S", 0.0)
+    answers = [ObservationUnavailable("latest frame is stale")] * 2 + ["frame"]
+
+    def snapshot():
+        answer = answers.pop(0)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+    assert robot(types.SimpleNamespace(snapshot=snapshot)).snapshot() == "frame"
+    monkeypatch.setattr(warehouse, "STALE_WAIT_S", 0.0)
+
+    def stale():
+        raise ObservationUnavailable("latest frame is stale")
+    with pytest.raises(SimLinkLost, match="no fresh camera frame"):
+        robot(types.SimpleNamespace(snapshot=stale)).snapshot()

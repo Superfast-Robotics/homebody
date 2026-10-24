@@ -137,6 +137,7 @@ def run_scene(args, target, task: str | None, output, *, controls, ui, monitor, 
     finally:
         if backend is not None:
             backend.close()
+        server.sink = lambda kind, **fields: None  # the session's evidence closes; later clients are not recorded
         recorder.close()
 
 

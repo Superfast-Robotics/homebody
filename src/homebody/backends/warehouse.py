@@ -8,12 +8,15 @@ decode its frames, and refuses a server whose model differs.
 """
 import json
 import sys
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from homebody.primitives.actions import PhysicsInvalid
 
 LINK_TIMEOUT_S = 10.0  # a request to the simulation server that takes longer means the link is down
+STALE_WAIT_S = 3.0  # the server's camera process can fall behind under load: a fresh frame is waited for this long
+STALE_POLL_S = 0.05
 
 
 class SimLinkLost(PhysicsInvalid):
@@ -51,6 +54,11 @@ def linked(call):
             if "zmq" in type(error).__module__ or "control channel" in str(error):
                 raise SimLinkLost(f"simulation server {self.target.endpoint}: {error}") from error
             raise
+        except Exception as error:
+            if type(error).__name__ != "ObservationUnavailable":  # warehouse_sim.contracts: no fresh frame
+                raise
+            raise SimLinkLost(f"simulation server {self.target.endpoint}: no fresh camera frame for "
+                              f"{STALE_WAIT_S:.0f} s ({error})") from error
     guarded.__name__, guarded.__doc__ = call.__name__, call.__doc__
     return guarded
 
@@ -76,7 +84,15 @@ class WarehouseRobot:
 
     @linked
     def snapshot(self):
-        return self.adapter.snapshot()
+        """The newest frame, waiting up to STALE_WAIT_S while the server has none fresh enough."""
+        deadline = time.monotonic() + STALE_WAIT_S
+        while True:
+            try:
+                return self.adapter.snapshot()
+            except Exception as error:
+                if type(error).__name__ != "ObservationUnavailable" or time.monotonic() >= deadline:
+                    raise
+                time.sleep(STALE_POLL_S)
 
     @linked
     def measure(self):
