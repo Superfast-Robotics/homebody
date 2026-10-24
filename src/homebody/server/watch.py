@@ -40,11 +40,16 @@ def harness_status(harness, timeout=TIMEOUT_S) -> Status:
 
 
 def sim_status(sim, timeout=TIMEOUT_S) -> Status:
-    """SIM's describe (config.Sim) at the address this machine reaches it by; read-only."""
-    from warehouse_sim.client import SimulatorClient
+    """SIM's describe (config.Sim) at the address this machine reaches it by; read-only. A warehouse-sim server and
+    a HomeBody sim server answer it alike."""
     start = time.monotonic()
     try:
-        description = SimulatorClient(sim.local_endpoint, timeout_s=timeout).describe()
+        if sim.engine == "homebody":
+            from homebody.simserver.client import describe
+            description = describe(sim.local_endpoint, timeout)
+        else:
+            from warehouse_sim.client import SimulatorClient
+            description = SimulatorClient(sim.local_endpoint, timeout_s=timeout).describe()
     except Exception as error:  # noqa: BLE001 -- any failure to answer is a lost link, shown as such
         return Status(sim.name, "sim", error=f"{type(error).__name__}: {error}"[:200], checked=time.time())
     detail = {"profile": description["profile"]["id"], "mode": description["mode"],

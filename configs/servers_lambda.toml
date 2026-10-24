@@ -2,6 +2,10 @@
 #   homebody monitor --config configs/servers_lambda.toml --settings configs/monitor_warehouse_sim.toml
 #   ssh -N -L 8765:127.0.0.1:8765 -L 8766:127.0.0.1:8766 -L 8767:127.0.0.1:8767 -L 15720:127.0.0.1:5720 -L 15721:127.0.0.1:5721 \
 #          -L 15730:127.0.0.1:5730 -L 15731:127.0.0.1:5731 loki-sim1
+#   ssh -N -L 15740:127.0.0.1:5740 -L 15741:127.0.0.1:5741 -L 15750:127.0.0.1:5750 -L 15751:127.0.0.1:5751 \
+#          -L 15760:127.0.0.1:5760 -L 15761:127.0.0.1:5761 loki-sim1
+# HomeBody sim servers (engine = "homebody"): homebody sim-serve on the same scene packages, physics at real time in
+# HomeBody's own MuJoCo backend (start_hb_sim.sh SCENE_DIR PORT on loki); no profile, the scene package is the contract.
 # Simulation servers: warehouse-sim (loki.ravuru/warehouse-sim-f3ff632, branch homebody-servers) serving the
 # 2026-10-23 scenes exported for it, with the HomeBody controller plugin (start_sim.sh SCENE PORT on loki).
 # endpoint/stream/profile/scene/roots are as the harness on loki sees them; local_* as this machine does.
@@ -42,6 +46,33 @@ local_stream = "tcp://127.0.0.1:15731"
 profile = "/lambda/nfs/group-volume/loki.ravuru/warehouse-sim-exports/homebody_kitchen_baskets/profile.toml"
 scene = "/lambda/nfs/group-volume/dex1-demos/2026-10-23/homebody/kitchen_baskets"
 roots = { HOMEBODY_EFFECTIVE_ROOT = "/lambda/nfs/group-volume/loki.ravuru/warehouse-sim-exports/homebody_kitchen_baskets" }
+
+[[sim]]
+name = "kitchen_baskets_hb"
+engine = "homebody"
+endpoint = "tcp://127.0.0.1:5740"
+stream = "tcp://127.0.0.1:5741"
+local_endpoint = "tcp://127.0.0.1:15740"
+local_stream = "tcp://127.0.0.1:15741"
+scene = "/lambda/nfs/group-volume/dex1-demos/2026-10-23/homebody/kitchen_baskets"
+
+[[sim]]
+name = "warehouse_cart_hb"
+engine = "homebody"
+endpoint = "tcp://127.0.0.1:5750"
+stream = "tcp://127.0.0.1:5751"
+local_endpoint = "tcp://127.0.0.1:15750"
+local_stream = "tcp://127.0.0.1:15751"
+scene = "/lambda/nfs/group-volume/dex1-demos/2026-10-23/homebody/warehouse_cart"
+
+[[sim]]
+name = "warehouse_picking_hb"
+engine = "homebody"
+endpoint = "tcp://127.0.0.1:5760"
+stream = "tcp://127.0.0.1:5761"
+local_endpoint = "tcp://127.0.0.1:15760"
+local_stream = "tcp://127.0.0.1:15761"
+scene = "/lambda/nfs/group-volume/dex1-demos/2026-10-20/warehouse_picking"
 
 [[scenario]]
 name = "Warehouse: one jam jar into the cart"
@@ -102,3 +133,21 @@ name = "Kitchen (baseline): the apple into the round basket"
 harness = "demo-homebody-baseline"
 sim = "kitchen_baskets"
 task = "On the kitchen table: put the red apple into the round woven basket. Keep everything else on the table in place."
+
+[[scenario]]
+name = "Kitchen (HomeBody sim): the apple into the round basket"
+harness = "demo_with_monitor"
+sim = "kitchen_baskets_hb"
+task = "On the kitchen table: put the red apple into the round woven basket. Keep everything else on the table in place."
+
+[[scenario]]
+name = "Warehouse (HomeBody sim): one jam jar into the cart"
+harness = "demo_with_monitor"
+sim = "warehouse_cart_hb"
+task = "Pick one jam jar from the shelf with the right hand and place it in the blue picking cart. Keep the other products in place."
+
+[[scenario]]
+name = "Warehouse picking (HomeBody sim): one jam jar to the next bay"
+harness = "demo_with_monitor"
+sim = "warehouse_picking_hb"
+task = "Pick a front jam jar from the left bay of the product shelf and place it on the free space at the front left of the adjoining shelf bay to the right. Keep all other products in place."

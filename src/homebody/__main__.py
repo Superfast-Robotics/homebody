@@ -23,9 +23,11 @@ from homebody.vlm.provider import ProviderError
 def parser():
     value = argparse.ArgumentParser(prog="homebody", description="HomeBody SIM: a model drives a simulated G1 "
                                                                  "in a scanned environment")
-    value.add_argument("command", nargs="?", choices=("run", "check", "provider-check", "serve", "connect", "monitor"),
+    value.add_argument("command", nargs="?", choices=("run", "check", "provider-check", "serve", "connect", "monitor",
+                                                         "sim-serve"),
                        default="run", help="serve: a harness consoles connect to ([server] settings); connect: a "
-                                           "console and monitor here, on a harness at --url")
+                                           "console and monitor here, on a harness at --url; sim-serve: this "
+                                           "scene's physics as a simulation server ([sim_server] settings)")
     value.add_argument("--root", type=Path,
                        help="Release root containing assets and configs")
     value.add_argument("--env", help="The environment by name, a folder of assets/real2sim/ "
@@ -47,7 +49,9 @@ def parser():
     value.add_argument("--token-file", help="connect: the server's token (default: server.token_file)")
     value.add_argument("--presets", type=Path, help="serve: TOML of scenarios consoles can run (server/presets.py)")
     value.add_argument("--config", type=Path, help="monitor: the harnesses, simulation servers and scenarios (TOML)")
-    value.add_argument("--sim", help="serve: run on a warehouse-sim server at this endpoint (tcp://127.0.0.1:PORT)")
+    value.add_argument("--sim", help="serve: run on a simulation server at this endpoint (tcp://127.0.0.1:PORT)")
+    value.add_argument("--sim-engine", choices=("warehouse", "homebody"), default="warehouse",
+                       help="serve --sim: a warehouse-sim server (needs --sim-profile) or a homebody sim-serve one")
     value.add_argument("--sim-profile", type=Path, help="serve --sim: the profile.toml that server serves")
     value.add_argument("--sim-root", action="append", default=[], metavar="NAME=PATH",
                        help="serve --sim: a source root the profile names (e.g. HOMEBODY_EFFECTIVE_ROOT=...)")
@@ -279,6 +283,9 @@ def main(argv=None):
         return check(args.root, args.scene, settings)
     if args.command == "provider-check":
         return provider_check(settings, output)
+    if args.command == "sim-serve":
+        from homebody.simserver.serve import sim_serve
+        return sim_serve(args, settings)
     if args.command in ("serve", "connect", "monitor"):
         from homebody.server import commands
         return getattr(commands, args.command)(args, settings, output)

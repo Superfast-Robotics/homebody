@@ -38,10 +38,12 @@ class Sim:
     roots: dict = field(default_factory=dict)
     local_endpoint: str = ""
     local_stream: str | None = None
+    engine: str = "warehouse"  # warehouse-sim's server, or HomeBody's own (homebody sim-serve): no profile
 
     def target(self) -> dict:
         """What the harness is sent to attach to this server (backends/warehouse.SimTarget)."""
-        return {"endpoint": self.endpoint, "profile": self.profile, "scene": self.scene, "roots": dict(self.roots)}
+        return {"endpoint": self.endpoint, "profile": self.profile or None, "scene": self.scene,
+                "roots": dict(self.roots), "engine": self.engine}
 
 
 @dataclass(frozen=True)
@@ -61,7 +63,8 @@ class MonitorConfig:
 
 
 FIELDS = {"harness": ({"name", "url", "token_file"}, set()),
-          "sim": ({"name", "endpoint", "profile", "scene"}, {"stream", "roots", "local_endpoint", "local_stream"}),
+          "sim": ({"name", "endpoint", "scene"}, {"profile", "engine", "stream", "roots", "local_endpoint",
+                                                 "local_stream"}),
           "scenario": ({"name", "harness", "sim", "task"}, set())}
 
 
@@ -90,11 +93,16 @@ def sim(row: dict) -> Sim:
     for key in ("endpoint", "stream", "local_endpoint", "local_stream"):
         if key in row and not LOOPBACK_TCP.match(row[key]):
             raise ValueError(f"sim {row['name']!r}: {key} must be tcp://127.0.0.1:PORT (loopback; tunnel otherwise)")
+    engine = row.get("engine", "warehouse")
+    if engine not in ("warehouse", "homebody"):
+        raise ValueError(f"sim {row['name']!r}: engine is warehouse (warehouse-sim) or homebody (homebody sim-serve)")
+    if engine == "warehouse" and "profile" not in row:
+        raise ValueError(f"sim {row['name']!r}: a warehouse-sim server needs the profile it serves")
     roots = row.get("roots", {})
     if not isinstance(roots, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in roots.items()):
         raise ValueError(f"sim {row['name']!r}: roots is a table of NAME = \"path\"")
-    return Sim(row["name"], row["endpoint"], row["profile"], row["scene"], row.get("stream"), dict(roots),
-               row.get("local_endpoint", row["endpoint"]), row.get("local_stream", row.get("stream")))
+    return Sim(row["name"], row["endpoint"], row.get("profile", ""), row["scene"], row.get("stream"), dict(roots),
+               row.get("local_endpoint", row["endpoint"]), row.get("local_stream", row.get("stream")), engine)
 
 
 def load(path: Path) -> MonitorConfig:

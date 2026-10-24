@@ -150,7 +150,7 @@ def test_a_failed_simulation_server_leaves_the_harness_up_until_it_is_attached_e
         port = probe.getsockname()[1]
     settings = Settings(server=Server(port=port, token_file=str(tmp_path / "token")))
     args = types.SimpleNamespace(backend="sim", presets=None, scene=scene, task=None, sim="tcp://127.0.0.1:5720",
-                                 sim_profile=Path("/x/profile.toml"), sim_root=[])
+                                 sim_profile=Path("/x/profile.toml"), sim_root=[], sim_engine="warehouse")
     seen = []
 
     def run_scene(args, target, task, output, *, ui, server, **kw):

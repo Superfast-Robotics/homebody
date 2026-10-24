@@ -96,11 +96,23 @@ def interrupted(signum, frame):
     raise KeyboardInterrupt(f"signal {signum}")
 
 
+def connect_sim(target, root, settings):
+    """The backend on TARGET's server: warehouse-sim's (backends/warehouse) or HomeBody's own (simserver/client)."""
+    if target.engine == "homebody":
+        from homebody.simserver.client import connect
+    else:
+        from homebody.backends.warehouse import connect
+    return connect(target, root, settings)
+
+
 def initial_target(args):
-    """The first session's target: a warehouse-sim server (--sim, --sim-profile, --sim-root) or the local scene."""
+    """The first session's target: a simulation server (--sim; for warehouse-sim also --sim-profile, --sim-root; for
+    a HomeBody one --sim-engine homebody) or the local scene."""
     if not args.sim:
         return args.scene
     from homebody.backends.warehouse import SimTarget
+    if args.sim_engine == "homebody":
+        return SimTarget(args.sim, None, args.scene, engine="homebody")
     if not args.sim_profile:
         raise SystemExit("--sim needs --sim-profile: the profile.toml that server serves (on the shared volume)")
     roots = dict(item.split("=", 1) for item in args.sim_root)
@@ -112,7 +124,7 @@ def run_scene(args, target, task: str | None, output, *, controls, ui, monitor, 
     this process) or a SimTarget (physics and the controller on a warehouse-sim server)."""
     from homebody.__main__ import robot_profile
     from homebody.backends.mujoco import MujocoBackend
-    from homebody.backends.warehouse import SimTarget, connect
+    from homebody.backends.warehouse import SimTarget
     from homebody.session.recorder import Recorder
     from homebody.session.session import Session
     from homebody.vlm.catalog import make
@@ -123,12 +135,13 @@ def run_scene(args, target, task: str | None, output, *, controls, ui, monitor, 
     recorder = Recorder(args.root, settings, output)
     recorder.event("scene_package", path=str(scene),
                    object_spawns=args.spawns if scene == args.scene and not remote else {},
-                   **({"simulation_server": target.endpoint, "profile": str(target.profile)} if remote else {}))
+                   **({"simulation_server": target.endpoint, "engine": target.engine,
+                       "profile": str(target.profile) if target.profile else None} if remote else {}))
     backend = None
     try:
         if remote:
             ui.update("Loading", f"Attaching to the simulation server at {target.endpoint}…")
-            backend = connect(target, args.root, settings)
+            backend = connect_sim(target, args.root, settings)
         else:
             ui.update("Loading", f"Loading the {scene.name} simulation…")
             backend = MujocoBackend(args.root, settings, scene=scene, spawns=args.spawns if scene == args.scene else {})

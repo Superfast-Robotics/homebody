@@ -23,22 +23,31 @@ class SimLinkLost(PhysicsInvalid):
     """The simulation server stopped answering; the task stops as it does when physics fails."""
 
 
+ENGINES = ("warehouse", "homebody")  # warehouse-sim's server, or HomeBody's own (homebody sim-serve, simserver/)
+
+
 @dataclass(frozen=True)
 class SimTarget:
-    """A simulation server to attach to: its control ENDPOINT, the PROFILE it serves (a profile.toml on the shared
-    volume, with ROOTS naming its source roots) and the Homebody SCENE package the profile was exported from."""
+    """A simulation server to attach to: its control ENDPOINT, the Homebody SCENE package it serves and its ENGINE.
+    A warehouse-sim server also names the PROFILE it serves (a profile.toml on the shared volume, with ROOTS naming its
+    source roots), exported from SCENE; a HomeBody sim server serves SCENE itself (no profile)."""
     endpoint: str
-    profile: Path
+    profile: Path | None
     scene: Path
     roots: dict = field(default_factory=dict)
+    engine: str = "warehouse"
 
     @classmethod
     def from_json(cls, data: dict) -> "SimTarget":
-        missing = {"endpoint", "profile", "scene"} - set(data)
+        engine = str(data.get("engine") or "warehouse")
+        if engine not in ENGINES:
+            raise ValueError(f"a simulation target's engine is one of {ENGINES}")
+        missing = {"endpoint", "scene", *(("profile",) if engine == "warehouse" else ())} - set(data)
         if missing:
             raise ValueError(f"a simulation target needs {sorted(missing)}")
-        return cls(str(data["endpoint"]), Path(data["profile"]), Path(data["scene"]),
-                   {str(k): str(v) for k, v in (data.get("roots") or {}).items()})
+        profile = Path(data["profile"]) if data.get("profile") else None
+        return cls(str(data["endpoint"]), profile, Path(data["scene"]),
+                   {str(k): str(v) for k, v in (data.get("roots") or {}).items()}, engine)
 
 
 def linked(call):

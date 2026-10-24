@@ -1,6 +1,7 @@
 """The simulation's settings. Each group is a frozen dataclass of defaults.
 `configs/simulation.toml` overrides them by group and key, and a scene package's
 `settings.toml` overlays that."""
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -276,6 +277,26 @@ class Rollouts:
     light: bool = True
     offline_period_s: float = 0.5
     offline_max_cost_usd: float = 2.0
+
+
+@dataclass(frozen=True)
+class SimServer:
+    """The HomeBody simulation server (homebody sim-serve, simserver/): physics steps at real time on its own thread
+    and answers the Robot calls on `endpoint`; renders run in a separate process, and the cameras are published on
+    `stream` at `stream_hz` wall hertz in warehouse-sim's stream format. When physics falls more than `max_lag_s`
+    behind the wall clock it stops catching up (the lag is dropped and reported), so a slow scene runs slower than real
+    time rather than in bursts. Both addresses are loopback: reach them over an SSH tunnel."""
+    endpoint: str = "tcp://127.0.0.1:5740"
+    stream: str = "tcp://127.0.0.1:5741"
+    stream_hz: float = 10.0
+    max_lag_s: float = 0.5
+
+    def __post_init__(self):
+        for name in ("endpoint", "stream"):
+            if not re.fullmatch(r"tcp://127\.0\.0\.1:\d{1,5}", getattr(self, name)):
+                raise ValueError(f"sim_server.{name} must be tcp://127.0.0.1:PORT (loopback only)")
+        if not 0 < self.stream_hz <= 30:
+            raise ValueError("sim_server.stream_hz must be above 0 and at most 30")
 
 
 @dataclass(frozen=True)

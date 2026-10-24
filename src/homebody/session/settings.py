@@ -25,6 +25,7 @@ from .config import (
     Server,
     Servo,
     SharedMotion,
+    SimServer,
     Topdown,
 )
 
@@ -91,6 +92,7 @@ class Settings:
     monitor: Monitor = field(default_factory=Monitor)
     rollouts: Rollouts = field(default_factory=Rollouts)
     server: Server = field(default_factory=Server)
+    sim_server: SimServer = field(default_factory=SimServer)
     dashboard: Dashboard = field(default_factory=Dashboard)
     robot: Robot = field(default_factory=Robot)
 
