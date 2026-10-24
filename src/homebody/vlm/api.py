@@ -6,7 +6,7 @@ from pathlib import Path
 
 from homebody.session.settings import Agent
 
-from .provider import Decision, ProviderError, image_data, run_request, schema
+from .provider import Decision, ProviderError, failure, image_data, run_request, schema
 
 MEDIA = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg"}
 
@@ -122,8 +122,19 @@ class LiteLlm:
         texts = [part.get("text", "") for item in reply.get("output") or [] if item.get("type") == "message"
                  for part in item.get("content") or [] if part.get("type") == "output_text"]
         if not texts:
-            raise ProviderError(f"LiteLLM returned no decision: {json.dumps(reply)[:500]}")
+            raise failure(f"LiteLLM returned no decision: {upstream_error(reply)}{json.dumps(reply)[:500]}")
         return Decision.parse(texts[-1], names)
+
+
+def upstream_error(reply: dict) -> str:
+    """The model service's own error in a failed Responses reply, as "code: message. " ("" when there is none)."""
+    error = reply.get("error")
+    if not isinstance(error, dict):
+        return ""
+    inner = (error.get("response") or {}).get("error") if isinstance(error.get("response"), dict) else None
+    error = inner if isinstance(inner, dict) else error
+    code, message = error.get("code") or error.get("type") or "", error.get("message") or ""
+    return f"{code}: {message} " if code or message else ""
 
 
 def redact(body: dict, images: tuple[Path, ...]) -> dict:

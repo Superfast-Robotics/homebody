@@ -7,7 +7,8 @@ does) ends every stuck point of that skill: the situation has changed.
 """
 import json
 
-NOT_A_FAILURE = frozenset({"INVALID_ARGUMENT", "PHYSICS_INVALID", "RECOVERY_LIMIT"})
+NOT_A_FAILURE = frozenset({"INVALID_ARGUMENT", "PHYSICS_INVALID", "RECOVERY_LIMIT", "MONITOR_STOPPED",
+                           "OPERATOR_STOPPED"})
 POINT_ARGUMENTS = ("point_normalized_1000", "release_point_1000", "goal_map_1000", "point_map_1000")
 BUCKET = 100  # of 1000: target points this close count as one target
 

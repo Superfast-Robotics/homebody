@@ -153,3 +153,14 @@ def test_a_session_without_frames_replays_from_its_videos_and_decision_images(tm
                                     compose_cockpit.clicks(compose_cockpit.Decision(
                                         "Walk", "navigate", {"goal_xy_m": [1., 1.]}), decision), 2)
     assert tuple(ringed[40, 50 + 6]) != (255, 255, 255)  # the goal ring at map click (600, 400)
+
+
+def test_monitor_events_become_the_cockpit_monitor_line():
+    monitor_caption = compose_cockpit.monitor_caption
+    fired = {"kind": "monitor", "type": "fired", "verdict": {"action": "abort_skill", "goal_id": "g2",
+                                                             "label": "dropped", "p": 0.93, "sim_time": 12.25}}
+    assert monitor_caption(fired) == "abort skill g2: dropped p=0.93 at 12.2 s"
+    vocabulary = {"kind": "monitor", "type": "vocabulary", "goal_id": "g2",
+                  "labels": [{"name": "walking"}, {"name": "dropped"}]}
+    assert monitor_caption(vocabulary) == "watching g2: walking, dropped"
+    assert monitor_caption({"kind": "monitor", "type": "ui_error"}) == ""

@@ -1,0 +1,26 @@
+# tools/monitor_bench.py: the monitor configurations to compare on recordings from tools/monitor_record.py, and
+# the operating points (tau x ticks) to score each at. Variant keys other than name, vocabulary and stride_s
+# are [monitor] settings.
+[bench]
+task = "carry each object to its destination"
+stride_s = 0.5         # simulation seconds between decision calls in the replay
+vocabulary = "model"   # "model" (the vocabulary model), "fallback", or a JSON file of {"labels": [...]}
+
+[[variant]]
+name = "head-8x384"
+window_frames = 8
+image_short_side = 384
+
+[[variant]]
+name = "head-5x256"
+window_frames = 5
+image_short_side = 256
+
+[[variant]]
+name = "head-10x384"
+window_frames = 10
+image_short_side = 384
+
+[sweep]
+tau = [0.6, 0.7, 0.8, 0.9]
+ticks = [1, 2, 3, 4]

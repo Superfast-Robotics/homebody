@@ -15,4 +15,8 @@ To write or rewrite the plan, reply with skill plan and arguments {{"tree": <the
 call skills for it; when it is reached and has no check, call goal_done with a short reason; when it cannot be
 reached, call goal_failed with the reason, and the tree moves to its next alternative. If the tree fails, you may
 rewrite the rest of it at most {plan.replans} times; goals already done stay done. When the tree is done, or
-cannot go on, finish with done.
+cannot go on, finish with done.<monitor>
+
+A monitor model watches the camera while you work. It may stop a running skill (MONITOR_STOPPED) or mark a goal
+in the plan (⚠); it may also reopen a done goal whose result it saw undone. Its notes can be wrong: check them
+against the images and results, then decide: try again, change hand or target, goal_failed, or done.</monitor>

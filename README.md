@@ -163,6 +163,99 @@ the scene's `settings.toml` override them, and `--settings my.toml` overrides th
 only the values it names.
 </details>
 
+<details>
+<summary>Live monitor (watching a rollout)</summary>
+
+`--settings configs/monitor.toml` turns on plan mode and the live monitor (`src/homebody/monitor/`). When a goal
+of the agent's plan opens, Qwen3.8-27B (`qwen3.8-27b` on the LiteLLM proxy, key in `LITELLM_API_KEY`) writes the
+actions the robot may be seen doing for it. While the robot works, the OpenAI Decisions API (`gpt-6-luna`, key in
+`OPENAI_DECISIONS_API_KEY`, which nothing else reads) reads the newest head-camera frames and returns a probability
+for each action, for `unsafe`, for `human_needed`, for whether each done goal still holds, and for progress. Calls
+never overlap; the next one waits for the p95 latency. A failure the readings agree on for several calls in a row
+stops the running skill (`MONITOR_STOPPED`), marks the goal in the plan, or reopens a done goal, and the agent
+decides what to do next. `human_needed` pauses a console run until **Resume**. The console's Monitor panel shows
+the plan, the live reading, the labels and a timeline. Each task writes `monitor/readings.jsonl`.
+
+```bash
+python tools/monitor_probe.py decisions                     # latency and cost per call
+python tools/monitor_record.py --drop-after 2 -- --sequence configs/continuous_four.json --no-visuals
+python tools/monitor_bench.py runs/checks/manipulation_*/   # choose tau and ticks (configs/monitor_bench.toml)
+```
+
+</details>
+
+<details>
+<summary>Rollouts: export, import, evaluate, replay</summary>
+
+A recorded session can travel as one `.tar.gz` bundle: the session's files plus `rollout.json`, which says what it
+holds (sim or real, the scene, the tasks, whether it carries monitor logs or physics) and lists every file's
+sha256. An import checks every file against the manifest and unpacks under `runs/imported/`. A rollout without
+monitor logs (or one you want to judge with other settings) can be evaluated: the monitor runs offline over its
+recorded frames and writes, beside the live logs, what it *would* have stopped, flagged or reopened. It prints the
+number of calls and the cost first, and stops at `rollouts.offline_max_cost_usd`.
+
+```bash
+homebody rollout export runs/session-*             # light by default; --full keeps sensors.npz and depth
+homebody rollout import session-*.tar.gz
+homebody rollout --settings configs/monitor.toml evaluate runs/imported/session-* --dry-run
+homebody rollout view                              # the console on recorded and imported rollouts
+```
+
+The console's **Rollouts** folder does the same: open a replay (the plan, timeline, camera and agent at any time,
+on a slider or played), export, import a bundle, and evaluate. Rollouts recorded before plans were saved replay
+without the tree.
+
+</details>
+
+<details>
+<summary>A harness server (start a rollout from another machine)</summary>
+
+`homebody serve` runs the harness without a console and listens on `server.host`:`server.port` (this machine
+only by default; reach it through an SSH tunnel). `homebody connect` runs the console and the monitor on your
+machine: the harness sends them the camera, the agent's progress and the frames to watch, and they send back the
+operator's commands and the monitor's stops and verdicts. The harness and its skills cannot tell the monitor is
+remote. A client needs the server's token (`server.token_file`, made owner-only on first start). One client
+commands; others watch. When the commanding console goes away mid-task the run pauses (`server.on_disconnect`).
+
+```bash
+homebody serve --settings configs/monitor.toml                    # on the simulator host
+ssh -N -L 8765:127.0.0.1:8765 sim-host &                          # here
+scp sim-host:.homebody/server_token ~/.homebody/server_token      # keep it owner-only
+homebody connect --url ws://127.0.0.1:8765 --settings configs/monitor.toml
+```
+
+`--backend real` is refused until the real-G1 backend arrives with the REAL release.
+
+</details>
+
+<details>
+<summary>Three servers: simulation, harness and the monitor app</summary>
+
+The physics can also run in its own server, [warehouse-sim](https://github.com/Superfast-Robotics/warehouse-sim)
+(branch `homebody-servers`): it steps the scene in real time, runs the robot's balance and arm controller as a
+plugin, renders the cameras and publishes them as a stream. A harness attaches to it with `--sim`, and the
+monitor app watches every harness and simulation server named in one config and starts scenarios on them.
+
+| Server | Command | Port |
+| --- | --- | --- |
+| Simulation | `python -m warehouse_sim.cli serve --profile P --cameras --evaluation --endpoint tcp://127.0.0.1:5720 --stream tcp://127.0.0.1:5721 --controller warehouse_homebody.plugin:make_plugin --controller-config C` | 5720 (RPC), 5721 (video) |
+| Harness | `homebody serve --sim tcp://127.0.0.1:5720 --sim-profile P --sim-root HOMEBODY_EFFECTIVE_ROOT=E --scene S --settings configs/warehouse_sim.toml` | 8765 (`[server] port`) |
+| Monitor app | `homebody monitor --config configs/servers_lambda.toml --settings configs/monitor_warehouse_sim.toml` | 8080 (the console) |
+
+A scene is exported for warehouse-sim with `warehouse_homebody.export` (its `profile.toml` and `effective.mjb`);
+the harness and the simulation server read the same files, so they share a volume. Every port is loopback-only:
+from another machine, tunnel the harness ports and the simulation ports to the `local_endpoint` / `local_stream`
+the config names. The config (`[[harness]]`, `[[sim]]`, `[[scenario]]`) is read again with **Refresh config**; the
+Servers section shows whether each harness and simulation server answers, which server each harness runs on, and
+whether the controller plugin is running. **Run scenario** attaches the scenario's harness to its simulation server
+(only when that harness is idle), switches the video to that server's stream and submits the task. The monitor
+watches the frames from the stream.
+
+The `demo_openmodels-server` and `demo-homebody-baseline-server` branches carry `homebody serve` (with `--sim`)
+without the live monitor, so the monitor app can run scenarios on those harnesses too.
+
+</details>
+
 ### 📷 REAL2SIM
 
 Check, explore (open http://127.0.0.1:8099 and press **Start exploration**; **STOP** ends the run,

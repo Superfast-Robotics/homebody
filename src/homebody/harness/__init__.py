@@ -30,7 +30,14 @@ def coder_text(text, settings):
     """TEXT with its <coder>...</coder> parts kept (markers removed) when the session has coder calls, else removed."""
     if coder_on(settings):
         return text.replace("<coder>", "").replace("</coder>", "")
-    return re.sub(r"<coder>.*?</coder>", "", text, flags=re.S)
+    return re.sub(r"<coder>.*?</coder>", "", text, flags=re.DOTALL)
+
+
+def monitor_text(text, settings):
+    """TEXT with its <monitor>...</monitor> parts kept (markers removed) when the live monitor is on, else removed."""
+    if getattr(settings.get("monitor"), "enabled", False):
+        return text.replace("<monitor>", "").replace("</monitor>", "")
+    return re.sub(r"<monitor>.*?</monitor>", "", text, flags=re.DOTALL)
 
 
 def coder_on(settings):
@@ -40,7 +47,8 @@ def coder_on(settings):
 
 def plan_instructions(settings):
     """How the agent writes and works through a plan (plan mode); SETTINGS fills its {group.value} fields."""
-    return coder_text((HERE / "plan_prompt.md").read_text(), settings).format_map(settings).strip()
+    text = monitor_text(coder_text((HERE / "plan_prompt.md").read_text(), settings), settings)
+    return text.format_map(settings).strip()
 
 
 def agent_instructions(settings):

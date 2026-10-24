@@ -1,0 +1,32 @@
+# Scenarios for `homebody serve --presets configs/presets_dex1.toml` on loki-sim1: the two Dex1-1 demo scenes
+# frozen on 2026-10-23 (dex1-demos/2026-10-23/homebody/), each with short and full instructions.
+
+[[preset]]
+name = "Warehouse: one jam jar into the cart"
+scene = "/lambda/nfs/group-volume/dex1-demos/2026-10-23/homebody/warehouse_cart"
+task = "Pick one jam jar from the shelf with the right hand and place it in the blue picking cart. Keep the other products in place."
+
+[[preset]]
+name = "Warehouse: one basil jar into the cart"
+scene = "/lambda/nfs/group-volume/dex1-demos/2026-10-23/homebody/warehouse_cart"
+task = "Pick one basil jar from the shelf with the right hand and place it in the blue picking cart. Keep the other products in place."
+
+[[preset]]
+name = "Warehouse: jam, basil and allulose into the cart"
+scene = "/lambda/nfs/group-volume/dex1-demos/2026-10-23/homebody/warehouse_cart"
+task = "Pick products from the shelf into the blue picking cart: first a jam jar, then a basil jar, then an allulose box. Keep all other products in place. If a product cannot be picked after two reasonable attempts, record that failure and continue to the next. Finish only after attempting all three. Report actual outcomes, including failed grasps."
+
+[[preset]]
+name = "Kitchen: the apple into the round basket"
+scene = "/lambda/nfs/group-volume/dex1-demos/2026-10-23/homebody/kitchen_baskets"
+task = "On the kitchen table: put the red apple into the round woven basket. Keep everything else on the table in place."
+
+[[preset]]
+name = "Kitchen: a coffee capsule into the rectangular basket"
+scene = "/lambda/nfs/group-volume/dex1-demos/2026-10-23/homebody/kitchen_baskets"
+task = "On the kitchen table: put one loose coffee capsule into the open rectangular basket. Keep everything else on the table in place."
+
+[[preset]]
+name = "Kitchen: apple and capsule into the baskets"
+scene = "/lambda/nfs/group-volume/dex1-demos/2026-10-23/homebody/kitchen_baskets"
+task = "On the kitchen table: put the red apple into the round woven basket, then put one loose coffee capsule into the open rectangular basket. Keep everything else on the table in place. If an object cannot be picked after two reasonable attempts, record that failure and continue. Finish after attempting both. Report actual outcomes, including failed grasps."

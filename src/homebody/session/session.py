@@ -9,13 +9,21 @@ from dataclasses import asdict
 from pathlib import Path
 
 from homebody import harness
+from homebody.monitor.targets import Phase, request_json
 from homebody.primitives.actions import PhysicsInvalid
+from homebody.session import monitored
 from homebody.session.coder import CALL, Coder
 from homebody.session.planned import OWN as PLAN_DECISIONS
 from homebody.session.planned import PlanRunner
 from homebody.session.recovery import Recovery, request, stuck_key
 from homebody.session.trace import Trace
-from homebody.skills.contract import COMMON_FAILURES, Context, Runner
+from homebody.skills.contract import (
+    COMMON_FAILURES,
+    MONITOR_STOPPED,
+    OPERATOR_STOPPED,
+    Context,
+    Runner,
+)
 from homebody.skills.registry import Prompts, registry
 from homebody.vlm.observations import annotations, model_observation, rounded
 from homebody.vlm.provider import Cancelled, ProviderBusy, ProviderError
@@ -70,9 +78,11 @@ def prompt_line(text, settings):
 class ObservedBackend:
     """Expose only the declared observation and action methods to skills. With `real_time` the physics is paced to the wall clock."""
     def __init__(self, backend, publish: Callable, publish_period: float, scene_update=None,
-                 real_time=False):
+                 real_time=False, capture: Callable | None = None, paused: Callable[[], bool] = lambda: False):
         self.__backend = backend
         self._publish = publish
+        self._capture = capture
+        self._paused = paused
         self._publish_period = publish_period
         self._scene_update = scene_update
         self._last = float("-inf")
@@ -120,12 +130,18 @@ class ObservedBackend:
         self.__backend.stop(epoch)
 
     def advance(self, epoch, seconds):
+        if self._paused():  # the operator froze the world: no physics until Resume
+            while self._paused():
+                time.sleep(.05)
+            self._anchor = None
         try:
             self.__backend.advance(epoch, seconds)
         finally:
             self.update_scene()
         if self._real_time:
             self._pace()
+        if self._capture is not None:
+            self._capture()
         if self.time - self._last >= self._publish_period or self.time < self._last:
             self.snapshot()
 
@@ -143,8 +159,9 @@ class ObservedBackend:
 class Session:
     def __init__(self, backend, provider, settings, recorder, controls, *, arms, jaw_samples,
                  ui=None, semantic_context=None, observer_frame=None, shoulder_frame=None,
-                 scene_update=None, real_time=False):
+                 scene_update=None, real_time=False, monitor=None):
         self.backend, self.provider = backend, provider
+        self.monitor = monitor  # the live monitor (homebody/monitor.Monitor), or None
         self.settings, self.recorder = settings, recorder
         if hasattr(provider, "cache_key"):  # one prompt-cache key per session (vlm.api.LiteLlm)
             provider.cache_key = f"homebody-{Path(getattr(recorder, 'path', 'session')).name}"
@@ -154,10 +171,13 @@ class Session:
         self._observer_epoch = self._frame_epoch = None
         self._observer_time = self._frame_time = self._view_time = float("-inf")
         self.observed = ObservedBackend(backend, self.publish, settings.recording.publish_period,
-                                        scene_update, real_time)
+                                        scene_update, real_time,
+                                        capture=self.capture if monitor is not None else None,
+                                        paused=self.frozen)
         self.context = Context(observations=self.observed, actions=self.observed, arms=arms,
                                settings=settings, jaw_samples=jaw_samples,
-                               cancelled=controls.cancel.is_set, emit=self.skill_event)
+                               cancelled=controls.cancel.is_set, emit=self.skill_event,
+                               interrupted=self.interruption)
         self.runner = Runner(self.context)
         self.coder = Coder(settings.coder, registry(settings.robot.hands))
         # [coder] calls = 0 turns the coding assistant off: not offered, never automatic
@@ -167,6 +187,7 @@ class Session:
         self.planner = None
         self.trace = Trace(backend, lambda: self.context.carried)
         self.history = []
+        self.monitor_note = self.operator_note = ""
         self.paused_seconds = 0.0
         self.status = "Ready"
         self._physics_fault = None
@@ -193,6 +214,7 @@ class Session:
         """Show every frame; record it and the operator views only while a task records."""
         if self.ui is not None:
             self.ui.show(frame)
+            self.show_camera()
         if not self.recorder.recording:
             return
         r = self.settings.recording
@@ -210,6 +232,14 @@ class Session:
                                    fps=1 / r.shoulder_period)
             self._view_time = frame.time
 
+    def show_camera(self):
+        """Render the console's chosen observer or hand camera (here, where the renderer lives)."""
+        camera = getattr(self.ui, "camera", "robot")
+        if camera == "observer" and hasattr(self.backend, "overview_frame"):
+            self.ui.show_camera(self.backend.overview_frame(), "Observer view")
+        elif camera == "hand" and hasattr(self.backend, "wrist_view"):
+            self.ui.show_camera(self.backend.wrist_view(self.view_side).rgb, f"Hand camera: {self.view_side} hand")
+
     def skill_event(self, event):
         if event["type"] == "observation":
             return
@@ -220,10 +250,21 @@ class Session:
             self.recorder.event("trace_error", simulation_time=self.backend.time, error=f"{type(error).__name__}: {error}")
         if self.ui is not None:
             self.ui.skill_event({**event, "simulation_time": self.backend.time})
+        if self.monitor is not None and event["type"] == "skill_stage":
+            self.monitor.set_phase(Phase("tool_call", event.get("skill"), event.get("stage")))
+
+    def capture(self):
+        """Hand the monitor a head (and, with monitor.wrist, the active wrist) image when one is due."""
+        now = self.backend.time
+        if self.monitor is None or not self.monitor.capture_due(now) or not hasattr(self.backend, "ego_image"):
+            return
+        self.monitor.capture(self.backend.ego_image(), now)
+        if self.settings.monitor.wrist:
+            self.monitor.capture(self.backend.wrist_view(self.view_side).rgb, now, f"wrist-{self.view_side}")
 
     def heartbeat(self):
         """Step valid physics while idle/thinking; invalid generations wait for reset."""
-        if self.requires_reset:
+        if self.requires_reset or self.frozen():
             time.sleep(.02)
             return
         start = time.monotonic()
@@ -232,6 +273,8 @@ class Session:
             if self.status == "Thinking":  # step without publishing frames
                 self.backend.advance(self.backend.epoch, 0.02)
                 self.observed.update_scene()
+                if self.monitor is not None:
+                    self.capture()
             else:
                 self.observed.advance(self.backend.epoch, 0.02)
         except PhysicsInvalid as error:
@@ -268,7 +311,7 @@ class Session:
                           for index, entry in enumerate(recent))
         return "\n\n".join(part for part in (
             harness.agent_instructions(settings),
-            f"Skills:\n{skills}\nAny skill may also refuse with: {', '.join(COMMON_FAILURES)}.",
+            f"Skills:\n{skills}\nAny skill may also refuse with: {', '.join(self.refusals())}.",
             "Initial-scene memory:\n" + annotations(self.semantic_context),
             "Current task:\n" + task,
             harness.plan_instructions(settings) if self.planner is not None else "",
@@ -277,6 +320,94 @@ class Session:
                                               if self.coder_on else ""),
             "Recent steps, oldest first:\n" + (steps or "none"),
             "Current observation:\n" + json.dumps(model_observation(frame))) if part)
+
+    def frozen(self):
+        """Whether the operator froze the simulation and the agent (the console's Pause; never while stopping)."""
+        paused = getattr(self.controls, "paused", None)
+        return bool(paused is not None and paused.is_set() and not self.controls.cancel.is_set())
+
+    def interruption(self):
+        """(code, reason) when the operator or the monitor stops the running skill, else None."""
+        stop = getattr(self.controls, "skill_stop", None)
+        if stop is not None and stop.is_set():
+            return OPERATOR_STOPPED, "The operator stopped the skill"
+        if self.monitor is not None and (reason := self.monitor.stop_requested()) is not None:
+            return MONITOR_STOPPED, f"The monitor stopped the skill: {reason}"
+        return None
+
+    def refusals(self):
+        return (*COMMON_FAILURES, MONITOR_STOPPED, OPERATOR_STOPPED) if self.monitor is not None else COMMON_FAILURES
+
+    def operator_input(self):
+        """The operator's notes since the last turn, as the prompt's operator line; a dismissal clears the alert and
+        the plan's mark for it."""
+        controls, lines = self.controls, []
+        if getattr(controls, "dismissed", None) is not None and controls.dismissed.is_set():
+            controls.dismissed.clear()
+            goal = self.monitor.dismiss() if self.monitor is not None else None
+            if goal is not None and self.planner is not None and self.planner.plan is not None:
+                self.planner.plan.flags.pop(goal, None)
+            self.recorder.event("operator", type="dismiss", goal_id=goal, simulation_time=self.backend.time)
+        for note in controls.take_notes() if hasattr(controls, "take_notes") else ():
+            lines.append(note)
+            self.recorder.event("operator", type="note", text=note, simulation_time=self.backend.time)
+            if self.monitor is not None:
+                self.monitor.mark("note", note, self.backend.time)
+        return ("Operator (the person supervising you; follow it): " + " ".join(lines)) if lines else ""
+
+    def skill_lines(self):
+        settings = vars(self.settings)
+        return tuple(prompt_line(skill.PROMPT, settings) for skill in self.coder.registry.values())
+
+    def watch(self, task, images):
+        """Apply the monitor's verdicts since the last turn and tell it the goal now; the prompt's monitor line."""
+        if self.monitor is None:
+            return ""
+        verdicts = self.monitor.take_verdicts()
+        note = monitored.apply(verdicts, self.planner)
+        if self.planner is not None:
+            self.planner.phase()  # the active goal after any reopen
+        human = next((v for v in verdicts if v.label == "human_needed"), None)
+        if human is not None and self.ui is not None:
+            self.await_operator(human.text())
+            self.monitor.operator_resumed()
+        request = self.goal_request(task, images)
+        self.monitor.goal(request, request.hands, plan=monitored.plan_snapshot(self.planner))
+        self.monitor.set_phase(Phase("planning"))
+        return note
+
+    def hands(self) -> str:
+        return "; ".join(hand_status(side, self.context.carried.get(side)) for side in ("left", "right"))
+
+    def goal_request(self, task, images, skill=None, arguments=None):
+        """What the monitor reads about the goal now: at a turn (IMAGES: its head and top-down views, with the
+        monitor's recent findings) or as SKILL starts with ARGUMENTS."""
+        monitor = self.monitor
+        return monitored.request(self.planner, task, self.skill_lines(), self.hands(),
+                                 (images[0], images[-1]) if images else (),
+                                 stages=monitor.known_stages() if monitor is not None else {},
+                                 findings=monitor.recent_findings() if monitor is not None and skill is None else (),
+                                 skill=skill, arguments=arguments, carried=set(self.context.carried))
+
+    def record_turn(self, step, task, images):
+        """The turn as a replay and an offline monitor read it: the plan, the hands and the goal request."""
+        request = self.goal_request(task, images)
+        self.recorder.event("turn", step=step, simulation_time=self.backend.time,
+                            plan=monitored.plan_snapshot(self.planner), hands=request.hands,
+                            carried=sorted(self.context.carried),
+                            request=request_json(request, self.recorder.path))
+
+    def await_operator(self, text):
+        """The monitor saw something only a person can fix: hold until the operator presses Resume (or Stop)."""
+        self.update("Paused", f"The monitor asks for a person: {text}. Press Resume to continue or Stop.")
+        self.recorder.event("monitor", type="operator_pause", simulation_time=self.backend.time, reason=text)
+        tick = self.paused_tick if self.settings.agent.pause_while_thinking else self.heartbeat
+        self.controls.resume.clear()
+        while not self.controls.resume.is_set():
+            if self.controls.cancel.is_set():
+                raise Cancelled("Task stopped by operator during a monitor pause")
+            tick()
+        self.recorder.event("monitor", type="operator_resume", simulation_time=self.backend.time)
 
     def paused_tick(self):
         """Wait one heartbeat period without advancing the world (agent.pause_while_thinking)."""
@@ -313,7 +444,7 @@ class Session:
                                     simulation_advanced=self.backend.time - sim)
 
     def run_task(self, task: str) -> dict:
-        task_dir = self.recorder.start_task(task, self.backend.epoch)
+        task_dir = self.recorder.start_task(task, self.backend.epoch, skills=list(self.skill_lines()))
         started_wall, started_sim = time.monotonic(), self.backend.time
         outcome = {"status": "error", "steps": 0, "model_claim": None}
         self.paused_seconds = 0.0
@@ -322,6 +453,9 @@ class Session:
         self.recovery.reset()
         self.planner = PlanRunner(self.settings.plan.replans) if self.settings.plan.enabled else None
         self.trace.reset(task_dir if self.settings.recording.keyframes else None)
+        self.monitor_note = ""
+        if self.monitor is not None:
+            self.monitor.start_task(task, task_dir)
         try:
             if self.requires_reset:
                 raise PhysicsInvalid(self._physics_fault[1])
@@ -332,16 +466,29 @@ class Session:
                 # the response schema lists every decision of the task, the same each turn (a stable prompt the
                 # model's cache can serve); the plan phase's choices are checked here instead
                 offered = names + (PLAN_DECISIONS if self.planner is not None else ())
-                if self.planner is not None:
-                    names = self.planner.names(names)
                 if self.controls.cancel.is_set():
                     raise Cancelled("Task stopped by operator")
                 frame = self.observed.snapshot()
                 images = self.recorder.agent_images(frame)
+                # the monitor's verdicts may reopen a goal, so they go on the plan before this turn's choices
+                self.monitor_note = self.watch(task, images) or self.monitor_note
+                self.operator_note = self.operator_input() or self.operator_note
+                while self.frozen():
+                    self.update("Paused", "Paused by the operator. Resume to continue.")
+                    self.paused_tick()
+                if self.planner is not None:
+                    names = self.planner.names(names)
+                self.record_turn(step, task, images)
                 prompt = self.prompt(task, frame)
                 if self.planner is not None and (note := self.planner.note()):
                     prompt += "\n\n" + note
+                if self.monitor_note:
+                    prompt += "\n\n" + self.monitor_note
+                if self.operator_note:
+                    prompt += "\n\n" + self.operator_note
                 self.update("Thinking")
+                if self.monitor is not None:
+                    self.monitor.decision(self.backend.time)
                 decision = self.decide(prompt, images, offered, task_dir / "decisions" / f"step-{step:03d}")
                 if self.controls.cancel.is_set() or frame.epoch != self.backend.epoch:
                     raise Cancelled("Decision invalidated before execution")
@@ -366,6 +513,8 @@ class Session:
                     if not isinstance(summary, str):
                         raise ProviderError("done.summary must be text")
                     outcome.update(status="model_done", model_claim=summary)
+                    if self.monitor is not None and (late := self.monitor.take_verdicts()):
+                        outcome["monitor_unapplied"] = [asdict(verdict) for verdict in late]
                     break
                 if self.planner is not None and decision.skill in PLAN_DECISIONS:
                     result = self.planner.handle(decision, self.context.carried)
@@ -375,6 +524,7 @@ class Session:
                     continue
                 if decision.arguments.get("hand") in ("left", "right"):
                     self.view_side = decision.arguments["hand"]
+                self.monitor_note = self.operator_note = ""  # the agent has read them
                 result = self.act(decision, frame, step)
                 if result["code"] == "PHYSICS_INVALID":
                     raise PhysicsInvalid(result["message"])
@@ -403,6 +553,11 @@ class Session:
             raise
         finally:
             cleanup_errors = []
+            if self.monitor is not None:
+                try:
+                    outcome["monitor"] = self.monitor.end_task()
+                except Exception as exc:  # noqa: BLE001 -- Cleanup must retain terminal evidence.
+                    cleanup_errors.append(f"monitor: {type(exc).__name__}: {exc}")
             try:
                 self._halt(outcome["status"])
             except Exception as exc:  # noqa: BLE001 -- Cleanup must retain terminal evidence.
@@ -436,11 +591,27 @@ class Session:
             result = self.coder.call(decision.arguments, self)
             if self.auto and result["code"] not in ("INVALID_ARGUMENT", "CODER_LIMIT", "CODER_NOT_YET"):
                 self.recovery.coder_done(decision.arguments.get("skill"), result["code"], rescued)
-        elif decision.skill in self.coder.skills:
-            result = self.runner.run(decision.skill, decision.arguments, frame,
-                                     skill=self.coder.module(decision.skill)).as_dict()
         else:
-            result = self.runner.run(decision.skill, decision.arguments, frame).as_dict()
+            self.monitor_skill(decision)
+            if getattr(self.controls, "skill_stop", None) is not None:
+                self.controls.skill_stop.clear()  # a Stop skill pressed between skills is not for this one
+            code = None
+            try:
+                if decision.skill in self.coder.skills:
+                    result = self.runner.run(decision.skill, decision.arguments, frame,
+                                             skill=self.coder.module(decision.skill)).as_dict()
+                else:
+                    result = self.runner.run(decision.skill, decision.arguments, frame).as_dict()
+                code = result["code"]
+            finally:
+                if code == OPERATOR_STOPPED:
+                    self.controls.skill_stop.clear()
+                    self.recorder.event("operator", type="stop_skill", skill=decision.skill,
+                                        simulation_time=self.backend.time)
+                    if self.monitor is not None:
+                        self.monitor.mark("stop_skill", f"stopped {decision.skill}", self.backend.time)
+                if self.monitor is not None:
+                    self.monitor.skill_finished(code, self.backend.time)
         if decision.skill != CALL and refused is None:
             self.recovery.settle(key, result["code"])
         entry = {"base_pose": frame.base_pose.tolist(), "decision": asdict(decision), "epoch": frame.epoch,
@@ -451,6 +622,15 @@ class Session:
         self.history.append(entry)
         self.recorder.event("result", step=step, simulation_time=self.backend.time, result=result)
         return result
+
+    def monitor_skill(self, decision):
+        """Tell the monitor a skill starts in the current goal."""
+        task = next((entry["operator_task"] for entry in reversed(self.history) if "operator_task" in entry), "")
+        request = self.goal_request(task, (), skill=decision.skill, arguments=decision.arguments)
+        self.recorder.event("skill_request", simulation_time=self.backend.time,
+                            request=request_json(request, self.recorder.path))
+        if self.monitor is not None:
+            self.monitor.skill_started(request, self.backend.time)
 
     def rescue(self, task, decision, failed, step):
         """Auto mode: hand DECISION's FAILED result to the coder as a call the agent did not have to make."""

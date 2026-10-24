@@ -1,0 +1,104 @@
+# The monitor app on loki-sim1's servers, with these tunnels:
+#   homebody monitor --config configs/servers_lambda.toml --settings configs/monitor_warehouse_sim.toml
+#   ssh -N -L 8765:127.0.0.1:8765 -L 8766:127.0.0.1:8766 -L 8767:127.0.0.1:8767 -L 15720:127.0.0.1:5720 -L 15721:127.0.0.1:5721 \
+#          -L 15730:127.0.0.1:5730 -L 15731:127.0.0.1:5731 loki-sim1
+# Simulation servers: warehouse-sim (loki.ravuru/warehouse-sim-f3ff632, branch homebody-servers) serving the
+# 2026-10-23 scenes exported for it, with the HomeBody controller plugin (start_sim.sh SCENE PORT on loki).
+# endpoint/stream/profile/scene/roots are as the harness on loki sees them; local_* as this machine does.
+# Harnesses: demo_with_monitor (start_harness.sh SCENE SIMPORT, port 8765); demo_openmodels and demo-homebody-baseline
+# (branches demo_openmodels-server and demo-homebody-baseline-server, start_port.sh DIR SCENE SIMPORT PORT, 8766/8767).
+
+[[harness]]
+name = "demo_with_monitor"
+url = "ws://127.0.0.1:8765"
+token_file = "~/.homebody/server_token"
+
+[[harness]]
+name = "demo_openmodels"
+url = "ws://127.0.0.1:8766"
+token_file = "~/.homebody/server_token"
+
+[[harness]]
+name = "demo-homebody-baseline"
+url = "ws://127.0.0.1:8767"
+token_file = "~/.homebody/server_token"
+
+[[sim]]
+name = "warehouse_cart"
+endpoint = "tcp://127.0.0.1:5720"
+stream = "tcp://127.0.0.1:5721"
+local_endpoint = "tcp://127.0.0.1:15720"
+local_stream = "tcp://127.0.0.1:15721"
+profile = "/lambda/nfs/group-volume/loki.ravuru/warehouse-sim-exports/homebody_warehouse_cart/profile.toml"
+scene = "/lambda/nfs/group-volume/dex1-demos/2026-10-23/homebody/warehouse_cart"
+roots = { HOMEBODY_EFFECTIVE_ROOT = "/lambda/nfs/group-volume/loki.ravuru/warehouse-sim-exports/homebody_warehouse_cart" }
+
+[[sim]]
+name = "kitchen_baskets"
+endpoint = "tcp://127.0.0.1:5730"
+stream = "tcp://127.0.0.1:5731"
+local_endpoint = "tcp://127.0.0.1:15730"
+local_stream = "tcp://127.0.0.1:15731"
+profile = "/lambda/nfs/group-volume/loki.ravuru/warehouse-sim-exports/homebody_kitchen_baskets/profile.toml"
+scene = "/lambda/nfs/group-volume/dex1-demos/2026-10-23/homebody/kitchen_baskets"
+roots = { HOMEBODY_EFFECTIVE_ROOT = "/lambda/nfs/group-volume/loki.ravuru/warehouse-sim-exports/homebody_kitchen_baskets" }
+
+[[scenario]]
+name = "Warehouse: one jam jar into the cart"
+harness = "demo_with_monitor"
+sim = "warehouse_cart"
+task = "Pick one jam jar from the shelf with the right hand and place it in the blue picking cart. Keep the other products in place."
+
+[[scenario]]
+name = "Warehouse: one basil jar into the cart"
+harness = "demo_with_monitor"
+sim = "warehouse_cart"
+task = "Pick one basil jar from the shelf with the right hand and place it in the blue picking cart. Keep the other products in place."
+
+[[scenario]]
+name = "Warehouse: jam, basil and allulose into the cart"
+harness = "demo_with_monitor"
+sim = "warehouse_cart"
+task = "Pick products from the shelf into the blue picking cart: first a jam jar, then a basil jar, then an allulose box. Keep all other products in place. If a product cannot be picked after two reasonable attempts, record that failure and continue to the next. Finish only after attempting all three. Report actual outcomes, including failed grasps."
+
+[[scenario]]
+name = "Kitchen: the apple into the round basket"
+harness = "demo_with_monitor"
+sim = "kitchen_baskets"
+task = "On the kitchen table: put the red apple into the round woven basket. Keep everything else on the table in place."
+
+[[scenario]]
+name = "Kitchen: a coffee capsule into the rectangular basket"
+harness = "demo_with_monitor"
+sim = "kitchen_baskets"
+task = "On the kitchen table: put one loose coffee capsule into the open rectangular basket. Keep everything else on the table in place."
+
+[[scenario]]
+name = "Kitchen: apple and capsule into the baskets"
+harness = "demo_with_monitor"
+sim = "kitchen_baskets"
+task = "On the kitchen table: put the red apple into the round woven basket, then put one loose coffee capsule into the open rectangular basket. Keep everything else on the table in place. If an object cannot be picked after two reasonable attempts, record that failure and continue. Finish after attempting both. Report actual outcomes, including failed grasps."
+
+[[scenario]]
+name = "Warehouse (open models): one jam jar into the cart"
+harness = "demo_openmodels"
+sim = "warehouse_cart"
+task = "Pick one jam jar from the shelf with the right hand and place it in the blue picking cart. Keep the other products in place."
+
+[[scenario]]
+name = "Kitchen (open models): the apple into the round basket"
+harness = "demo_openmodels"
+sim = "kitchen_baskets"
+task = "On the kitchen table: put the red apple into the round woven basket. Keep everything else on the table in place."
+
+[[scenario]]
+name = "Warehouse (baseline): one jam jar into the cart"
+harness = "demo-homebody-baseline"
+sim = "warehouse_cart"
+task = "Pick one jam jar from the shelf with the right hand and place it in the blue picking cart. Keep the other products in place."
+
+[[scenario]]
+name = "Kitchen (baseline): the apple into the round basket"
+harness = "demo-homebody-baseline"
+sim = "kitchen_baskets"
+task = "On the kitchen table: put the red apple into the round woven basket. Keep everything else on the table in place."

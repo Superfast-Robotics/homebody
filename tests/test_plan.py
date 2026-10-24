@@ -106,3 +106,26 @@ def test_a_placed_or_arrived_goal_closes_when_a_coder_call_did_the_work():
     failed = {"skill": "call_coder", "code": "CODER_FAILED",
               "details": {"target": "place", "executes": [{"version": 2, "code": "OK"}]}}
     assert not check_holds({"name": "placed"}, {}, [no_run]) and not check_holds({"name": "placed"}, {}, [failed])
+
+
+def test_the_monitor_flags_a_goal_and_reopens_a_done_one():
+    runner = PlanRunner(2)
+    runner.handle(Decision("p", "plan", {"tree": TREE}), {})
+    runner.phase()
+    runner.observe({"skill": "pick", "code": "OK"}, {"right": {"state": "verified"}})  # right closes by its check
+    assert runner.phase() == "goal" and runner.goal["id"] == "carry"
+    runner.flag("carry", "dropped p=0.93: the cup falls")
+    assert "[ACTIVE ⚠ monitor: dropped p=0.93: the cup falls] carry" in runner.note()
+    assert runner.reopen("right", "no longer true: the cup is in the right hand")
+    assert runner.phase() == "goal" and runner.goal["id"] == "right"
+    assert "monitor reopened" in runner.note()
+    assert not runner.reopen("put", "not done yet")  # only a done goal reopens
+    runner.observe({"skill": "pick", "code": "OK"}, {"right": {"state": "verified"}})
+    assert runner.phase() == "goal" and runner.goal["id"] == "carry"
+    assert "⚠" not in next(line for line in runner.plan.render().splitlines() if "right:" in line)
+
+
+def test_flag_and_reopen_without_a_plan_do_nothing():
+    runner = PlanRunner(2)
+    runner.flag("g1", "x")
+    assert not runner.reopen("g1", "x")

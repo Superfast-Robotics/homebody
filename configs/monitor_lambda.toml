@@ -1,0 +1,8 @@
+# The live monitor on the Lambda simulation hosts: plan mode on, the vocabulary model at the vLLM balancer over the
+# GH200 and the A100 (key in ~/vlm/api_key), the decisions at the OpenAI Decisions API (OPENAI_DECISIONS_API_KEY).
+[plan]
+enabled = true
+
+[monitor]
+enabled = true
+vocab_base_url = "http://10.19.89.218:9002/v1"

@@ -11,9 +11,11 @@ from threading import Condition, Event, Lock, Thread
 
 import numpy as np
 
+from homebody.monitor.monitor import View
 from homebody.session.settings import Topdown
 from homebody.skills import navigate, pick, place
 from homebody.skills.contract import SkillFailure
+from homebody.ui import monitor_panel, plan_view
 from homebody.ui.selection import (
     Pen,
     Selection,
@@ -34,6 +36,8 @@ from homebody.ui.theme import (
 from homebody.vlm.observations import depth_preview, label_preview, map_preview
 
 AWAITING = "Top-down: awaiting a decision"
+CAMERAS = {"Robot view": "robot", "Observer view": "observer", "Hand camera": "hand"}  # the live view's choices
+CUSTOM = "Custom instruction"  # the scenario list's first entry: the instruction as typed
 STATUS = {"model_done": "Model reports done", "step_limit": "Step limit reached",
           "provider_error": "Provider error", "cancelled": "Cancelled", "error": "Error",
           "interrupted": "Interrupted"}
@@ -63,6 +67,9 @@ def stage_progress(skill, stages, result=None, *, durations=None, simulated=None
     """The stage panel's HTML for the reached stages and, once finished, the result."""
     count = len(stages)
     title = f"{skill.capitalize()}: {stages[-1]}" if stages else skill.capitalize()
+    refused = result is not None and result.code != "OK" and count <= 1  # it never moved
+    if refused:
+        title = f"{skill.capitalize()} refused: {result.message}"
     label = f"Stage {count}" if result is None else f"Result: {result.code}"
     if durations is not None:
         label += f" · {sum(durations):.1f}s elapsed"
@@ -77,8 +84,9 @@ def stage_progress(skill, stages, result=None, *, durations=None, simulated=None
         steps.append(f'<li class="{css_class}">{escape(name)}{clock}</li>')
     steps = "".join(steps)
     history = f'<ol class="hb-steps">{steps}</ol>' if steps else ""
-    message = f'<div class="hb-stage-count">{escape(result.message)}</div>' if result is not None else ""
-    return (f'<div class="hb-stage{" hb-result" if result is not None else ""}" role="status" aria-live="polite">'
+    message = f'<div class="hb-stage-count">{escape(result.message)}</div>' if result is not None and not refused else ""
+    css = " hb-refused" if refused else " hb-result" if result is not None else ""
+    return (f'<div class="hb-stage{css}" role="status" aria-live="polite">'
             f'<div class="hb-stage-head"><strong>{escape(title)}</strong>'
             f'<span class="hb-stage-count">{escape(label)}</span></div>{history}{message}</div>')
 
@@ -106,6 +114,38 @@ class Controls:
         self.queue = Queue()
         self.cancel = Event()
         self.closing = Event()
+        self.resume = Event()  # the operator ends a monitor pause (session.await_operator)
+        self.paused = Event()  # the operator froze the simulation and the agent
+        self.skill_stop = Event()  # the operator stopped the running skill
+        self.dismissed = Event()  # the operator dismissed the monitor's alert
+        self.notes = Queue()  # the operator's notes for the agent's next prompt
+
+    def resume_task(self):
+        self.resume.set()
+
+    def pause(self):
+        self.paused.set()
+
+    def unpause(self):
+        self.paused.clear()
+
+    def stop_skill(self):
+        self.skill_stop.set()
+
+    def dismiss(self):
+        self.dismissed.set()
+
+    def tell(self, text: str):
+        if text.strip():
+            self.notes.put(text.strip())
+
+    def take_notes(self) -> list[str]:
+        notes = []
+        while True:
+            try:
+                notes.append(self.notes.get_nowait())
+            except Empty:
+                return notes
 
     def submit(self, text: str):
         if text.strip():
@@ -235,9 +275,12 @@ class Overlays:
 
 
 class Console:
+    replaying = False  # a recorded rollout fills the views (ui/rollouts.py); live drawing waits
+
     def __init__(self, controls: Controls, *, host="127.0.0.1", port=8080, initial_task="",
                  scene_name="Simulation", model_name="", topdown_settings: Topdown | None = None,
-                 render_in_background=False):
+                 render_in_background=False, monitor=None):
+        """MONITOR (the [monitor] settings, when on) adds the monitor panel and a Resume button."""
         """With RENDER_IN_BACKGROUND the live view and map are drawn on a UI thread from the newest frame."""
         claim(host, port)
         self.server = open_server(host, port, scene_name, "sim")
@@ -245,12 +288,52 @@ class Console:
         self.model_name = model_name
         self.overlays = Overlays(topdown_settings if topdown_settings is not None else Topdown())
         self._detail_skill = None
-        self.server.gui.add_html(section("Ego view"))
+        self.pause_button = self.unpause_button = self.stop_skill_button = None
+        if monitor is not None:  # the operator's ways in, first in the panel, weighted by how much they end
+            self.run_heading = self.server.gui.add_html(section("Run"))
+            self.pause_button = self.server.gui.add_button("Pause", color="gray", icon="player-pause",
+                                                           hint="Freeze the simulation and the agent")
+            self.unpause_button = self.server.gui.add_button("Resume", color="blue", icon="player-play",
+                                                             visible=False, hint="Continue from where it froze")
+            self.stop_skill_button = self.server.gui.add_button(
+                "Stop skill", color="gray", icon="hand-stop", disabled=True,
+                hint="End the running skill; the agent chooses what to do next")
+            self.stop_button = self.server.gui.add_button("Stop task", color="red", icon="player-stop",
+                                                          hint="End the task and stop the robot")
+            self.dismiss_button = self.server.gui.add_button("Dismiss alert", color="gray", visible=False,
+                                                             hint="Clear the monitor's alert and its mark on the plan")
+            self.note = self.server.gui.add_text("Tell the agent", initial_value="", multiline=True,
+                                                 hint="The agent reads it before its next decision")
+            self.send_note = self.server.gui.add_button("Send with the next step", color="gray", icon="send")
+            self.pause_button.on_click(lambda _: self._set_paused(True))
+            self.unpause_button.on_click(lambda _: self._set_paused(False))
+            self.stop_skill_button.on_click(lambda _: controls.stop_skill())
+            self.dismiss_button.on_click(lambda _: controls.dismiss())
+            self.send_note.on_click(lambda _: self._send_note())
+        self.server.gui.add_html(section("Live view"))
+        self.camera_choice = self.server.gui.add_dropdown("Camera", tuple(CAMERAS), initial_value="Robot view")
+        if hasattr(controls, "camera"):  # a console on a harness server tells it which camera to send
+            self.camera_choice.on_update(lambda _: controls.camera(self.camera))
         self.ego = self.server.gui.add_image(blank(480, 640), label="Live camera", format="jpeg")
+        self.scenario = self.run_scenario = None
+        self._presets: dict[str, dict] = {}
+        if hasattr(controls, "preset"):  # a harness server offers scenarios: a scene and its instruction
+            self.scenario = self.server.gui.add_dropdown("Scenario", (CUSTOM,), initial_value=CUSTOM,
+                                                         hint="Fills the instruction; Run scenario loads its scene")
+            self.scenario.on_update(lambda _: self._chose_scenario())
         self.task = self.server.gui.add_text("Instruction", initial_value=initial_task, multiline=True)
-        self.submit_button = self.server.gui.add_button("Start task", icon="player-play", disabled=True)
-        self.stop_button = self.server.gui.add_button("Stop", color="gray", icon="player-stop")
+        self.submit_button = self.server.gui.add_button("Start task", icon="player-play", disabled=True,
+                                                        **({"color": "dark"} if monitor is not None else {}))
+        if self.scenario is not None:
+            self.run_scenario = self.server.gui.add_button("Run scenario", icon="player-play", color="blue",
+                                                           disabled=True, visible=False,
+                                                           hint="Load the scenario's scene if needed, then start it")
+            self.run_scenario.on_click(lambda _: self._run_scenario())
+        if monitor is None:
+            self.stop_button = self.server.gui.add_button("Stop", color="gray", icon="player-stop")
         self.status = self.server.gui.add_markdown("Loading the simulation. You can edit the instruction.")
+        if monitor is not None:
+            self.status.visible = False  # the strip over the main view says it
         self.server.gui.add_html(section("Agent thoughts"))
         self.thought = self.server.gui.add_html(thought_bubble("Waiting for the simulation to load.",
                                                               model=self.model_name))
@@ -258,6 +341,20 @@ class Console:
         self.stage = self.server.gui.add_html("")
         self._progress = Progress()
         self.explanation = self.server.gui.add_html("")
+        self.monitor_settings, self.monitor_panel, self.resume_button = monitor, None, None
+        if monitor is not None:
+            # every style once, here: live updates below send plain HTML, so the fonts load once
+            self.server.gui.add_html(section("Monitor") + plan_view.TOKENS + plan_view.STYLE + monitor_panel.STYLE
+                                     + monitor_panel.BAR_STYLE)
+            self.resume_button = self.server.gui.add_button("Resume", icon="player-play", visible=False,
+                                                            hint="The monitor asked for a person; continue")
+            self.resume_button.on_click(lambda _: controls.resume_task())
+            self.monitor_panel = self.server.gui.add_html(monitor_panel.monitor_html(View()))
+            # the main view: the behaviour tree over the 3D view, and a bar along its bottom with the task's timeline
+            self.strip = self.server.gui.add_html(plan_view.status_strip("Ready"))
+            self.plan_view = self.server.gui.add_html(plan_view.plan_view(None))
+            self._view, self._decisions = None, 0
+            self.timeline = self.server.gui.add_html(monitor_panel.timeline_bar(View()))
         with self.server.gui.add_folder("Details", expand_by_default=False):
             self.click = self.server.gui.add_image(blank(480, 640), label="Decision click", format="jpeg",
                                                    visible=False)
@@ -272,6 +369,33 @@ class Console:
             if render_in_background else None
         if self._renderer is not None:
             self._renderer.start()
+
+    def set_presets(self, presets: list[dict], scene: str = ""):
+        """The harness's scenarios (name, scene, task), and the scene it simulates now."""
+        if self.scenario is None:
+            return
+        self._presets = {item["name"]: item for item in presets if isinstance(item, dict) and item.get("name")}
+        self._scene = scene
+        self.scenario.options = (CUSTOM, *self._presets)
+        if self.scenario.value not in self.scenario.options:
+            self.scenario.value = CUSTOM
+        self._chose_scenario()
+
+    def _chose_scenario(self):
+        preset = self._presets.get(self.scenario.value)
+        if preset is not None:
+            self.task.value = preset["task"]
+        if self.run_scenario is not None:
+            self.run_scenario.visible = preset is not None
+            other = preset is not None and preset.get("scene") != getattr(self, "_scene", "")
+            self.run_scenario.label = f"Load {preset['scene']} and run" if other else "Run scenario"
+
+    def _run_scenario(self):
+        preset = self._presets.get(self.scenario.value)
+        if preset is None or self.run_scenario.disabled:
+            return
+        self.run_scenario.disabled = self.submit_button.disabled = True
+        self.controls.preset(preset["name"], self.task.value)
 
     def _start(self, _):
         """One task per click: a second click before the session reports back is ignored."""
@@ -316,8 +440,31 @@ class Console:
                           file=sys.stderr)
                     traceback.print_exc()
 
+    @property
+    def camera(self):
+        """The live view's camera: "robot" (the head camera with the plan drawn on it), "observer" or "hand"."""
+        return CAMERAS.get(getattr(getattr(self, "camera_choice", None), "value", "Robot view"), "robot")
+
+    def show_camera(self, rgb, label):
+        """An observer or hand camera image the session rendered for the live view."""
+        if self.camera != "robot" and not getattr(self, "replaying", False):
+            self.ego.image = rgb
+            self.ego.label = label
+
+    def _set_paused(self, paused):
+        (self.controls.pause if paused else self.controls.unpause)()
+        self.pause_button.visible, self.unpause_button.visible = not paused, paused
+
+    def _send_note(self):
+        text = self.note.value
+        if text.strip():
+            self.controls.tell(text)
+            self.note.value = ""
+
     def render(self, frame):
         self._refresh_stage(simulation_time=frame.time)
+        if self.camera != "robot" or getattr(self, "replaying", False):
+            return
         self.ego.image = self.overlays.ego_rgb(frame)
         self.ego.label = "Live camera"
         if self._detail_skill == "navigate":
@@ -370,6 +517,8 @@ class Console:
 
     def skill_event(self, event):
         kind = event["type"]
+        if getattr(self, "stop_skill_button", None) is not None and kind in ("skill_started", "skill_finished"):
+            self.stop_skill_button.disabled = kind == "skill_finished"
         if kind == "skill_stage":
             now, sim = time.monotonic(), event.get("simulation_time")
             progress = self._progress
@@ -428,6 +577,9 @@ class Console:
             self.scene_view.show_arm_path(overlays.palm_path)
 
     def update(self, status: str, text: str = ""):
+        if getattr(self, "replaying", False):  # the run's state is kept for when the replay ends
+            self._state, self._note = status, text
+            return
         self.status.content = STATUS.get(status, status)
         if status == "Thinking":
             self.ego.label = "Last camera frame (agent thinking)"
@@ -445,7 +597,44 @@ class Console:
         self.thought.content = thought_bubble(self._bubble_message, thinking=status == "Thinking",
                                               model=self.model_name)
         self.explanation.content = "" if status == "Executing" else note(text, done=status == "model_done")
-        self.submit_button.disabled = status in ("Thinking", "Executing", "Reset required")
+        self.submit_button.disabled = status in ("Thinking", "Executing", "Reset required", "Paused", "Loading")
+        if getattr(self, "run_scenario", None) is not None:
+            self.run_scenario.disabled = self.submit_button.disabled
+        if getattr(self, "resume_button", None) is not None:  # only a console with the monitor has it
+            self.resume_button.visible = status == "Paused" and "monitor" in text.lower()
+            running = status in ("Thinking", "Executing", "Paused")
+            self.task.visible = self.submit_button.visible = not running  # the run's controls lead while it runs
+            if getattr(self, "scenario", None) is not None:
+                self.scenario.visible = not running
+                self.run_scenario.visible = not running and self.scenario.value in self._presets
+            if status == "Thinking":
+                self._decisions += 1
+            self._state, self._note = status, text
+            self.strip.content = plan_view.status_strip(status, self._view, self._decisions, text)
+
+    def monitor_update(self, view):
+        """Redraw the monitor panel from VIEW (called from the monitor's threads)."""
+        if self.monitor_panel is not None:
+            self._view = view
+            if not self.replaying:
+                self.draw_view(view, getattr(self, "_state", "Ready"), self._decisions, getattr(self, "_note", ""))
+
+    def draw_view(self, view, state, decisions, note=""):
+        """The strip, plan, timeline and monitor panel from VIEW (live, or a replay's at its time)."""
+        s = self.monitor_settings
+        self.monitor_panel.content = monitor_panel.monitor_html(view, s.tau, s.tau_unsafe)
+        self.dismiss_button.visible = view.alert is not None and not self.replaying
+        self.timeline.content = monitor_panel.timeline_bar(view, s.tau, s.ema)
+        self.plan_view.content = plan_view.plan_view(view.plan, view.phase, view.task)
+        self.strip.content = plan_view.status_strip(state, view, decisions, note)
+
+    def end_replay(self):
+        """Back to the live run: its newest view and state."""
+        self.replaying = False
+        self.ego.label = "Live camera"
+        self.draw_view(self._view or View(), getattr(self, "_state", "Ready"), self._decisions,
+                       getattr(self, "_note", ""))
+        self.thought.content = thought_bubble(self._bubble_message, model=self.model_name)
 
     def close(self):
         if self._renderer is not None:

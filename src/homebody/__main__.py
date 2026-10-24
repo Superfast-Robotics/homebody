@@ -1,4 +1,5 @@
-"""The `homebody` command line: run, check and provider-check; `homebody real2sim ...` runs REAL2SIM."""
+"""The `homebody` command line: run, check and provider-check; `homebody real2sim ...` runs REAL2SIM and
+`homebody rollout ...` exports, imports, evaluates and views recorded rollouts."""
 import argparse
 import errno
 import json
@@ -22,8 +23,9 @@ from homebody.vlm.provider import ProviderError
 def parser():
     value = argparse.ArgumentParser(prog="homebody", description="HomeBody SIM: a model drives a simulated G1 "
                                                                  "in a scanned environment")
-    value.add_argument("command", nargs="?", choices=("run", "check", "provider-check"),
-                       default="run")
+    value.add_argument("command", nargs="?", choices=("run", "check", "provider-check", "serve", "connect", "monitor"),
+                       default="run", help="serve: a harness consoles connect to ([server] settings); connect: a "
+                                           "console and monitor here, on a harness at --url")
     value.add_argument("--root", type=Path,
                        help="Release root containing assets and configs")
     value.add_argument("--env", help="The environment by name, a folder of assets/real2sim/ "
@@ -40,6 +42,15 @@ def parser():
     value.add_argument("--host", default="127.0.0.1", help="The console's address (default 127.0.0.1)")
     value.add_argument("--port", type=int, default=8080, help="The console's port (default 8080)")
     value.add_argument("--output", type=Path, help="Evidence root (default: ROOT/runs)")
+    value.add_argument("--backend", choices=("sim", "real"), default="sim", help="serve: the harness's robot")
+    value.add_argument("--url", default="ws://127.0.0.1:8765", help="connect: the harness server")
+    value.add_argument("--token-file", help="connect: the server's token (default: server.token_file)")
+    value.add_argument("--presets", type=Path, help="serve: TOML of scenarios consoles can run (server/presets.py)")
+    value.add_argument("--config", type=Path, help="monitor: the harnesses, simulation servers and scenarios (TOML)")
+    value.add_argument("--sim", help="serve: run on a warehouse-sim server at this endpoint (tcp://127.0.0.1:PORT)")
+    value.add_argument("--sim-profile", type=Path, help="serve --sim: the profile.toml that server serves")
+    value.add_argument("--sim-root", action="append", default=[], metavar="NAME=PATH",
+                       help="serve --sim: a source root the profile names (e.g. HOMEBODY_EFFECTIVE_ROOT=...)")
     return value
 
 
@@ -79,6 +90,12 @@ def check(root: Path, scene: Path, settings) -> int:
         print(f"{'OK' if found else 'MISSING'} {variable} in the environment")
         if not found:
             missing.append(variable)
+    if settings.monitor.enabled:
+        from homebody.monitor.decision import KEY as DECISION_KEY
+        found = bool(os.environ.get(DECISION_KEY))
+        print(f"{'OK' if found else 'MISSING'} {DECISION_KEY} in the environment (the monitor's Decisions API)")
+        if not found:
+            missing.append(DECISION_KEY)
     print(f"Model: {settings.agent.model}: {model_label(settings.agent)} via {settings.agent.provider}; "
           f"login not tested (homebody provider-check --model {settings.agent.model} sends one request)")
     print("No simulator, web server, provider request, or robot service was started.")
@@ -103,9 +120,27 @@ def provider_check(settings, output):
         print(f"Provider evidence: {path}")
 
 
+def live_monitor(settings, recorder, ui):
+    """The live monitor when [monitor] enabled: its events go to the run's events.jsonl, its view to the console."""
+    if not settings.monitor.enabled:
+        return None
+    from homebody.monitor.decision import OpenAiDecisions
+    from homebody.monitor.monitor import Monitor
+    from homebody.monitor.vocabulary import VocabularyModel
+    return Monitor(settings.monitor, VocabularyModel(settings.monitor), OpenAiDecisions(settings.monitor),
+                   sink=recorder.event, on_update=ui.monitor_update if ui is not None else None)
+
+
+def robot_profile(root, settings):
+    """The arms' kinematics and the robot's calibration."""
+    from homebody.helpers.kinematics import Arm
+    profile = settings.robot.directory(root)
+    arms = {side: Arm(profile / "g1_29dof_with_hand.urdf", side) for side in ("left", "right")}
+    return arms, json.loads((profile / "calibration.json").read_text())
+
+
 def run(args, settings, output):
     from homebody.backends.mujoco import MujocoBackend
-    from homebody.helpers.kinematics import Arm
     from homebody.session.recorder import Recorder
     from homebody.session.session import Session
     from homebody.ui.console import Console, Controls
@@ -123,25 +158,30 @@ def run(args, settings, output):
                          initial_task=args.task or task_scene.get("default_task", ""),
                          scene_name=task_scene.get("name", "Simulation"),
                          model_name=model_label(settings.agent),
-                         topdown_settings=settings.topdown, render_in_background=True)
+                         topdown_settings=settings.topdown, render_in_background=True,
+                         monitor=settings.monitor if settings.monitor.enabled else None)
         backend = MujocoBackend(args.root, settings, scene=args.scene, spawns=args.spawns)
         scene_update = None
         if ui is not None:
             from homebody.ui.scene import SceneView
             ui.scene_view = SceneView(ui.server, backend)
             scene_update = ui.scene_view.update
-        profile = settings.robot.directory(args.root)
-        arms = {side: Arm(profile / "g1_29dof_with_hand.urdf", side) for side in ("left", "right")}
+        arms, calibration = robot_profile(args.root, settings)
         if ui is not None:
             ui.arms = arms
-        calibration = json.loads((profile / "calibration.json").read_text())
         provider = make(settings.agent)
+        monitor = live_monitor(settings, recorder, ui)
+        if ui is not None and monitor is not None:
+            from homebody.rollout.cli import models
+            from homebody.ui.rollouts import RolloutsPanel
+            RolloutsPanel(ui, runs=output, imported=output / "imported", settings=settings,
+                          models=lambda: models(settings))
         session = Session(backend, provider, settings, recorder, controls,
                           arms=arms, jaw_samples=calibration["jaw_samples"], ui=ui,
                           observer_frame=backend.observer_frame if args.headless else None,
                           shoulder_frame=backend.shoulder_frame if args.headless else None,
                           scene_update=scene_update, real_time=ui is not None,
-                          semantic_context=semantic_prior(args.scene))
+                          semantic_context=semantic_prior(args.scene), monitor=monitor)
         assembled = True
         print(f"Evidence: {recorder.path}")
         if args.headless:
@@ -177,6 +217,9 @@ def run(args, settings, output):
 
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
+    if argv[:1] == ["rollout"]:
+        from homebody.rollout.cli import main as rollout
+        return rollout(argv[1:])
     if argv[:1] == ["real2sim"]:
         from homebody.real2sim.cli import main as real2sim
         return real2sim(argv[1:])
@@ -226,6 +269,9 @@ def main(argv=None):
         return check(args.root, args.scene, settings)
     if args.command == "provider-check":
         return provider_check(settings, output)
+    if args.command in ("serve", "connect", "monitor"):
+        from homebody.server import commands
+        return getattr(commands, args.command)(args, settings, output)
     return run(args, settings, output)
 
 

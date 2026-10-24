@@ -107,6 +107,15 @@ class PlanRunner:
         return {"skill": GOAL_DONE if done else GOAL_FAILED, "code": "OK",
                 "message": f"goal {goal_id} {'done' if done else 'failed'}"}
 
+    # --- the live monitor ---
+    def flag(self, goal_id, text):
+        if self.plan is not None:
+            self.plan.flag(goal_id, text)
+
+    def reopen(self, goal_id, reason):
+        """Reopen a done goal the monitor saw undone; the walk makes it active when it comes first."""
+        return self.plan is not None and not self.abandoned and self.plan.reopen(goal_id, reason)
+
     # --- skill results ---
     def observe(self, result, carried):
         """A skill (or coder) result while a goal is active: close the goal when its check holds or its budget is spent."""

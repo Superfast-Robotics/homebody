@@ -123,14 +123,14 @@ def build(tmp_path):
     sessions = []
 
     def create(provider, *, settings=None, observer_frame=None, backend=None, controls=None, ui=None,
-               scene_update=None):
+               scene_update=None, monitor=None):
         # these tests watch the heartbeat while the model thinks: physics runs on (pause_while_thinking off)
         settings = settings or Settings(agent=Agent(done_settle_seconds=0., pause_while_thinking=False))
         backend, controls = backend or Backend(), controls or Controls()
         recorder = ImageOnlyRecorder(tmp_path / "source", settings, tmp_path / "runs")
         session = Session(backend, provider, settings, recorder, controls,
                           arms={}, jaw_samples={}, observer_frame=observer_frame, ui=ui,
-                          scene_update=scene_update)
+                          scene_update=scene_update, monitor=monitor)
         sessions.append(session)
         return session
 
@@ -1105,3 +1105,172 @@ def test_the_settings_accept_zero_coder_calls():
     assert Settings(coder=Coder(calls=0, auto=False)).coder.calls == 0
     with pytest.raises(ValueError, match="coder.calls"):
         Settings(coder=Coder(calls=-1))
+
+
+class FakeMonitor:
+    """The live monitor's surface with scripted verdicts: one list per turn, oldest first."""
+    def __init__(self, verdicts=()):
+        self.pending, self.goals, self.phases, self.skills, self.stop = list(verdicts), [], [], [], None
+
+    def start_task(self, task, task_dir):
+        self.started = task
+
+    def end_task(self):
+        return {"calls": 7}
+
+    def capture_due(self, sim_time):
+        return False
+
+    def goal(self, request, hands, plan=None):
+        self.goals.append(request.node.goal_id)
+
+    def set_phase(self, phase):
+        self.phases.append(phase.name)
+
+    def skill_started(self, request, sim_time):
+        self.skills.append((request.skill, request.node.goal_id))
+
+    def skill_finished(self, code=None, sim_time=None):
+        self.phases.append("finished")
+
+    def stop_requested(self):
+        return self.stop
+
+    def take_verdicts(self):
+        return self.pending.pop(0) if self.pending else []
+
+    def known_stages(self):
+        return {}
+
+    def recent_findings(self):
+        return ()
+
+    def decision(self, sim_time):
+        pass
+
+
+def test_a_monitor_stop_flags_the_goal_reaches_the_agent_and_skips_the_coder(build, monkeypatch):
+    from homebody.monitor.targets import Verdict
+    from homebody.session.config import PlanMode
+    from homebody.skills.contract import Result
+
+    tree = {"type": "sequence", "children": [{"type": "goal", "id": "g1", "goal": "pick the cup", "check": None}]}
+    decisions = [Decision("Plan.", "plan", {"tree": tree}), Decision("Pick.", "pick", {"hand": "right"}),
+                 Decision("Finished.", "done", {})]
+    settings = replace(Settings(agent=Agent(done_settle_seconds=0.)), plan=PlanMode(enabled=True),
+                       coder=Coder(auto=True, calls=3))
+    stopped = Verdict("abort_skill", "g1", "missed", 0.95, "the fingers close beside the cup", 3.0)
+    monitor = FakeMonitor([[], [], [stopped]])
+    provider = Provider(decisions)
+    session = build(provider, settings=settings, monitor=monitor)
+    monkeypatch.setattr(session.runner, "run", lambda skill, arguments, frame, **kw: Result(
+        skill, "MONITOR_STOPPED", "The monitor stopped the skill: missed p=0.95"))
+    monkeypatch.setattr(session.coder, "call", lambda *a: pytest.fail("a monitor stop went to the coder"))
+    outcome = session.run_task("Pick up the cup.")
+    assert outcome["status"] == "model_done" and outcome["monitor"] == {"calls": 7}
+    assert "MONITOR_STOPPED" in provider.prompts[0]
+    assert "Monitor (" not in provider.prompts[1]
+    assert "Monitor (a model watching the camera" in provider.prompts[2]
+    assert "stopped the skill: missed p=0.95" in provider.prompts[2]
+    assert "⚠ monitor: missed p=0.95" in provider.prompts[2]
+    assert monitor.skills == [("pick", "g1")] and monitor.goals == ["task", "g1", "g1"]
+    assert monitor.phases.count("planning") == 3 and "finished" in monitor.phases
+
+
+def test_a_monitor_reopens_a_done_goal_and_the_agent_works_on_it_again(build, monkeypatch):
+    from homebody.monitor.targets import Verdict
+    from homebody.session.config import PlanMode
+    from homebody.skills.contract import Result
+
+    tree = {"type": "sequence", "children": [
+        {"type": "goal", "id": "g1", "goal": "pick the cup", "check": None},
+        {"type": "goal", "id": "g2", "goal": "walk to the table", "check": None}]}
+    decisions = [Decision("Plan.", "plan", {"tree": tree}), Decision("Held.", "goal_done", {"reason": "held"}),
+                 Decision("Walk.", "navigate", {}), Decision("Finished.", "done", {})]
+    undone = Verdict("reopen_goal", "g1", "undone", 0.9, "no longer true: the cup is in the right hand", 5.0)
+    monitor = FakeMonitor([[], [], [], [undone]])
+    settings = replace(Settings(agent=Agent(done_settle_seconds=0.)), plan=PlanMode(enabled=True))
+    provider = Provider(decisions)
+    session = build(provider, settings=settings, monitor=monitor)
+    monkeypatch.setattr(session.runner, "run", lambda skill, arguments, frame, **kw: Result(skill, "OK", "ok"))
+    session.run_task("Carry the cup.")
+    assert "Active goal g2" in provider.prompts[2]
+    assert "Active goal g1" in provider.prompts[3] and "reopened goal g1" in provider.prompts[3]
+    assert session.planner.plan.status == {"g1": "pending", "g2": "pending"}
+
+
+def test_without_a_monitor_the_prompt_keeps_its_refusals(build):
+    provider = Provider([Decision("Finished.", "done", {})])
+    build(provider).run_task("Nothing.")
+    assert "MONITOR_STOPPED" not in provider.prompts[0]
+
+
+def test_a_human_needed_pause_holds_until_resume_or_stop(build):
+    import threading
+
+    from homebody.vlm.provider import Cancelled
+    session = build(Provider([]), monitor=FakeMonitor())
+    threading.Timer(0.1, session.controls.resume_task).start()
+    session.await_operator("human_needed p=0.95")
+    assert session.status == "Paused"
+    threading.Timer(0.1, session.controls.cancel.set).start()
+    with pytest.raises(Cancelled):
+        session.await_operator("human_needed p=0.95")
+
+
+def test_each_turn_records_the_plan_hands_and_goal_request_a_replay_and_an_offline_monitor_need(build, monkeypatch):
+    from homebody.monitor.targets import request_from
+    from homebody.session.config import PlanMode
+    from homebody.skills.contract import Result
+
+    tree = {"type": "sequence", "children": [{"type": "goal", "id": "g1", "goal": "pick the cup", "check": None}]}
+    decisions = [Decision("Plan.", "plan", {"tree": tree}), Decision("Pick.", "pick", {"hand": "right"}),
+                 Decision("Finished.", "done", {})]
+    settings = replace(Settings(agent=Agent(done_settle_seconds=0.)), plan=PlanMode(enabled=True))
+    session = build(Provider(decisions), settings=settings)
+    monkeypatch.setattr(session.runner, "run", lambda skill, arguments, frame, **kw: Result(skill, "OK", "held"))
+    session.run_task("Pick up the cup.")
+    root = session.recorder.path
+    events = [json.loads(line) for line in (root / "events.jsonl").read_text().splitlines()]
+    started = next(e for e in events if e["kind"] == "task_started")
+    assert any(line.startswith("pick") for line in started["skills"])
+    turns = [e for e in events if e["kind"] == "turn"]
+    assert [t["step"] for t in turns] == [0, 1, 2] and turns[0]["plan"] is None
+    assert turns[1]["plan"]["active"] == "g1" and "left" in turns[1]["hands"]
+    request = request_from(turns[1]["request"], root)
+    assert request.node.goal_id == "g1" and request.task == "Pick up the cup."
+    assert request.images and all(image.is_file() for image in request.images)
+    skill = next(e for e in events if e["kind"] == "skill_request")
+    assert request_from(skill["request"], root).skill == "pick"
+
+
+def test_a_session_behind_the_server_links_stops_its_skill_when_the_remote_monitor_says_so(build):
+    from homebody.server.links import UiLink
+    from homebody.server.monitor_link import MonitorLink
+    from homebody.session.config import Monitor, PlanMode
+    from homebody.skills.contract import Result
+
+    sent = []
+    hub = SimpleNamespace(publish=lambda message, **kw: sent.append(message))
+    link = MonitorLink(hub, Monitor(enabled=True), quality=80, root=Path("."))
+    link.client_connected(True)
+    tree = {"type": "sequence", "children": [{"type": "goal", "id": "g1", "goal": "pick the cup", "check": None}]}
+    decisions = [Decision("Plan.", "plan", {"tree": tree}), Decision("Pick.", "pick", {"hand": "right"}),
+                 Decision("Finished.", "done", {})]
+    settings = replace(Settings(agent=Agent(done_settle_seconds=0., pause_while_thinking=False)),
+                       plan=PlanMode(enabled=True))
+    provider = Provider(decisions)
+    session = build(provider, settings=settings, monitor=link, ui=UiLink(hub, quality=80, view_hz=1000.0))
+
+    def run(skill, arguments, frame, **kw):
+        link.client_stop("missed p=0.95: the fingers close beside the cup", link.skill_call)
+        link.client_verdicts([{"action": "abort_skill", "goal_id": "g1", "label": "missed", "p": 0.95,
+                               "reason": "the fingers close beside the cup", "sim_time": 1.0}])
+        code, reason = session.interruption()
+        return Result(skill, code, reason)
+    session.runner.run = run
+    outcome = session.run_task("Pick up the cup.")
+    assert outcome["status"] == "model_done" and outcome["monitor"]["remote"] is True
+    assert "stopped the skill: missed p=0.95" in provider.prompts[2]
+    assert any('"call": "skill_started"' in m for m in sent if isinstance(m, str))
+    assert any('"type": "status"' in m for m in sent if isinstance(m, str))

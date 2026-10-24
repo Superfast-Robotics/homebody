@@ -219,3 +219,19 @@ def test_an_event_stream_without_stored_output_is_rebuilt_from_its_item_events()
         {"type": "response.completed", "response": {"output": [], "usage": {"input_tokens": 9}}})) + "\ndata: [DONE]\n"
     assert streamed(stream) == {"output": [item], "usage": {"input_tokens": 9}}
     assert "error" in streamed('data: {"type": "error", "message": "x"}\n')
+
+
+def test_a_litellm_reply_that_failed_upstream_overloaded_is_busy_and_names_the_error(tmp_path, monkeypatch):
+    from homebody.vlm import api
+    from homebody.vlm.provider import ProviderBusy
+    failed = {"error": {"type": "response.failed", "response": {"id": "resp_" + "x" * 600, "status": "failed",
+                        "error": {"code": "server_is_overloaded", "message": "Our servers are currently overloaded."}}}}
+    monkeypatch.setenv("LITELLM_API_KEY", "test")
+    monkeypatch.setattr(api, "run_request", lambda *args, **kwargs: failed)
+    provider = api.LiteLlm(Agent())
+    with pytest.raises(ProviderBusy, match="server_is_overloaded: Our servers are currently overloaded"):
+        provider.generate("p", images=(), names=("done",), attempt=tmp_path, tick=lambda: None, cancelled=lambda: False)
+    monkeypatch.setattr(api, "run_request", lambda *args, **kwargs: {"output": []})
+    with pytest.raises(ProviderError) as empty:
+        provider.generate("p", images=(), names=("done",), attempt=tmp_path, tick=lambda: None, cancelled=lambda: False)
+    assert not isinstance(empty.value, ProviderBusy)

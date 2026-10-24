@@ -1,0 +1,9 @@
+# The monitor app on warehouse-sim servers (homebody monitor --config ... --settings configs/monitor_warehouse_sim.toml):
+# as configs/monitor.toml, but warehouse-sim's physics keeps running while a skill computes (grasp and arm planning,
+# perception), so a skill can stand still for many simulated seconds without having stalled.
+[plan]
+enabled = true
+
+[monitor]
+enabled = true
+stall_s = 30.0

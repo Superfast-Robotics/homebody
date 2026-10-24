@@ -63,13 +63,16 @@ class Context:
     jaw_samples: Mapping[str, list] = field(default_factory=dict)
     cancelled: Callable[[], bool] = lambda: False
     emit: Callable[[dict], None] = lambda event: None
+    # (code, reason) when the operator or the live monitor stops the skill, else None
+    interrupted: Callable[[], tuple[str, str] | None] = lambda: None
     carried: dict = field(default_factory=dict)
     _skill_name: str | None = field(default=None, init=False, repr=False)
     _stage_name: str | None = field(default=None, init=False, repr=False)
+    _interrupted: bool = field(default=False, init=False, repr=False)
 
     def begin(self, name, skill):
         """Start SKILL's attempt under NAME: its stage events follow."""
-        self._skill_name, self._stage_name = name, None
+        self._skill_name, self._stage_name, self._interrupted = name, None, False
 
     def settle(self, epoch, result):
         """Hold or stop the base after an executed skill."""
@@ -88,6 +91,9 @@ class Context:
         """End the skill as CANCELLED or STALE_EPOCH unless it may go on."""
         if self.cancelled():
             raise SkillFailure("CANCELLED", "Operator cancelled the skill")
+        if not self._interrupted and (stop := self.interrupted()) is not None:
+            self._interrupted = True  # once: the skill's abort and the arm's return still run
+            raise SkillFailure(*stop)
         if epoch != self.observations.epoch:
             raise SkillFailure("STALE_EPOCH", "Scene changed; prepare a new action")
 
@@ -125,6 +131,8 @@ class Context:
 
 COMMON_FAILURES = ("CANCELLED", "STALE_EPOCH", "STALE_OBSERVATION", "INVALID_ARGUMENT",
                    "TARGET_LOST", "ACTION_REJECTED", "PHYSICS_INVALID", "COLLISION")
+MONITOR_STOPPED = "MONITOR_STOPPED"  # any skill, when the live monitor is on (homebody/monitor)
+OPERATOR_STOPPED = "OPERATOR_STOPPED"  # any skill, when the operator stops it from the console
 
 
 def declared(name, skill):
@@ -206,7 +214,8 @@ class Attempt:
     def __init__(self, ctx, name, selected_frame, skill):
         self.ctx, self.name, self.selected, self.epoch = ctx, name, selected_frame, selected_frame.epoch
         self.skill = skill
-        self.declared = COMMON_FAILURES + (() if self.skill is None else self.skill.FAILURES)
+        self.declared = (COMMON_FAILURES + (MONITOR_STOPPED, OPERATOR_STOPPED)
+                         + (() if self.skill is None else self.skill.FAILURES))
         self.plan, self.executing, self.aborting = None, False, False
         self.finished, self.result = False, None
 

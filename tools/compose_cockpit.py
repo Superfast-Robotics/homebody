@@ -89,11 +89,26 @@ def replay(events, session, nav, overlays, text):
             text.update(decision=None, stages=[], result=" · ".join(
                 (result["skill"].capitalize(), result["code"], result["message"])))
             overlays.clear()
+        elif kind == "monitor":
+            text["monitor"] = monitor_caption(row) or text.get("monitor", "")
         elif kind == "frame":
             frame = load_frame(session / row["path"], nav)
             if overlays.observe(frame):
                 text["decision"] = None
             yield frame, f"Ego RGB · {frame.time:.1f} s"
+
+
+def monitor_caption(row):
+    """The cockpit's monitor line for a monitor event, or "" for one it does not show."""
+    if row.get("type") == "fired":
+        verdict = row["verdict"]
+        return (f"{verdict['action'].replace('_', ' ')} {verdict['goal_id']}: {verdict['label']} "
+                f"p={verdict['p']:.2f} at {verdict['sim_time']:.1f} s")
+    if row.get("type") == "vocabulary":
+        return f"watching {row['goal_id']}: " + ", ".join(label["name"] for label in row["labels"])
+    if row.get("type") in ("operator_pause", "error"):
+        return f"{row['type'].replace('_', ' ')}: {row.get('reason') or row.get('error', '')}"[:200]
+    return ""
 
 
 def panel(pixels, size, caption, font):
@@ -115,6 +130,8 @@ def strip(draw, box, text, font, small):
                   ("Stage · " + (" < ".join(stages[:-5:-1]) if stages else "none"),
                    HIGHLIGHT if stages else MUTED, 1, font),
                   (f"Last result · {text['result'] or 'none yet'}", MUTED, 2, font)]
+    if text.get("monitor"):
+        paragraphs.append((f"Monitor · {text['monitor']}", HIGHLIGHT, 2, font))
     if decision is None:
         paragraphs.append(("No active decision", MUTED, 1, font))
     else:

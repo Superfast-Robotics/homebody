@@ -119,3 +119,37 @@ def test_unknown_skill_is_an_invalid_argument_without_actuation():
     result = run(backend, events, name="levitate")
     assert result.code == "INVALID_ARGUMENT" and finished(events) == [result]
     assert not backend.commands and backend.stopped == 0
+
+
+def test_a_monitor_stop_ends_the_skill_with_its_own_code_and_runs_its_abort(monkeypatch):
+    aborts, reason = [], {"now": None}
+
+    def execute(plan, ctx):
+        ctx.check(backend.frame.epoch)
+        reason["now"] = ("MONITOR_STOPPED", "The monitor stopped the skill: dropped p=0.93: the cup falls")
+        ctx.check(backend.frame.epoch)
+        return Result("fake", "OK", "unreachable")
+    fake_skill(monkeypatch, execute, abort=lambda plan, ctx: aborts.append(plan))
+    backend, events = FakeBackend(), []
+    context = Context(backend, backend, {}, emit=events.append, interrupted=lambda: reason["now"])
+    result = Runner(context).run("fake", {}, backend.frame)
+    assert result.code == "MONITOR_STOPPED" and "dropped p=0.93" in result.message
+    assert aborts == ["plan"] and backend.stopped == 1
+
+
+def test_after_a_monitor_stop_the_skills_abort_can_still_move_the_robot(monkeypatch):
+    moved, reason = [], {"now": None}
+
+    def execute(plan, ctx):
+        reason["now"] = ("OPERATOR_STOPPED", "The operator stopped the skill")  # while it executes
+        ctx.check(backend.frame.epoch)
+        return Result("fake", "OK", "unreachable")
+
+    def abort(plan, ctx):
+        ctx.check(backend.frame.epoch)  # the arm's return checks too: it must not be stopped again
+        moved.append("returned")
+    fake_skill(monkeypatch, execute, abort=abort)
+    backend, events = FakeBackend(), []
+    context = Context(backend, backend, {}, emit=events.append, interrupted=lambda: reason["now"])
+    result = Runner(context).run("fake", {}, backend.frame)
+    assert result.code == "OPERATOR_STOPPED" and "abort:" not in result.message and moved == ["returned"]

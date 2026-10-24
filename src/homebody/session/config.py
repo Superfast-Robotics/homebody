@@ -190,6 +190,107 @@ class PlanMode:
     replans: int = 2
 
 
+def private_http(url: str) -> bool:
+    """Whether URL is plain http to a private-network address (a GPU host on the cluster's network)."""
+    import ipaddress
+    from urllib.parse import urlparse
+    parts = urlparse(url)
+    try:
+        return parts.scheme == "http" and ipaddress.ip_address(parts.hostname or "").is_private
+    except ValueError:
+        return False
+
+
+@dataclass(frozen=True)
+class Monitor:
+    """The live monitor (homebody/monitor): `vocab_model` (chat completions at `vocab_base_url`) writes each goal's
+    action labels; the OpenAI Decisions API (`decision_model` at `decision_base_url`, with the key in
+    OPENAI_DECISIONS_API_KEY, which nothing else reads) reads the newest `window_frames` head images, captured at
+    `capture_hz` simulation hertz, and returns label probabilities. Calls never overlap: the next waits
+    max(`min_period_s`, rolling p95 latency x `p95_margin`). A signal fires when its average (weight `ema` on the
+    newest reading) crosses `tau` for `ticks` readings in a row (`tau_unsafe`, `ticks_unsafe` for unsafe;
+    `stall_s` simulation seconds for no progress); a firing aborts the running skill at most `max_aborts_per_goal` times per goal
+    (0: flag only), never within `grace_s` of a skill's start nor `cooldown_s` after an abort. `max_cost_usd` caps
+    one task's decision spend (0: no cap)."""
+    enabled: bool = False
+    vocab_model: str = "qwen3.8-27b"
+    vocab_base_url: str = "http://127.0.0.1:4000/v1"
+    vocab_key_file: str = "~/vlm/api_key"  # the vLLM servers' key; without the file, LITELLM_API_KEY (the proxy)
+    vocab_thinking: bool = False
+    vocab_temperature: float = 0.7
+    vocab_top_p: float = 0.8
+    vocab_top_k: int = 20
+    vocab_presence_penalty: float = 1.5
+    vocab_timeout: float = 120.0
+    max_labels: int = 8
+    refresh_on_skill: bool = True
+    decision_model: str = "gpt-6-luna"
+    decision_base_url: str = "https://api.openai.com/v1"
+    decision_timeout: float = 15.0
+    decision_usd_per_mtok: float = 0.10
+    capture_hz: float = 10.0
+    window_frames: int = 8
+    image_short_side: int = 384
+    wrist: bool = False
+    min_period_s: float = 0.25
+    p95_margin: float = 1.2
+    p95_window: int = 20
+    tau: float = 0.8
+    tau_unsafe: float = 0.9
+    ticks: int = 3
+    ticks_unsafe: int = 2
+    stall_s: float = 8.0  # skills stand still for seconds while they plan, verify and squeeze
+    ema: float = 0.5
+    grace_s: float = 2.0
+    cooldown_s: float = 3.0
+    max_aborts_per_goal: int = 2
+    max_cost_usd: float = 0.0
+    keep_frames: bool = False  # write every captured frame under the task's monitor/frames (tools/monitor_bench.py)
+
+    def __post_init__(self):
+        if not 1 <= self.window_frames <= 16:
+            raise ValueError("monitor.window_frames must be from 1 to 16")
+        if not 0.5 < self.tau < 1 or not 0.5 < self.tau_unsafe < 1:
+            raise ValueError("monitor.tau and monitor.tau_unsafe must be between 0.5 and 1")
+        if not 0 < self.ema <= 1:
+            raise ValueError("monitor.ema must be above 0 and at most 1")
+        for name in ("decision_base_url", "vocab_base_url"):  # keys and camera frames go there
+            url = getattr(self, name)
+            if not url.startswith(("https://", "http://127.0.0.1", "http://localhost", "http://[::1]")) \
+                    and not private_http(url):
+                raise ValueError(f"monitor.{name} must be https, or http on this machine or a private network")
+
+
+@dataclass(frozen=True)
+class Rollouts:
+    """Rollout bundles (homebody/rollout): an import larger than `max_import_mb` unpacked is refused; `light` leaves
+    sensors.npz and depth previews out of an export. The offline monitor (monitor/offline.py) asks the decision model
+    every `offline_period_s` simulation seconds of a recorded rollout and stops at `offline_max_cost_usd` (0: no cap)."""
+    max_import_mb: int = 4096
+    light: bool = True
+    offline_period_s: float = 0.5
+    offline_max_cost_usd: float = 2.0
+
+
+@dataclass(frozen=True)
+class Server:
+    """The harness server (homebody serve): it listens on `host`:`port` (this machine only unless changed; reach it
+    over an SSH tunnel) and admits a client presenting the token in `token_file`. `on_disconnect` is what a running
+    task does when the commanding client goes away: "pause" (hold until a client resumes or stops it) or "continue"."""
+    host: str = "127.0.0.1"
+    port: int = 8765
+    token_file: str = "~/.homebody/server_token"
+    on_disconnect: str = "pause"
+    jpeg_quality: int = 85
+    view_hz: float = 5.0  # camera images sent for the console's view, in wall hertz
+
+    def __post_init__(self):
+        if self.on_disconnect not in ("pause", "continue"):
+            raise ValueError('server.on_disconnect must be "pause" or "continue"')
+        if not 1 <= self.port <= 65535 or not 1 <= self.jpeg_quality <= 100:
+            raise ValueError("server.port must be 1-65535 and server.jpeg_quality 1-100")
+
+
 @dataclass(frozen=True)
 class Robot:
     """The G1's hands: "dex3", Unitree's three-finger Dex3-1 (the robot in assets/robot), or "dex1", the Dex1-1

@@ -68,10 +68,12 @@ def validate(tree):
 
 @dataclass
 class Plan:
-    """A validated tree and each goal's status: pending, active, done or failed (with the reason)."""
+    """A validated tree and each goal's status: pending, active, done or failed (with the reason), and the live
+    monitor's note on a goal until it closes."""
     tree: dict
     status: dict = field(default_factory=dict)
     reasons: dict = field(default_factory=dict)
+    flags: dict = field(default_factory=dict)
 
     def __post_init__(self):
         for goal_id in validate(self.tree):
@@ -102,8 +104,23 @@ class Plan:
 
     def close(self, goal_id, done, reason=""):
         self.status[goal_id] = "done" if done else "failed"
+        self.flags.pop(goal_id, None)
         if reason:
             self.reasons[goal_id] = reason[:200]
+
+    def flag(self, goal_id, text):
+        """The monitor's note on GOAL_ID, shown until the goal closes."""
+        if goal_id in self.status:
+            self.flags[goal_id] = text[:200]
+
+    def reopen(self, goal_id, reason):
+        """A done goal back to pending (the monitor saw its result undone); whether it was done."""
+        if self.status.get(goal_id) != "done":
+            return False
+        self.status[goal_id] = "pending"
+        self.reasons.pop(goal_id, None)
+        self.flags[goal_id] = f"monitor reopened: {reason}"[:200]
+        return True
 
     def render(self, active=None):
         """The tree as indented text with each goal's status, for the agent's prompt."""
@@ -119,6 +136,9 @@ class Plan:
             check = node.get("check")
             check_text = "agent closes it" if not check else " ".join(f"{k}={v}" for k, v in check.items())
             marker = "ACTIVE" if node["id"] == active else self.status[node["id"]]
+            flag = self.flags.get(node["id"])
+            if flag:
+                marker += f" ⚠ {flag}" if flag.startswith("monitor") else f" ⚠ monitor: {flag}"
             reason = f" ({self.reasons[node['id']]})" if node["id"] in self.reasons else ""
             lines.append(f"{pad}[{marker}] {node['id']}: {node['goal']} | check: {check_text}{reason}")
 

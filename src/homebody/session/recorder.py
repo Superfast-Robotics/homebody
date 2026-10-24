@@ -3,6 +3,7 @@ import hashlib
 import json
 import platform
 import subprocess
+import threading
 import time
 import uuid
 from collections import Counter
@@ -94,6 +95,7 @@ class Recorder:
         self.path.mkdir(parents=True, exist_ok=False)
         (self.path / "frames").mkdir()
         self._events = (self.path / "events.jsonl").open("a", buffering=1)
+        self._event_lock = threading.Lock()
         self._physics = None
         self._pending_physics = None
         self._videos = {}
@@ -130,10 +132,12 @@ class Recorder:
         return self._task_path is not None
 
     def event(self, kind: str, **fields):
-        self._events.write(json.dumps({"kind": kind, "wall_time": time.time(), **fields},
-                                      default=json_value, allow_nan=False) + "\n")
+        line = json.dumps({"kind": kind, "wall_time": time.time(), **fields}, default=json_value,
+                          allow_nan=False) + "\n"
+        with self._event_lock:  # the live monitor writes from its own threads
+            self._events.write(line)
 
-    def start_task(self, task: str, epoch: int | None) -> Path:
+    def start_task(self, task: str, epoch: int | None, **details) -> Path:
         if self._task_path is not None:
             raise RuntimeError("Another task is already recording")
         path = self.path / "tasks" / f"task-{self._task_count:03d}"
@@ -143,7 +147,7 @@ class Recorder:
         self._physics = (path / "physics.jsonl").open("a", buffering=1)
         self._pending_physics = None
         write_json(path / "task.json", {"task": task, "epoch": epoch, "started_unix": time.time()})
-        self.event("task_started", task=task, epoch=epoch, path=path.relative_to(self.path))
+        self.event("task_started", task=task, epoch=epoch, path=path.relative_to(self.path), **details)
         return path
 
     def setup_failure(self, task: str, reason: str):

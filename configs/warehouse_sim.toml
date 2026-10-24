@@ -1,0 +1,5 @@
+# A harness on a warehouse-sim server (homebody serve --sim): the server renders its cameras in a separate process
+# at the profile's sensor rate (5 Hz) and serves the newest frame, so a frame is typically 0.2 s and at most about
+# 0.35 s old in simulated time; physics keeps running while the agent thinks. Skills accept frames that old.
+[motion]
+observation_age = 0.5

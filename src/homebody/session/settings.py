@@ -13,12 +13,15 @@ from .config import (
     Collision,
     Curobo,
     Grasp,
+    Monitor,
     Navigate,
     Physics,
     Placement,
     PlanMode,
     Recording,
     Robot,
+    Rollouts,
+    Server,
     Servo,
     SharedMotion,
     Topdown,
@@ -35,7 +38,10 @@ SIGNED = frozenset({"topdown.ahead", "topdown.left", "topdown.height", "placemen
 NONNEGATIVE = frozenset({"physics.noslip_iterations", "motion.route_clearance_margin",
                          "motion.left_hand_offset", "motion.right_hand_offset", "motion.close_slack",
                          "motion.close_min_gain", "grasp.spline_out", "placement.release_drops",
-                         "agent.done_settle_seconds", "coder.calls"})  # coder.calls = 0 turns the coder off
+                         "agent.done_settle_seconds", "coder.calls",  # coder.calls = 0 turns the coder off
+                         "monitor.vocab_presence_penalty", "monitor.grace_s", "monitor.cooldown_s",
+                         "monitor.max_aborts_per_goal", "monitor.max_cost_usd",
+                         "rollouts.offline_max_cost_usd"})
 
 
 def in_range(label, number):
@@ -81,6 +87,9 @@ class Settings:
     curobo: Curobo = field(default_factory=Curobo)
     coder: Coder = field(default_factory=Coder)
     plan: PlanMode = field(default_factory=PlanMode)
+    monitor: Monitor = field(default_factory=Monitor)
+    rollouts: Rollouts = field(default_factory=Rollouts)
+    server: Server = field(default_factory=Server)
     robot: Robot = field(default_factory=Robot)
 
     def __post_init__(self):

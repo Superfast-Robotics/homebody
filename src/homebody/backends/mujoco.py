@@ -355,6 +355,10 @@ class MujocoBackend:
         return self._observer_render(self.data.qpos[:3] + [0., 0., .15], 1.8, -30.,
                                      math.degrees(self._base_yaw()) + 45.)
 
+    def overview_frame(self):
+        """Operator-only view from high behind the robot, over shelves and furniture (the console's observer view)."""
+        return self._observer_render(self.data.qpos[:3], 2.6, -60., math.degrees(self._base_yaw()) + 35.)
+
     def shoulder_frame(self, side):
         """Operator-only view from behind one shoulder, fixed to the torso's heading."""
         torso = self.data.xmat[self._torso].reshape(3, 3)

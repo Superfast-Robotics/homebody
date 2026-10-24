@@ -59,16 +59,17 @@ class SceneRecorder:
         return next(args for called, args, _ in reversed(self.calls) if called == name)
 
 
-def mocked_console(monkeypatch, settings=None):
+def mocked_console(monkeypatch, settings=None, monitor=None, controls=None):
     """A real Console over a mocked web server, with a recording 3D view."""
     import socket
 
     import viser
     server = MagicMock()
-    for widget in ("add_image", "add_html", "add_markdown", "add_button", "add_text"):
+    for widget in ("add_image", "add_html", "add_markdown", "add_button", "add_text", "add_dropdown", "add_slider",
+                   "add_upload_button"):
         getattr(server.gui, widget).side_effect = lambda *args, kind=widget, **kwargs: MagicMock(kind=kind)
     monkeypatch.setattr(socket, "socket", MagicMock())
     monkeypatch.setattr(viser, "ViserServer", MagicMock(return_value=server))
-    console = Console(Controls(), topdown_settings=settings or Topdown(pixels_per_metre=100.))
+    console = Console(controls or Controls(), topdown_settings=settings or Topdown(pixels_per_metre=100.), monitor=monitor)
     console.scene_view = SceneRecorder()
     return console

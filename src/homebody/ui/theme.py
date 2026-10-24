@@ -95,7 +95,7 @@ body:not(:has(.tabler-icon-cloud-check)) .hb-live .hb-off {display:inline;}
 
 
 def header(scene_name, *, mode="sim"):
-    return ('<div class="hb-header"><div class="hb-wordmark">Home<span>Body</span></div>'
+    return ('<div class="hb-header"><div class="hb-wordmark">Superfast<span>Robotics</span></div>'
             '<div class="hb-meta"><span class="hb-live" role="status">'
             '<span class="hb-on">Connected</span><span class="hb-off">Disconnected</span></span>'
             f'<span class="hb-room">{escape(scene_name)} ({escape(mode)})</span></div></div>')

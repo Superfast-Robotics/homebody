@@ -1,0 +1,7 @@
+# Turn the live monitor on (pass with --settings). The vocabulary model is reached through the LiteLLM proxy
+# (LITELLM_API_KEY) as qwen3.8-27b; the decisions go to the OpenAI Decisions API with OPENAI_DECISIONS_API_KEY. The monitor reads the behaviour tree's goals, so plan mode is on too.
+[plan]
+enabled = true
+
+[monitor]
+enabled = true
