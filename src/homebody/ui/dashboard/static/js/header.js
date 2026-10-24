@@ -129,9 +129,6 @@ export class Header {
     setText(pill.querySelector(".pill-text"), this.app.link.connected ? life : "Disconnected");
     pill.title = `Executor: ${life} (session status: ${statusTone(state.status)[0]})`;
     if (!this.app.link.connected) pill.className = "pill tone-danger";
-    const ready = !state.task && state.controls.accepting && state.initial_task;
-    setText($("summary"), state.task?.text || (ready ? `Ready to start: ${state.initial_task}` : state.text || "Ready for a task."));
-    $("summary").title = state.task?.text || state.initial_task || "";
     this.renderControls(state);
     this.renderInstruction(state.instructions.at(-1));
     this.renderAlerts(state);

@@ -44,7 +44,6 @@ button:disabled { cursor: not-allowed; }
 .task-summary { min-width: 0; flex: 0 1 520px; }
 .title-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 h1 { font-size: var(--size-title); font-weight: var(--weight-title); letter-spacing: -0.01em; }
-.summary { color: var(--text-secondary); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px;
   font-size: var(--size-meta); font-weight: var(--weight-strong); background: var(--surface-2); color: var(--text-secondary); }
 .pill .dot, .live-badge .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--neutral); }
@@ -502,7 +501,6 @@ pre.json { margin: 4px 8px 10px; padding: 8px 10px; background: var(--surface-2)
 /* header: the System chip stays quiet unless a server in use is degraded; robot controls sit apart from the agent's input */
 .servers-chip.quiet { color: var(--text-muted); border-color: var(--border-subtle); background: transparent; font-weight: 500; }
 .command-group > .controls[data-controls="header"] { border-left: 1px solid var(--border-subtle); padding-left: var(--gap); }
-.summary { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60ch; }
 /* the attempt an alert or intervention belongs to */
 .alert-attempt { display: block; font-size: var(--size-small); color: var(--text-secondary); font-weight: var(--weight-strong); }
 .intervention-attempt { font-size: var(--size-meta); color: var(--text-secondary); }
@@ -544,7 +542,6 @@ pre.json { margin: 4px 8px 10px; padding: 8px 10px; background: var(--surface-2)
 .row.failure .node-label, .row.failure .node-meta { opacity: 0.78; }
 .row.pending .node-meta { color: var(--text-muted); }
 .row:has(.tag.recovery:not([hidden])) { box-shadow: inset 2px 0 0 var(--violet); }
-.summary { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 
 /* V8: the camera / tree divider (in the gap left of the tree's column) */
 .splitter { position: absolute; grid-column: 2; grid-row: 1; top: 0; bottom: 0; left: calc(-1 * var(--gap)); width: var(--gap);
