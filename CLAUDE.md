@@ -16,7 +16,7 @@ README has the install and run commands; the real-robot backend comes with the R
 | `src/homebody/vlm/` | Providers (Codex, Claude Code, two APIs), `catalog.py`, what the model sees each turn (`observations.py`). |
 | `src/homebody/harness/` | What the agent writes customized skills against: `agent_prompt.md` (the turn instructions), `env.py` primitives and `API.md`, feedback. |
 | `src/homebody/session/` | The decision loop (`session.py`), settings (`config.py` defaults; `configs/simulation.toml` and a scene's `settings.toml` override), recording; `exploration.py` is `ExplorationSession`, and `live_context.py` the context its skills run in, reading the explorer through `LiveWorld` (`skills/live.py`). |
-| `src/homebody/ui/` | The live console (viser). |
+| `src/homebody/ui/` | The operator dashboard (`dashboard/`: one web page over the session's UI callbacks, its server, store and `static/` page), `controls.py` (operator commands), `overlays.py`; `scene.py` is the viser 3D view the page embeds, and `theme.py` the exploration console's viser theme. |
 | `src/homebody/real2sim/` | `exploration/` is the live map, decisions and app behind `homebody real2sim explore` (`skills.py` registers its skills, `explore_prompt.md` is its prompt, `config.py` its settings); `runner.py` reconstructs a scene offline, reading the capture through `src/homebody/capture*.py` and exporting it with `src/homebody/scene_package.py`. |
 | `hardware/g1/` | The G1 launcher, SuperOdometry and recorder image recipes, phone relay templates. |
 | `configs/` | `simulation.toml` and `exploration.toml` settings, `waves/` task sets, the `capture/` schema. |

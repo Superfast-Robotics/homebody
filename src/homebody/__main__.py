@@ -37,8 +37,8 @@ def parser():
                        help="Start a movable object upright at map X, Y (m) and YAW (rad) on the "
                             "surface there instead of its scanned position; repeatable")
     value.add_argument("--headless", action="store_true", help="Run one explicit task without UI")
-    value.add_argument("--host", default="127.0.0.1", help="The console's address (default 127.0.0.1)")
-    value.add_argument("--port", type=int, default=8080, help="The console's port (default 8080)")
+    value.add_argument("--host", default="127.0.0.1", help="The dashboard's address (default 127.0.0.1)")
+    value.add_argument("--port", type=int, default=8080, help="The dashboard's port (default 8080; the 3D scene uses the next one)")
     value.add_argument("--output", type=Path, help="Evidence root (default: ROOT/runs)")
     return value
 
@@ -108,7 +108,9 @@ def run(args, settings, output):
     from homebody.helpers.kinematics import Arm
     from homebody.session.recorder import Recorder
     from homebody.session.session import Session
-    from homebody.ui.console import Console, Controls
+    from homebody.ui.controls import Controls
+    from homebody.ui.dashboard import Dashboard
+    from homebody.ui.dashboard.places import Places
     from homebody.vlm.observations import semantic_prior
 
     recorder = Recorder(args.root, settings, output)
@@ -119,11 +121,12 @@ def run(args, settings, output):
     try:
         if not args.headless:
             task_scene = json.loads((args.scene / "task_scene.json").read_text())
-            ui = Console(controls, host=args.host, port=args.port,
+            ui = Dashboard(controls, host=args.host, port=args.port,
                          initial_task=args.task or task_scene.get("default_task", ""),
                          scene_name=task_scene.get("name", "Simulation"),
                          model_name=model_label(settings.agent),
-                         topdown_settings=settings.topdown, render_in_background=True)
+                         topdown_settings=settings.topdown, render_in_background=True,
+                         places=Places.from_scene(args.scene, task_scene.get("name", "")))
         backend = MujocoBackend(args.root, settings, scene=args.scene, spawns=args.spawns)
         scene_update = None
         if ui is not None:
@@ -142,6 +145,8 @@ def run(args, settings, output):
                           shoulder_frame=backend.shoulder_frame if args.headless else None,
                           scene_update=scene_update, real_time=ui is not None,
                           semantic_context=semantic_prior(args.scene))
+        if ui is not None:
+            ui.session = session  # read on the session thread only, for the plan, task and hands
         assembled = True
         print(f"Evidence: {recorder.path}")
         if args.headless:
@@ -151,7 +156,7 @@ def run(args, settings, output):
         ui.update("Ready")
         if args.task:
             controls.submit(args.task)
-        print(f"Console: http://{ui.server.get_host()}:{ui.server.get_port()}")
+        print(f"Dashboard: {ui.url} (3D scene: port {ui.scene_port})")
         session.run()
         return 0
     except KeyboardInterrupt:

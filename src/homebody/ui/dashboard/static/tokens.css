@@ -1,0 +1,106 @@
+/* Design tokens: every colour, size and radius the dashboard uses. Components read only the semantic names at the
+   bottom; the palette above them is the fuse-dark theme. Purple is the product's identity colour and never stands
+   in for an operational state: running, success, warning, error and unknown have their own state colours. */
+:root, :root[data-theme="fuse-dark"] {
+  color-scheme: dark;
+
+  /* palette: surfaces */
+  --app-bg: #0B0C14;
+  --surface-1: #12141D;
+  --surface-2: #191C27;
+  --surface-3: #222635;
+  --surface-selected: #252244;
+  --border-default: #2C3040;
+  --border-subtle: #222635;
+  --border-accent: #5147A5;
+
+  /* palette: identity accents */
+  --primary: #685BEE;
+  --primary-hover: #8074FF;
+  --primary-muted: #302B57;
+  --indigo: #5146E8;
+  --cyan: #35C3E0;
+  --cyan-muted: #173640;
+  --violet: #A78BFA;
+
+  /* palette: text */
+  --text-primary: #F1F2FA;
+  --text-secondary: #A6AABD;
+  --text-muted: #868CA0;
+  --text-disabled: #555B6D;
+
+  /* palette: operational states */
+  --state-running: #5C8DFF;
+  --state-success: #2CCB9A;
+  --state-warning: #F5A742;
+  --state-error: #F06470;
+  --state-unknown: #788397;
+
+  /* low-opacity tints of the states, for rows, cards and segments on dark surfaces */
+  --state-running-bg: rgba(92, 141, 255, 0.14);
+  --state-success-bg: rgba(44, 203, 154, 0.13);
+  --state-warning-bg: rgba(245, 167, 66, 0.11);
+  --state-error-bg: rgba(240, 100, 112, 0.12);
+  --state-running-edge: rgba(92, 141, 255, 0.55);
+  --state-success-edge: rgba(44, 203, 154, 0.45);
+  --state-warning-edge: rgba(245, 167, 66, 0.45);
+  --state-error-edge: rgba(240, 100, 112, 0.5);
+  --violet-bg: rgba(167, 139, 250, 0.14);
+  --violet-edge: rgba(167, 139, 250, 0.6);
+
+  /* semantic names the components use */
+  --background: var(--app-bg);
+  --ambient: radial-gradient(ellipse at 75% -25%, rgba(104, 91, 238, 0.09), transparent 55%);
+  --surface: var(--surface-1);
+  --surface-muted: var(--surface-2);
+  --surface-hover: var(--surface-3);
+  --border: var(--border-default);
+  --primary-light: var(--primary-muted);
+  --on-primary: #FFFFFF;
+  --running: var(--state-running);
+  --running-light: var(--state-running-bg);
+  --success: var(--state-success);
+  --success-light: var(--state-success-bg);
+  --warning: var(--state-warning);
+  --warning-text: var(--state-warning);
+  --warning-light: var(--state-warning-bg);
+  --danger: var(--state-error);
+  --danger-light: var(--state-error-bg);
+  --neutral: var(--state-unknown);
+  --neutral-light: var(--surface-3);
+  --recovery: var(--violet);
+  --recovery-light: var(--violet-bg);
+  --selected: var(--surface-selected);
+  --video-bg: #07080D;
+  --overlay: rgba(11, 12, 20, 0.8);
+  --overlay-border: rgba(241, 242, 250, 0.1);
+  --on-overlay: var(--text-primary);
+  --scrim: rgba(5, 6, 12, 0.62);
+
+  --font: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --size-title: 20px;
+  --size-panel: 15px;
+  --size-section: 13px;
+  --size-body: 13px;
+  --size-meta: 12px;
+  --size-small: 11px;
+  --weight-title: 650;
+  --weight-strong: 600;
+  --weight-label: 500;
+  --line: 1.45;
+
+  --page-pad: 20px;
+  --gap: 12px;
+  --card-pad: 16px;
+  --radius: 12px;
+  --radius-small: 10px;
+  --radius-overlay: 14px;
+  --header-height: 72px;
+  --monitor-height: 300px;
+  --target: 40px;
+  --shadow: 0 4px 20px rgba(0, 0, 0, 0.16);
+  --shadow-pop: 0 16px 44px rgba(0, 0, 0, 0.5);
+  --glow-primary: 0 4px 16px rgba(104, 91, 238, 0.3);
+  --focus: 0 0 0 2px var(--app-bg), 0 0 0 4px var(--indigo);
+}

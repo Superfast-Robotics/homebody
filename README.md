@@ -93,8 +93,10 @@ skill at a time, deciding from the robot's camera, its map and its memory of the
 The walking policy, arms, Dex3 hands and every object are simulated with full physics.
 The simulation reproduces the long-horizon runs in the SRC Kitchen.
 
-**Try it out in interactive mode.** Open http://127.0.0.1:8080, type a task and press **Start task**
-(the console has no login, so keep `--host` on localhost unless the network is trusted):
+**Try it out in interactive mode.** Open http://127.0.0.1:8080, tell the agent what to do and press
+Enter. The dashboard shows the camera, the agent's behavior tree and a 60-second monitoring
+timeline; the 3D scene is a camera choice, served on the next port. It has no login, so keep
+`--host` on localhost unless the network is trusted:
 ```bash
 homebody --env src_kitchen --model astra
 ```
