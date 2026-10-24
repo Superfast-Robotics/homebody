@@ -225,7 +225,7 @@ class HarnessClient:
         elif call == "dismiss":
             monitor.dismiss()
         elif call == "mark":
-            monitor.mark(fields.get("kind", ""), fields.get("text", ""), float(fields.get("t") or 0.0))
+            monitor.mark(fields.get("label", ""), fields.get("text", ""), float(fields.get("t") or 0.0))
         elif call == "decision":
             monitor.decision(float(fields.get("t") or 0.0))
 

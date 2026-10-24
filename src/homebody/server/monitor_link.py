@@ -137,7 +137,7 @@ class MonitorLink:
         return goal
 
     def mark(self, kind: str, text: str, sim_time: float):
-        self.send("mark", kind=kind, text=text, t=sim_time)
+        self.send("mark", label=kind, text=text, t=sim_time)  # "kind" is the wire message's own type
 
     def decision(self, sim_time: float):
         self.send("decision", t=sim_time)

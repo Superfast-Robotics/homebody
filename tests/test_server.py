@@ -306,3 +306,24 @@ def test_the_dashboard_offers_the_harness_presets_and_runs_the_chosen_one(tmp_pa
     assert [p["name"] for p in dashboard._snapshot()["scenarios"]] == ["Apple"]
     assert dashboard.command({"type": "run_scenario", "name": "Apple", "text": "put it away"})["ok"]
     assert sent == [("preset", {"name": "Apple", "text": "put it away"})]
+
+
+def test_a_mark_reaches_the_clients_monitor_with_its_kind(tmp_path):
+    """An operator note during a task is marked on the remote monitor; its kind once collided with the message's own
+    type and ended the task (TypeError, 2026-10-24)."""
+    import json
+    from types import SimpleNamespace
+
+    from homebody.server.client import HarnessClient
+    sent = []
+    link = MonitorLink(SimpleNamespace(publish=lambda message, **kw: sent.append(message)), MONITOR, quality=80,
+                       root=tmp_path)
+    link.client_connected(True)
+    link.mark("note", "keep the other products in place", 3.5)
+    fields = json.loads(sent[-1])
+    assert fields["type"] == "monitor" and fields["call"] == "mark"
+    marks = []
+    client = HarnessClient.__new__(HarnessClient)
+    client.monitor = SimpleNamespace(mark=lambda kind, text, t: marks.append((kind, text, t)))
+    client.monitor_call(fields["call"], fields)
+    assert marks == [("note", "keep the other products in place", 3.5)]
