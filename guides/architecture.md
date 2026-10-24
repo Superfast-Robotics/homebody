@@ -101,13 +101,34 @@ context ("Stall risk high for 9 s · Pick attempt 4"); a previous attempt's risk
 with the current one's assessment unknown. The risk tracks mark each attempt change with a boundary at the Skill
 track's times.
 
+**Investigation Mode** (`static/js/investigation.js`): opening an incident turns the workspace into recorded camera,
+behavior tree and the incident inspector side by side (45 / 25 / 30 %); the inspector takes the robot panel's place
+(`drawer.js` docks it), so it never covers the tree, and the monitoring timeline stays below. Narrower screens give the
+tree and the inspector one column with tabs; a tablet stacks them. One toolbar under the header says what is inspected
+and holds the only Return to Live, which restores the saved live workspace (the camera's width and its Auto or chosen
+view), the live camera, the tree following execution and the rolling window. The camera's own "Live camera" shows the
+stream in that panel without leaving the investigation. Nothing in the mode sends a robot command.
+
+**Evidence attribution** (`static/js/evidence.js`): each piece of evidence says what it is to the detection. Detector
+input is claimed only when an observation names the recorded frame the detector consumed (no monitor reports that yet);
+a recorded robot-camera frame whose simulation time matches the observation's is a synchronized observation (the
+history keeps each frame's simulation time); a frame near the moment on the dashboard's clock is contextual, with its
+offset. Quality checks are attributed the same way (`quality_relation`): the dashboard's camera check is a "Robot camera
+quality warning", and the detector's own input quality is Unknown.
+
+**Request states** (`interventions.requestStatus`) are three axes, never one "timed out": the acknowledgement (awaiting,
+acknowledged, acknowledged after deadline, deadline exceeded, rejected, ...), the command (pending, active, completed,
+failed, cancelled, expired) and the physical outcome (unverified). The deadline is the request time plus
+`ack_timeout_s`; an acknowledgement that arrives later joins its request, closed or not, and the exceeded deadline stays
+marked on the timeline. "Expired" is a stage a controller can report (`{"type": "intervention", "stage": "expired"}`).
+
 **Inspection** (`static/js/selection.js`) is one selection every panel follows, resolved by identity: intervention →
 incident → attempt (its call) → plan node; the detecting observation (the incident's first, not the episode's newest);
 the recorded robot-camera frame within two storage periods of the moment, else "Camera evidence unavailable". An
 incident older than the live 60 s opens a recorded window around it. The tree highlights the attempt and unfolds its
-parents while the rows keep their runtime state; its banner says the attempt's state then and now. Return to live
-restores the live camera, the tree following execution and the rolling window; the inspector stays open, since what it
-describes stays true. Inspecting sends nothing to the robot.
+parents while the rows keep their runtime state; its banner says the attempt's state then and now. Return to Live
+restores the live camera, the tree following execution and the rolling window, and closes Investigation Mode. Inspecting
+sends nothing to the robot.
 
 **Task impact of a degraded service** (`ui/servers.py`) comes from established links only: the harness the dashboard
 drives runs the task, and a simulation server is a critical dependency when that harness reports being attached to
@@ -157,6 +178,11 @@ What the dashboard cannot show yet, and shows as Unknown or Unverified instead:
 * **Observation time on the monitor's clock.** A reading's time is when the dashboard received it, beside the
   simulation time of its newest frame; the monitor reports no wall-clock stamp of its own, so frame-level
   synchronization across systems is not claimed.
+* **Detector input frames.** The monitor does not report which frames it consumed (or their quality), so no evidence is
+  labelled detector input; the page supports it once an observation carries `detector_frame` and `quality_relation`
+  `detector_input`.
+* **Request expiry.** No component reports an expiry yet; a request ends when its skill's result arrives or the task
+  ends. The store accepts an `expired` stage when a controller sends one.
 * **Historical controller and tree state.** The controller's report and the plan node's status are current only; the
   inspector derives an attempt's state at a moment from its recorded start and end, and says so.
 * **Event sequence numbers.** Events are ordered by arrival and their recorded times; a sequence number from the

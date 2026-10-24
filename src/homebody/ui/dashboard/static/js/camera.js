@@ -1,6 +1,6 @@
 // The camera panel: view choice, the JPEG stream, freshness, history frames for inspection, the 3D scene.
 import { $, clock, duration, h, setText, storage, toggleClass } from "./dom.js";
-import { recordedFrame } from "./selection.js";
+import { cameraEvidence } from "./evidence.js";
 import { cameraFor } from "./story.js";
 
 const STALE = 2.5; // s without a frame of a live view before it is labelled stale
@@ -24,7 +24,9 @@ export class Camera {
     this.frameSim = null;
     this.rate = [];
     this.inspecting = null;
-    this.recorded = null; // the recorded frame shown while inspecting: {id, t, delta}, or null when none is near
+    this.recorded = null; // the recorded frame shown while inspecting ({id, t, sim}), or null when none is near
+    this.evidence = null; // what that frame is to the detection (evidence.js)
+    this.peek = false; // the live stream in this panel only, while the investigation stays
     this.select.addEventListener("change", () => this.choose(this.select.value));
     $("camera-fullscreen").addEventListener("click", () => this.fullscreen());
     $("camera-snapshot").addEventListener("click", () => this.snapshot());
@@ -37,6 +39,7 @@ export class Camera {
       storage.set("camera-fill", fit.checked);
     });
     this.image.addEventListener("load", () => this.renderEmpty());
+    $("camera-live-toggle").addEventListener("click", () => this.togglePeek());
   }
 
   views(state) {
@@ -91,32 +94,56 @@ export class Camera {
     this.frameAt = meta.t;
     this.frameSim = meta.sim ?? this.frameSim;
     this.rate = [...this.rate.filter((t) => meta.t - t < 2), meta.t];
-    if (this.inspecting !== null) return;
+    if (this.inspecting !== null && !this.peek) return;
     const previous = this.url;
     this.url = URL.createObjectURL(blob);
     this.image.src = this.url;
     if (previous) setTimeout(() => URL.revokeObjectURL(previous), 1000);
   }
 
-  /** Show the recorded robot-camera frame near T (within two storage periods), marked Recorded with its capture
-   * time, or say that no evidence exists for that moment; T null returns to the live stream. Never the live frame. */
+  /** Show the recorded evidence for moment T (null returns to the live stream): the selected incident's attributed
+   * frame at its own moment, else the recorded frame near T as context; never the live frame as a recording. */
   inspect(t, state) {
     this.inspecting = t;
     if (t === null) {
-      this.recorded = null;
+      this.recorded = this.evidence = null;
+      this.peek = false;
       $("inspect-banner").hidden = true;
       if (this.url) this.image.src = this.url;
       return this.render(this.app.state);
     }
-    this.recorded = recordedFrame(state?.history || [], t, 2 * (state?.history_period || 1));
+    this.peek = false; // a new moment or selection shows its recorded evidence
+    const sel = this.app.selection;
+    this.evidence = sel?.evidence && sel.t === t ? sel.evidence : cameraEvidence(state || { history: [] }, { t, observation: null });
+    this.recorded = this.evidence.frame;
     $("inspect-banner").hidden = false;
-    if (!this.recorded) {
-      setText($("inspect-text"), `Inspecting ${clock(t)} · Camera evidence unavailable for this timestamp`);
-      this.image.removeAttribute("src");
-    } else {
-      setText($("inspect-text"), `Recorded robot camera · captured ${clock(this.recorded.t)} (${this.recorded.delta.toFixed(1)} s from ${clock(t)}) · not live`);
-      this.image.src = `history/${this.recorded.id}.jpg`;
-    }
+    this.showInspected();
+    this.render(this.app.state);
+  }
+
+  /** The banner and the image for the inspected moment: the evidence's label and capture time, or the live stream while
+   * the operator peeks at it. */
+  showInspected() {
+    const toggle = $("camera-live-toggle");
+    toggle.setAttribute("aria-pressed", String(this.peek));
+    setText(toggle, this.peek ? "Recorded evidence" : "Live camera");
+    const e = this.evidence;
+    const text = this.peek ? "Live camera · the investigation continues"
+      : !this.recorded ? `Inspecting ${clock(this.inspecting)} · Camera evidence unavailable for this timestamp`
+        : `${e.short} · captured ${clock(this.recorded.t)}${this.recorded.sim !== null && this.recorded.sim !== undefined ? ` (sim ${this.recorded.sim.toFixed(2)} s)` : ""}`;
+    setText($("inspect-text"), text);
+    $("inspect-text").title = this.peek ? "" : e?.label || "";
+    if (this.peek) {
+      if (this.url) this.image.src = this.url;
+    } else if (this.recorded) this.image.src = `history/${this.recorded.id}.jpg`;
+    else this.image.removeAttribute("src");
+  }
+
+  /** The live stream in this panel only, or back to the recorded evidence; the investigation is unchanged. */
+  togglePeek() {
+    if (this.inspecting === null) return;
+    this.peek = !this.peek;
+    this.showInspected();
     this.render(this.app.state);
   }
 
@@ -160,7 +187,7 @@ export class Camera {
     let kind = "on";
     let text = "Live";
     if (!this.app.link.connected) [kind, text] = this.app.link.attempt > RECONNECTS ? ["off", "Camera offline"] : ["stale", "Reconnecting"];
-    else if (this.inspecting !== null) [kind, text] = ["inspect", this.recorded ? `Recorded · ${clock(this.recorded.t)}` : "No recording"];
+    else if (this.inspecting !== null && !this.peek) [kind, text] = ["inspect", this.recorded ? this.evidence.short : "No recording"];
     else if (this.view === SCENE) [kind, text] = ["on", "Live 3D"];
     else if (!this.live()) [kind, text] = ["on", "Still"];
     else if (age === null) [kind, text] = ["stale", "No frames received"];
@@ -185,7 +212,7 @@ export class Camera {
     const state = this.app.state;
     let text = "";
     if (!this.app.link.connected) text = "Disconnected from the session. Reconnecting…";
-    else if (this.inspecting !== null) text = this.recorded ? "" : "Camera evidence unavailable for this timestamp";
+    else if (this.inspecting !== null && !this.peek) text = this.recorded ? "" : "Camera evidence unavailable for this timestamp";
     else if (this.view === SCENE) text = "";
     else if (!this.image.getAttribute("src")) {
       text = state?.views[this.view]?.available === false

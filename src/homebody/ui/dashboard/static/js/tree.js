@@ -288,18 +288,17 @@ export class TreeView {
     this.reveal(this.active, true);
   }
 
-  /** "Inspecting Pick attempt 4 · 12:29:52 · then Running · now Failed (MONITOR_STOPPED)": the recorded state at the
-   * moment beside the current one, so historical state never replaces the runtime state the rows show. */
+  /** "Pick attempt 4 · At 12:29:52: Running · Current result: Failed (MONITOR_STOPPED)": the attempt's state at the
+   * moment (from its recorded start and end) beside its current result, so historical state never replaces the runtime
+   * state the rows show; without an attempt there is no recorded history, and the banner says so. */
   renderInspection(state) {
     const banner = $("tree-inspect");
     const i = this.inspection;
     banner.hidden = !i;
     if (!i) return;
     const tool = i.tool ? state.tools.find((t) => t.id === i.tool.id) || i.tool : null;
-    const parts = [tool ? `Inspecting ${attemptLabel(tool)}` : i.label || "Inspecting", clock(i.t)];
-    const lower = (text) => text.charAt(0).toLowerCase() + text.slice(1);
-    if (tool) parts.push(`then ${lower(stateAt(tool, i.t))}`, `now ${tool.end === null ? "running" : lower(stateAt(tool, Infinity))}`);
-    else parts.push("no attempt ran at that moment");
+    const parts = tool ? [attemptLabel(tool), `At ${clock(i.t)}: ${stateAt(tool, i.t)}`, `Current result: ${tool.end === null ? "Running" : stateAt(tool, Infinity)}`]
+      : [`At ${clock(i.t)}: Historical BT state unavailable (no attempt recorded at that moment)`];
     setText($("tree-inspect-text"), parts.join(" · "));
   }
 

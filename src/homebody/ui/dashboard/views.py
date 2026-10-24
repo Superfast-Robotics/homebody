@@ -57,7 +57,8 @@ def render(view, overlays, frame):
 
 
 class History:
-    """Robot-camera JPEGs at HISTORY_PERIOD, for inspecting a past moment and an incident's evidence."""
+    """Robot-camera JPEGs at HISTORY_PERIOD, for inspecting a past moment and an incident's evidence; each is stamped
+    with the dashboard time it arrived and, when known, the simulation time it was captured at."""
     def __init__(self, period=HISTORY_PERIOD, seconds=HISTORY_SECONDS):
         self.period, self.seconds = period, seconds
         self.frames, self.lock, self._ids = OrderedDict(), Lock(), count(1)
@@ -66,10 +67,10 @@ class History:
     def due(self, t) -> bool:
         return t - self.last >= self.period
 
-    def add(self, t, data) -> int:
+    def add(self, t, data, sim=None) -> int:
         with self.lock:
             frame_id = next(self._ids)
-            self.frames[frame_id] = (t, data)
+            self.frames[frame_id] = (t, data, sim)
             self.last = t
             while self.frames and next(iter(self.frames.values()))[0] < t - self.seconds:
                 self.frames.popitem(last=False)
@@ -82,8 +83,8 @@ class History:
 
     def get(self, frame_id):
         with self.lock:
-            return self.frames.get(frame_id, (None, None))[1]
+            return self.frames.get(frame_id, (None, None, None))[1]
 
     def index(self):
         with self.lock:
-            return [[frame_id, t] for frame_id, (t, _) in self.frames.items()]
+            return [[frame_id, t, sim] for frame_id, (t, _, sim) in self.frames.items()]

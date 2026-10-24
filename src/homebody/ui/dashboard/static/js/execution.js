@@ -1,7 +1,7 @@
 // Execution, risk and system state at the level of one skill attempt: pure, so node --test checks it (tests/js).
 // Attempts are the store's tool calls, each with its own identity (execution); readings, incidents and requests name
 // the attempt they belong to (their "tool"), so nothing here correlates by skill name or by being close in time.
-import { OPEN, signalLabel, stateText } from "./interventions.js";
+import { OPEN, requestStatus, signalLabel } from "./interventions.js";
 
 const SKILLS = { navigate: "Navigate", pick: "Pick", place: "Place", call_coder: "Coding assistant" };
 const DEFAULT_TIMING = { transition_s: 3, stale_s: 8, ack_timeout_s: 10, stop_s: 20, report_overdue_s: 15 };
@@ -230,7 +230,8 @@ export function incidentCard(state, row) {
   const skill = tool ? (SKILLS[tool.skill] || tool.skill) : row.skill ? (SKILLS[row.skill] || row.skill) : "Skill";
   const signal = incident?.observation?.signal || "";
   const title = row.initiator === "Human operator" ? `${skill} stop requested by the operator` : `${skill} ${signalWord(signal)} detected`;
-  const status = { requested: ["warning", "Action pending"], executing: ["warning", "Stopping"], timed_out: ["danger", "Action pending"],
+  const status = { requested: ["warning", "Action pending"], executing: ["warning", "Stopping"], timed_out: ["danger", "Ack overdue"],
+    expired: ["danger", "Request expired"],
     confirmed: ["success", "Skill stopped"], failed: ["danger", "Stop failed"], rejected: ["danger", "Stop rejected"],
     cancelled: ["neutral", "Request withdrawn"] }[row.state] || ["neutral", row.state];
   const risk = incident?.evidence?.risk;
@@ -238,12 +239,9 @@ export function incidentCard(state, row) {
     risk !== undefined && risk !== null ? `${signalLabel(signal)} ${Number(risk).toFixed(2)}` : ""].filter(Boolean).join(" · ");
   const observed = incident?.evidence?.first_observation || incident?.observation || null;
   const quality = observed?.frame_quality;
-  const warning = quality === "invalid" || quality === "suspected_invalid" ? `Input warning: ${quality.replace("_", " ")} frames at detection` : "";
-  const outcome = { requested: "Abort requested · Awaiting controller acknowledgement",
-    timed_out: "Abort requested · No controller acknowledgement", executing: "Controller acknowledged · Skill not yet stopped",
-    confirmed: row.stages.some(([s]) => s === "retry_started") ? "Skill stopped · Retry started" : "Skill stopped · Recovery pending",
-    failed: "Stop acknowledged · The skill did not stop", rejected: "Abort rejected by the harness",
-    cancelled: "Request withdrawn before it was taken" }[row.state] || stateText(row.state)[1];
+  const warning = quality === "invalid" || quality === "suspected_invalid" ? (observed.quality_relation === "detector_input"
+    ? `Detector image ${quality.replace("_", " ")} at detection` : `Robot camera quality warning at detection (${quality.replace("_", " ")}) · detector input unchecked`) : "";
+  const outcome = requestStatus(row, state.now ?? -Infinity).headline;
   return { title, status: status[1], tone: status[0], attempt, outcome, warning, severity: incident?.severity || "warning", incident, tool };
 }
 
@@ -279,7 +277,7 @@ export function contextSummary(state, status, now, windowStart, { gap = 3, syste
   }
   const newest = state.readings.findLast((r) => r.kind === "observation") || null;
   const quality = newest?.frame_quality;
-  if (fresh && (quality === "invalid" || quality === "suspected_invalid")) notes.push(`Input warning: ${quality.replace("_", " ")} frames`);
+  if (fresh && (quality === "invalid" || quality === "suspected_invalid")) notes.push(`Robot camera quality warning: ${quality.replace("_", " ")} frames`);
   const said = (level, text) => ({ level, text: [text, ...notes].join(" · ") });
   if (!state.readings.length && !check && !system?.required) {
     return said("unavailable", "No monitoring service connected: session, agent and skill events only");
@@ -308,11 +306,11 @@ export function contextSummary(state, status, now, windowStart, { gap = 3, syste
 export const MARKERS = {
   abort_requested: ["stop", "danger"], acknowledged: ["check", "running"], stopped: ["square", "danger"],
   recovery_started: ["diamond", "violet"], recovery_completed: ["diamond", "success"], human: ["person", "running"],
-  failed: ["cross", "danger"],
+  failed: ["cross", "danger"], deadline: ["cross", "event-warning"],
 };
 const MARKER_TEXT = { abort_requested: "Abort requested", acknowledged: "Controller acknowledged", stopped: "Skill stopped",
   recovery_started: "Recovery started", recovery_completed: "Recovery completed", human: "Human intervention",
-  failed: "Intervention failed" };
+  failed: "Intervention failed", deadline: "Acknowledgement deadline passed" };
 
 /**
  * The interventions track's events in [start, end]: each {id, t, kind, label, tool, intervention, incident} with
@@ -326,12 +324,14 @@ export function eventMarkers(state, start, end) {
     for (const [stage, t, source, note] of r.stages) {
       const ok = /ended with OK/.test(note);
       const kind = { requested: r.initiator === "Human operator" ? "human" : "abort_requested", accepted: "acknowledged",
-        confirmed: "stopped", failed: "failed", rejected: "failed", retry_started: "recovery_started",
+        confirmed: "stopped", failed: "failed", rejected: "failed", expired: "failed", retry_started: "recovery_started",
         retry_finished: ok ? "recovery_completed" : "failed" }[stage];
       if (kind) add(`${r.id}:${stage}`, t, kind, { ...extra, detail: `${source}${note ? ` · ${note}` : ""}` });
     }
-    const requested = r.stages.find(([s, t]) => s === "requested" && t !== null);
-    if (requested && r.state === "timed_out") add(`${r.id}:timeout`, requested[1] + r.ack_timeout, "failed", { ...extra, detail: `No acknowledgement within ${r.ack_timeout} s` });
+    const status = requestStatus(r, state.now ?? -Infinity); // the deadline stays marked after a late acknowledgement
+    if (["deadline_exceeded", "acknowledged_late"].includes(status.ack) && status.times.deadline !== null) {
+      add(`${r.id}:deadline`, status.times.deadline, "deadline", { ...extra, detail: `No acknowledgement within ${r.ack_timeout} s${status.late ? " (acknowledged later)" : ""}` });
+    }
   }
   for (const i of state.incidents) {
     const kind = { recovery_start: "recovery_started", recovery_ok: "recovery_completed", recovery_fail: "failed", replan: "recovery_started",

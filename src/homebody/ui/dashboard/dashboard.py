@@ -138,7 +138,7 @@ class Dashboard:
                 self.hub.frame(view, meta, jpeg(rgb))
         if self.history.due(now):
             rgb = self.overlays.ego_rgb(frame)
-            self.store.frame_id = self.history.add(now, jpeg(rgb, HISTORY_QUALITY, HISTORY_WIDTH))
+            self.store.frame_id = self.history.add(now, jpeg(rgb, HISTORY_QUALITY, HISTORY_WIDTH), float(frame.time))
         if force or now - self._telemetry_at >= TELEMETRY_PERIOD:
             self._telemetry_at = now
             x, y, yaw = (float(v) for v in frame.base_pose)
@@ -253,21 +253,23 @@ class Dashboard:
 
     def observed_quality(self, sim_time) -> dict:
         """The robot camera's checked frame quality at simulation time SIM_TIME (the newest frame the monitor read),
-        and how that was established; without a time, the newest check when the reading arrived, said so."""
+        and how that was established; without a time, the newest check when the reading arrived, said so. RELATION
+        says what the checked frame is to the detector: the dashboard's own robot camera frame at the observation's time
+        ("synchronized") or when it arrived ("receipt"), never the detector's input, which the dashboard does not see."""
         if isinstance(sim_time, (int, float)) and not isinstance(sim_time, bool):
             found = self.frames.at(sim_time)
             if found is None:
-                return {"frame_quality": "unknown", "quality_reason": "",
+                return {"frame_quality": "unknown", "quality_reason": "", "quality_relation": "synchronized",
                         "quality_source": f"No robot camera frame checked within {MATCH_S:g} s of sim {sim_time:.2f} s"}
             where = {"covered": f"a run of checked robot camera frames covering sim {sim_time:.2f} s",
                      "nearest": f"the nearest checked robot camera frame, at sim {found.sim_time:.2f} s",
                      "undecodable": "an undecodable robot camera frame that arrived in the gap holding "
                                     f"sim {sim_time:.2f} s"}[found.how]
-            return {"frame_quality": found.state, "quality_reason": found.reason,
+            return {"frame_quality": found.state, "quality_reason": found.reason, "quality_relation": "synchronized",
                     "quality_source": f"Dashboard check: {where} (the monitor's newest frame); "
                                       "the monitor's own copy is not checked"}
         quality = self.frames.quality
-        return {"frame_quality": quality.state, "quality_reason": quality.reason,
+        return {"frame_quality": quality.state, "quality_reason": quality.reason, "quality_relation": "receipt",
                 "quality_source": "Dashboard check of the newest robot camera frame at receipt (the reading gave no "
                                   "simulation time)"}
 
@@ -325,7 +327,9 @@ class Dashboard:
             return
         self.check_frame(rgb, now, meta.get("sim"))
         if self.history.due(now):
-            self.store.frame_id = self.history.add(now, jpeg(rgb, HISTORY_QUALITY, HISTORY_WIDTH))
+            sim = meta.get("sim")
+            self.store.frame_id = self.history.add(now, jpeg(rgb, HISTORY_QUALITY, HISTORY_WIDTH),
+                                                   float(sim) if isinstance(sim, (int, float)) else None)
         if now - self._telemetry_at < TELEMETRY_PERIOD:
             return
         self._telemetry_at = now

@@ -3,6 +3,7 @@ import { $, ago, clock, duration, h, json } from "./dom.js";
 import { incidentView, interventionView } from "./inspector.js";
 import { attemptLabel, consistency } from "./execution.js";
 import { stateText } from "./interventions.js";
+import { stateAt } from "./selection.js";
 import { errorText, summarize } from "./story.js";
 import { Timeline } from "./timeline.js";
 
@@ -13,31 +14,83 @@ function facts(pairs) {
     .flatMap(([k, v]) => [h("dt", { text: k }), h("dd", {}, v)]));
 }
 
+const INCIDENT_VIEWS = ["incident", "intervention"];
+// the investigation's own records dock beside the tree; menus, lists and the expanded timeline stay in the overlay
+const DOCKABLE = [...INCIDENT_VIEWS, "tool", "node", "decision", "observation", "risk", "events", "controller"];
+
+/**
+ * Details in one of two places: the overlay drawer, or (in Investigation Mode) the inspector docked in the workspace,
+ * which replaces the robot panel so nothing covers the tree. Each place keeps its own view, rebuilt when what it shows
+ * changes. In the docked inspector the incident is the root view; a tool call or node opened from it offers Back.
+ */
 export class Drawer {
   constructor(app) {
     this.app = app;
     this.element = $("drawer");
     this.body = $("drawer-body");
-    this.current = null; // {kind, id} of what is shown, refreshed on new state
+    this.places = {
+      overlay: { element: this.element, body: this.body, title: $("drawer-title"), view: null },
+      docked: { element: $("investigation-panel"), body: $("investigation-body"), title: $("investigation-title"), view: null },
+    };
+    this.docked = false;
+    this.root = null; // the docked inspector's incident view {kind, id}
     this.timeline = null;
     $("drawer-close").addEventListener("click", () => this.close());
+    $("investigation-back").addEventListener("click", () => this.back());
     document.addEventListener("keydown", (event) => {
-      if (event.key === "Escape" && !this.element.hidden && !$("confirm").open) this.close();
+      if (event.key === "Escape" && !this.element.hidden && !$("confirm").open) {
+        event.preventDefault(); // handled: the overlay closes, Investigation Mode stays
+        this.close();
+      }
     });
   }
 
-  /** SIGNATURE() names what the view shows; the view is rebuilt only when it changes. */
+  /** What the overlay shows ({kind, id, ...}), or null: the docked inspector's view is apart. */
+  get current() {
+    return this.places.overlay.view;
+  }
+
+  /** Dock incident views in the workspace (Investigation Mode) or not; leaving clears the docked inspector. */
+  dock(on) {
+    this.docked = on;
+    if (on) return;
+    const place = this.places.docked;
+    place.view = null;
+    place.body.replaceChildren();
+    this.root = null;
+  }
+
+  /** SIGNATURE() names what the view shows; the view is rebuilt only when it changes. WIDE views (the expanded
+   * timeline), menus and lists always use the overlay. */
   open(title, kind, id, build, { wide = false, signature = () => this.app.state.version } = {}) {
-    if (this.element.hidden) this.returnFocus = document.activeElement;
-    this.current = { kind, id, build, title, signature, shown: signature() };
-    this.element.classList.toggle("wide", wide);
-    this.timeline?.stop();
-    this.timeline = null;
-    $("drawer-title").textContent = title;
-    this.body.replaceChildren(...this.content(build));
-    this.body.scrollTop = 0; // a new view starts at its summary
-    this.element.hidden = false;
-    $("drawer-close").focus();
+    const name = this.docked && !wide && DOCKABLE.includes(kind) ? "docked" : "overlay";
+    const place = this.places[name];
+    if (name === "overlay") {
+      if (this.element.hidden) this.returnFocus = document.activeElement;
+      this.element.classList.toggle("wide", wide);
+      this.timeline?.stop();
+      this.timeline = null;
+    } else {
+      if (!this.element.hidden) { // a list in the overlay led here: the docked view takes over, nothing else changes
+        this.element.hidden = true;
+        this.places.overlay.view = null;
+      }
+      if (INCIDENT_VIEWS.includes(kind)) this.root = { kind, id };
+      $("investigation-back").hidden = !this.root || (this.root.kind === kind && this.root.id === id);
+    }
+    place.view = { kind, id, build, title, signature, shown: signature() };
+    place.title.textContent = title;
+    place.body.replaceChildren(...this.content(build));
+    place.body.scrollTop = 0; // a new view starts at its summary
+    if (name === "overlay") {
+      this.element.hidden = false;
+      $("drawer-close").focus();
+    }
+  }
+
+  /** Back to the docked inspector's incident, selected again on every panel. */
+  back() {
+    if (this.root) this.app.select({ [this.root.kind]: this.root.id });
   }
 
   /** A view's nodes: builders return a node or a list with optional (null) sections, which are left out. */
@@ -50,22 +103,24 @@ export class Drawer {
     this.app.tree?.deselect();
     this.timeline?.stop();
     this.timeline = null;
-    this.current = null;
+    this.places.overlay.view = null;
     this.returnFocus?.focus?.();
   }
 
-  /** Re-render list and detail views when the state changes; the expanded timeline redraws itself. */
+  /** Re-render list and detail views when the state changes (each place apart); the expanded timeline redraws itself. */
   refresh() {
-    const current = this.current;
-    if (!current || current.kind === "monitor") return;
-    const shown = current.signature();
-    if (shown === current.shown) return;
-    current.shown = shown;
-    const open = [...this.body.querySelectorAll("details[open]")].map((d) => d.dataset.key);
-    const scroll = this.body.scrollTop;
-    this.body.replaceChildren(...this.content(current.build));
-    open.forEach((key) => { const d = this.body.querySelector(`details[data-key="${key}"]`); if (d) d.open = true; });
-    this.body.scrollTop = scroll;
+    for (const place of Object.values(this.places)) {
+      const view = place.view;
+      if (!view || view.kind === "monitor") continue;
+      const shown = view.signature();
+      if (shown === view.shown) continue;
+      view.shown = shown;
+      const open = [...place.body.querySelectorAll("details[open]")].map((d) => d.dataset.key);
+      const scroll = place.body.scrollTop;
+      place.body.replaceChildren(...this.content(view.build));
+      open.forEach((key) => { const d = place.body.querySelector(`details[data-key="${key}"]`); if (d) d.open = true; });
+      place.body.scrollTop = scroll;
+    }
   }
 
   /** An incident without an intervention, in the inspector's order (inspector.js). */
@@ -176,8 +231,11 @@ export class Drawer {
       const tools = this.app.state.tools.filter((t) => d.goal && t.goal === d.goal);
       const span = this.app.state.intervals.findLast((i) => i.track === "goal" && i.detail.goal === d.goal);
       const failures = this.app.state.incidents.filter((i) => d.goal && i.node === d.goal && i.severity !== "info");
+      const at = this.app.inspectAt;
       return [
         h("h3", { text: node.label }),
+        at !== null ? facts([[`At ${clock(at)}`, "Historical BT state unavailable: the tree keeps no snapshots, only its attempts' start and end"],
+          ["Current status", node.status]]) : null,
         facts([
           ["Type", node.type], ["Status", node.status], ["Goal id", d.goal], ["Check", d.check],
           ["Attempts", d.budget ? `${d.used} of ${d.budget} skill calls` : null], ["Recovery", recovery],
@@ -204,6 +262,7 @@ export class Drawer {
     if (!tool) return h("p", { class: "note", text: "This tool call is no longer kept." });
     return [
       h("h3", { text: `${attemptLabel(tool)} · ${tool.skill}()` }),
+      this.history(tool),
       h("div", { class: "controls wrap" }, h("button", { class: "btn small", type: "button", onclick: () => this.app.select({ tool: tool.id }, { open: false }) },
         "Show on dashboard")),
       facts([["State", tool.state], ["Goal", tool.goal], ["Attempt", `${tool.number} in its goal (${tool.attempt} of this skill)`],
@@ -216,6 +275,15 @@ export class Drawer {
       this.toolInterventions(tool),
       this.toolReadings(tool),
     ].flat();
+  }
+
+  /** While inspecting, the attempt's state at the inspected moment (from its recorded start and end) beside its current
+   * result, and the incidents recorded on it. */
+  history(tool) {
+    const at = this.app.inspectAt;
+    const incidents = this.app.state.incidents.filter((i) => i.tool === tool.id);
+    return [at !== null ? facts([[`At ${clock(at)}`, stateAt(tool, at)], ["Current result", tool.end === null ? "Running" : stateAt(tool, Infinity)]]) : null,
+      incidents.length ? [h("h3", { text: "Related incidents" }), this.incidentList(incidents)] : null];
   }
 
   /** The requests to stop this call, each opening its inspector. */
@@ -261,7 +329,7 @@ export class Drawer {
   }
 
   incidentList(incidents) {
-    return h("ol", { class: "drawer-list" }, ...incidents.map((i) => h("li", {}, h("button", { type: "button", onclick: () => this.incident(i.id) },
+    return h("ol", { class: "drawer-list" }, ...incidents.map((i) => h("li", {}, h("button", { type: "button", onclick: () => this.app.openIncident(i.id) },
       h("strong", { text: i.title }), h("br"), `${i.severity} · ${i.alert ? i.state : "history"} · ${clock(i.t)}`))));
   }
 

@@ -48,7 +48,8 @@ export class Header {
       this.submit(this.input.value);
     });
     this.primary.addEventListener("click", () => this.runPrimary());
-    $("alert-chip").addEventListener("click", () => this.app.info.reveal());
+    // in Investigation Mode the robot panel is replaced: the alerts open as a list instead
+    $("alert-chip").addEventListener("click", () => (this.app.investigation.active ? this.app.drawer.alerts() : this.app.info.reveal()));
   }
 
   resize() {

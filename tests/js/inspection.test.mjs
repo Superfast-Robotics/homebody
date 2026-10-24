@@ -155,7 +155,7 @@ test("the summary is the current assessment, with an open intervention counted, 
     interventions: [{ id: "v1", tool: "t4", task: "k1", incident: "x1", initiator: "Live monitor", state: "requested", stages: [] }] });
   assert.equal(contextSummary(pending, live, 9.5, 0).text, "Stall risk high · Pick attempt 4 · 1 open intervention");
   const bad = base({ tools, readings: [r(9, "expected", 0.1, "t4", { frame_quality: "invalid" })] });
-  assert.equal(contextSummary(bad, live, 9.5, 0).text, "Monitoring active · No significant concerns · Pick attempt 4 · Input warning: invalid frames");
+  assert.equal(contextSummary(bad, live, 9.5, 0).text, "Monitoring active · No significant concerns · Pick attempt 4 · Robot camera quality warning: invalid frames");
 });
 
 test("an incident recorded before its detecting observation was kept says it shows the newest one", () => {

@@ -95,7 +95,7 @@ def replay(dashboard, rollout, tau: float, now=None):
         dashboard.update("interrupted", "The recording ends here.", state=state)
     frames = dashboard.history.index()
     if frames:  # the camera shows where the recording ends
-        frame_id, t = frames[-1]
+        frame_id, t, _ = frames[-1]
         dashboard.hub.frame("robot", {"t": t, "label": "Last recorded frame"}, dashboard.history.get(frame_id))
     dashboard.clock = dashboard.store.clock = time.time  # what the operator does next happens now
     dashboard.hub.changed()

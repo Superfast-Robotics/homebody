@@ -120,6 +120,7 @@ class Reading:
     input_source: str = ""  # what the monitor read
     phase: str = ""  # what the harness was doing, as the monitor saw it (idle, planning, tool_call)
     quality_source: str = ""  # how FRAME_QUALITY was established (which frame, checked by what)
+    quality_relation: str = "unknown"  # the checked frame to the detector: detector_input, synchronized, receipt, unknown
     quality_reason: str = ""
 
 
@@ -173,6 +174,7 @@ KINDS = ("observation", "heartbeat")
 SCOPES = ("skill_attempt", "goal", "task", "robot", "environment", "unknown")
 CALIBRATIONS = ("calibrated", "uncalibrated", "unknown")
 RELIABILITIES = ("reliable", "unreliable", "unknown")
+RELATIONS = ("detector_input", "synchronized", "receipt", "unknown")
 
 
 def clip(text, limit=TEXT_LIMIT) -> str:
@@ -236,7 +238,8 @@ def reading(value: dict, now: float, **context) -> Reading:
                    reliability=choice(value, "reliability", RELIABILITIES),
                    input_source=clip(value.get("input_source", ""), 200), phase=clip(value.get("phase", ""), 24),
                    quality_source=clip(value.get("quality_source", ""), 200),
-                   quality_reason=clip(value.get("quality_reason", ""), 200), **context)
+                   quality_reason=clip(value.get("quality_reason", ""), 200),
+                   quality_relation=choice(value, "quality_relation", RELATIONS), **context)
 
 
 def number(value) -> float | None:

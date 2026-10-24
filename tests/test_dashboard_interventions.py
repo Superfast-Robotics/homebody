@@ -208,3 +208,45 @@ def test_a_reading_that_names_no_attempt_is_bound_to_none():
     assert state["readings"][0]["tool"] is None
     (row,) = state["interventions"]
     assert row["tool"] is None and row["execution"] == "" and "unknown" in row["stages"][-1][3]
+
+
+def test_an_expired_request_stays_expired_and_a_late_acknowledgement_joins_it():
+    clock = Clock()
+    dashboard = running(clock)
+    dashboard.monitor(ABORT)
+    clock.t += ACK_TIMEOUT_S + 5
+    dashboard.skill_event({"type": "intervention", "stage": "expired", "initiator": "monitor", "call": 1,
+                           "note": "no acknowledgement within the controller's own deadline"})
+    row = only(dashboard)
+    assert row["state"] == "expired" and stages(row)[-1] == "expired"
+    clock.t += 3
+    dashboard.skill_event(accepted())  # the acknowledgement arrives after the request ended
+    row = only(dashboard)
+    assert row["state"] == "expired" and stages(row)[-1] == "accepted"  # no second record; the end stays the end
+    requested = next(t for stage, t, *_ in row["stages"] if stage == "requested")
+    ack = next(t for stage, t, *_ in row["stages"] if stage == "accepted")
+    assert ack - requested > ACK_TIMEOUT_S  # the deadline was exceeded, which stays derivable
+
+
+def test_recorded_frames_keep_their_simulation_time_and_readings_say_their_quality_is_the_dashboards():
+    import numpy as np
+    dashboard = running()
+    dashboard.remote_frame("robot", np.random.default_rng(0).integers(0, 255, (32, 32, 3), dtype=np.uint8), {"sim": 4.5})
+    assert dashboard._snapshot()["history"][-1][2] == 4.5
+    dashboard.monitor({**ABORT, "sim_time": 4.5})
+    assert dashboard.store.readings[-1].quality_relation == "synchronized"
+    dashboard.monitor({**ABORT, "request": None})
+    assert dashboard.store.readings[-1].quality_relation == "receipt"
+
+
+def test_a_late_acknowledgement_never_reopens_a_confirmed_stop_or_one_on_another_attempt():
+    dashboard = running()
+    dashboard.monitor(ABORT)
+    dashboard.skill_event(accepted())
+    dashboard.skill_event({"type": "skill_finished", "result": result("pick", "MONITOR_STOPPED", "stopped")})
+    dashboard.skill_event(accepted())  # the executor repeating itself after the stop was confirmed
+    (row,) = dashboard._snapshot()["interventions"]
+    assert row["state"] == "confirmed" and stages(row).count("accepted") == 1
+    dashboard.skill_event(accepted(call=None))  # no attempt named and none running: a record of its own, not the old one
+    rows = dashboard._snapshot()["interventions"]
+    assert len(rows) == 2 and rows[0]["id"] == row["id"] and stages(rows[0]) == stages(row)

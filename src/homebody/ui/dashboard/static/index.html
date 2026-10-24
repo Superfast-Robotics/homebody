@@ -76,6 +76,16 @@
         <button class="btn icon-only" type="button" data-control="more" aria-haspopup="menu" aria-expanded="false" aria-label="More actions" title="More actions"><svg class="icon"><use href="#i-more"/></svg></button>
       </div>
     </div>
+    <div class="investigation-bar" id="investigation-bar" role="status" aria-live="polite" hidden>
+      <svg class="icon"><use href="#i-clock"/></svg>
+      <span class="investigation-text" id="investigation-text"></span>
+      <span class="spacer"></span>
+      <div class="investigation-tabs" id="investigation-tabs" role="tablist" aria-label="Investigation panels">
+        <button type="button" role="tab" data-tab="tree" aria-selected="false">Behavior Tree</button>
+        <button type="button" role="tab" data-tab="incident" aria-selected="true">Incident</button>
+      </div>
+      <button class="btn small primary" type="button" id="return-live" title="Leave inspection: live camera, the tree following execution, the live timeline (the robot is not affected)">Return to Live</button>
+    </div>
   </header>
 
   <main class="workspace" id="workspace">
@@ -104,7 +114,7 @@
       </div>
       <div class="inspect-banner" id="inspect-banner" hidden>
         <span id="inspect-text"></span>
-        <button class="btn small" type="button" data-action="live">Return to live</button>
+        <button class="btn small" type="button" id="camera-live-toggle" aria-pressed="false" title="Show the live stream in this panel only; the investigation stays">Live camera</button>
       </div>
       <div class="overlay-controls controls" data-controls="overlay" aria-label="Execution controls (fullscreen)">
         <button class="btn-glass wide" type="button" data-control="pause"><svg class="icon"><use href="#i-pause"/></svg><span>Pause</span></button>
@@ -131,7 +141,6 @@
       </div>
       <div class="tree-inspect" id="tree-inspect" role="status" hidden>
         <span id="tree-inspect-text"></span>
-        <button class="btn small" type="button" data-action="live">Return to live</button>
       </div>
       <div class="pane scroll" role="tabpanel" id="pane-plan" aria-labelledby="tab-plan">
         <div class="tree-state" id="tree-state" role="status">
@@ -211,6 +220,13 @@
         <button class="link" type="button" id="agent-history">Recent decisions</button>
       </details>
     </section>
+    <section class="card investigation-panel" id="investigation-panel" aria-label="Incident inspector" hidden>
+      <div class="investigation-head">
+        <button class="link" type="button" id="investigation-back" hidden>← Incident</button>
+        <h2 id="investigation-title">Incident</h2>
+      </div>
+      <div class="investigation-body scroll" id="investigation-body"></div>
+    </section>
   </main>
 
   <section class="card monitor" id="monitor" aria-label="Automatic monitoring">
@@ -224,7 +240,6 @@
       <span class="spacer"></span>
       <div class="inspect-bar" id="monitor-inspect" hidden>
         <span id="monitor-inspect-text"></span>
-        <button class="btn small" type="button" data-action="live">Return to live</button>
       </div>
       <div class="legend-wrap">
       <button class="btn small" type="button" id="legend-toggle" aria-expanded="false" aria-controls="legend">Legend</button>
@@ -239,7 +254,7 @@
         <li><span class="glyph">▲</span>Risk rose (amber)</li><li><span class="glyph danger">⬡</span>Abort requested</li>
         <li><span class="glyph running">✓</span>Controller acknowledged</li><li><span class="glyph danger">■</span>Skill stopped</li>
         <li><span class="glyph recovery">◆</span>Recovery started</li><li><span class="glyph success">◆</span>Recovery completed</li>
-        <li><span class="glyph running">●</span>Human intervention</li><li><span class="glyph danger">✕</span>Intervention failed or timed out</li>
+        <li><span class="glyph running">●</span>Human intervention</li><li><span class="glyph danger">✕</span>Intervention failed or expired</li><li><span class="glyph">✕</span>Acknowledgement deadline passed</li>
         <li><span class="glyph">3</span>Overlapping events (click to list)</li>
       </ul>
       </div>

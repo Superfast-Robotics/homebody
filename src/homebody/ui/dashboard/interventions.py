@@ -14,7 +14,7 @@ from dataclasses import asdict, replace
 
 from homebody.ui.dashboard.records import Intervention, call_number, clip
 
-FINAL = ("confirmed", "rejected", "failed", "cancelled")
+FINAL = ("confirmed", "rejected", "failed", "cancelled", "expired")
 INITIATORS = {"monitor": "Live monitor", "operator": "Human operator"}
 DECIDERS = {"monitor": "Monitor rules (abort on a failure label, stall or unsafe reading)",
             "operator": "Human operator"}
@@ -70,7 +70,8 @@ class InterventionTracking:
         return {"confirmed": f"{intervention.initiator}'s stop{attempt}: the skill executor stopped the skill",
                 "failed": f"{intervention.initiator}'s stop{attempt}: the skill did not stop as asked",
                 "rejected": f"{intervention.initiator}'s stop{attempt}: refused",
-                "cancelled": f"{intervention.initiator}'s stop{attempt}: withdrawn before it was taken"}[stage]
+                "cancelled": f"{intervention.initiator}'s stop{attempt}: withdrawn before it was taken",
+                "expired": f"{intervention.initiator}'s stop{attempt}: expired without acknowledgement"}[stage]
 
     def _new_intervention(self, who, tool, *, reason="", stages=(), incident=None, detection=""):
         intervention = Intervention(
@@ -129,7 +130,7 @@ class InterventionTracking:
         not see), the stage starts a record of its own."""
         who = event.get("initiator") if event.get("initiator") in INITIATORS else "monitor"
         initiator, stage = INITIATORS[who], event.get("stage")
-        if stage not in ("accepted", "confirmed", "failed", "rejected"):
+        if stage not in ("accepted", "confirmed", "failed", "rejected", "expired"):
             return
         call = call_number(event.get("call"))
         tool = self._tool_for_call(call) if call is not None else (None if stage == "rejected" else self._running_tool())
@@ -140,10 +141,20 @@ class InterventionTracking:
                 None)
             if stage in ("confirmed", "failed") and closed is not None and final_stage(closed):
                 return  # the skill's result already closed it; this is the executor saying so again
+            if stage == "accepted" and tool is not None and closed is not None and final_stage(closed) and \
+                    any(st == "accepted" for st, *_ in closed.stages):
+                return  # it already has its acknowledgement; this is the executor saying so again
+            if stage == "accepted" and tool is not None and closed is not None and final_stage(closed) in ("expired", "cancelled") \
+                    and not any(st == "accepted" for st, *_ in closed.stages):
+                # a late acknowledgement: it joins the request it answers; the request's end and its deadline stay facts
+                self._stage(closed, stage, "Skill executor (session)", event.get("note") or event.get("reason", ""))
+                self.log("warning", "session", f"{initiator}'s stop acknowledged after the request ended", closed.node)
+                return
             intervention = self._new_intervention(
                 who, tool, reason=event.get("reason", ""),
                 stages=(("requested", None, initiator, "The request itself did not reach the dashboard"),))
-        source = {"rejected": "Harness (monitor link)"}.get(stage, "Skill executor (session)")
+        source = {"rejected": "Harness (monitor link)", "expired": event.get("source") or "Controller (request expiry)"}.get(
+            stage, "Skill executor (session)")
         self._stage(intervention, stage, source, event.get("note") or event.get("reason", ""))
         self.log("error" if stage in ("failed", "rejected") else "info", "session",
                  f"{initiator}'s stop {stage}: {event.get('note', '')}", intervention.node)

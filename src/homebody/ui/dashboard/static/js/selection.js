@@ -2,6 +2,7 @@
 // identities the records carry (intervention -> incident -> attempt -> plan node, the detecting observation, the
 // recorded camera frame near the moment), never by matching labels. Inspecting is read-only: nothing here reaches the
 // robot. Pure, so node --test checks it.
+import { cameraEvidence } from "./evidence.js";
 import { attemptLabel, toolById } from "./execution.js";
 
 export const WINDOW = 60; // s of the main monitoring view
@@ -59,8 +60,12 @@ export function resolveSelection(state, ref, now) {
   // the detecting observation; an incident recorded before it was kept has only the episode's newest one, said so
   const detecting = Boolean(incident?.evidence?.first_observation);
   const observation = incident?.evidence?.first_observation || incident?.observation || null;
-  const tolerance = 2 * (state.history_period || 1);
-  const frame = recordedFrame(state.history, t, tolerance);
+  // the camera evidence, attributed (evidence.js): the observation's own (synchronized by simulation time) only at the
+  // detection; any other moment of the incident gets the recorded frame near that moment, as context
+  const detectedAt = (row ? startOf(row) : null) ?? incident?.t ?? null;
+  const atDetection = ref.t === undefined || ref.t === null || detectedAt === null || Math.abs(ref.t - detectedAt) < 0.5;
+  const evidence = cameraEvidence(state, atDetection ? { t, observation, incident, intervention: row } : { t, observation: null });
+  const frame = evidence.frame ? { id: evidence.frame.id, t: evidence.frame.t, delta: Math.abs(evidence.frame.t - t) } : null;
   const window = windowFor(t, now);
   const missing = [];
   if (!tool) missing.push("Attempt unknown: the record names no skill call");
@@ -69,6 +74,6 @@ export function resolveSelection(state, ref, now) {
   if (!frame) missing.push("Camera evidence unavailable for this timestamp");
   if (state.keep_s && t < now - state.keep_s) missing.push(`Timeline data older than ${Math.round(state.keep_s / 60)} minutes has expired`);
   const label = `Inspecting ${tool ? attemptLabel(tool) : "an unknown attempt"}`;
-  return { t, intervention: row, incident, tool, node, goal, observation, detecting, frame, window, historical: window.historical || t < now - 1,
+  return { t, intervention: row, incident, tool, node, goal, observation, detecting, frame, evidence, window, historical: window.historical || t < now - 1,
     label, missing };
 }

@@ -1,19 +1,21 @@
-// The incident inspector, evidence first: (A) a summary that answers what happened, to which attempt, what the harness
-// asked, whether the executor answered and whether the outcome is verified; (B) the intervention's lifecycle as steps;
-// (C) the evidence, strongest first (the detecting observation's assessment, the recorded camera frame labelled as
-// context, the attempt, the controller's report); (D) recovery and outcome; (E) technical details, collapsed. A stage
-// no component reported says Unknown or Unverified, never a guess. Every time is a link that moves the dashboard's
-// inspection to that moment; nothing here reaches the robot.
-import { assessment, inputWarning, scopeText } from "./assessment.js";
+// The incident inspector, in five parts: (1) an overview that says what happened, to which attempt, and where the
+// intervention stands now; (2) the lifecycle, one row per event; (3) a compact evidence card (the attributed camera
+// frame, the score against its threshold, the input checks, each labelled by source) with the full evidence one click
+// away; (4) recovery and outcome, as verified; (5) technical details, collapsed. A stage no component reported says
+// Unknown or Unverified, never a guess; times link to that moment on the dashboard. Nothing here reaches the robot.
+import { assessment, scopeText } from "./assessment.js";
 import { ago, clock, duration, h, json } from "./dom.js";
+import { qualityAttribution } from "./evidence.js";
 import { attemptLabel, incidentCard } from "./execution.js";
-import { ordered, stateText, steps } from "./interventions.js";
+import { ACK_TEXT, COMMAND_TEXT, PHYSICAL_TEXT, ordered, requestStatus, signalLabel, steps } from "./interventions.js";
 import { resolveSelection, stateAt } from "./selection.js";
 
-const TONE = { done: "success", pending: "warning", failed: "danger", unknown: "neutral", skipped: "neutral" };
-const WORD = { done: "Done", pending: "Pending", failed: "Failed", unknown: "Unknown", skipped: "Not applicable" };
+const TONE = { done: "success", pending: "warning", overdue: "danger", failed: "danger", unknown: "neutral", skipped: "neutral" };
+const WORD = { done: "Done", pending: "Pending", overdue: "Overdue", failed: "Failed", unknown: "Unknown", skipped: "Not applicable" };
 const SEVERITY = { critical: "danger", warning: "warning", info: "neutral" };
 const INCIDENT_STATE = { active: "Active", acknowledged: "Acknowledged", resolved: "Resolved" };
+const COMMAND_TONE = { pending: "warning", active: "running", completed: "success", failed: "danger", cancelled: "neutral", expired: "danger", unknown: "neutral" };
+const RECOVERY_TONE = { "Not started": "neutral", Running: "running", Completed: "success", Failed: "danger", Unknown: "neutral" };
 
 function facts(pairs) {
   return h("dl", { class: "kv small" }, ...pairs.filter(([, v]) => v !== undefined && v !== null && v !== "")
@@ -22,6 +24,7 @@ function facts(pairs) {
 
 const note = (text) => h("p", { class: "note", text });
 const badge = (tone, text) => h("span", { class: `badge ${tone}`, text });
+const lower = (text) => text.charAt(0).toLowerCase() + text.slice(1);
 
 /** What the detection means for the operator, from the monitor's signal or the initiator. */
 export function concern(signal, initiator) {
@@ -34,108 +37,104 @@ export function concern(signal, initiator) {
   return "The monitor reported an anomaly.";
 }
 
-/** The two lines that answer "what did the harness ask, did the executor answer, is the outcome verified". */
-export function answers(row, byKey) {
-  const ack = byKey.accepted;
-  const ackText = ack.state === "done" ? "Executor acknowledged" : row.state === "timed_out" ? "Executor acknowledgement timed out"
-    : ack.state === "failed" ? "Request refused" : ack.state === "skipped" ? "Never acknowledged: the request ended first"
-      : "Awaiting executor acknowledgement";
-  const asked = byKey.requested.state === "done" ? "Abort requested" : "Abort request not seen by the dashboard";
-  const stop = byKey.stopped.state;
-  const stopText = stop === "done" ? "Skill stopped (executor result)" : stop === "failed" ? "The skill did not stop as asked"
-    : stop === "skipped" ? "No stop: the request was withdrawn" : "Skill stop not yet reported";
-  return [`${asked} · ${ackText}`, `${stopText} · Physical stop unverified`];
+/** The overview's status lines: "Attempt 4 · Abort requested · Controller acknowledgement overdue" and the physical
+ * outcome, from the request's three separate states (interventions.requestStatus). */
+export function overviewLines(tool, status) {
+  const ack = { awaiting: "Awaiting controller acknowledgement", deadline_exceeded: status.command === "pending" ? "Controller acknowledgement overdue"
+    : "No controller acknowledgement", acknowledged: "Controller acknowledged", acknowledged_late: "Controller acknowledged after deadline",
+  rejected: "Request rejected", not_acknowledged: "Not acknowledged", not_requested: "No request recorded", unknown: "Acknowledgement unknown" }[status.ack];
+  const command = { pending: "Abort requested", active: "Abort accepted", completed: "Skill stopped (executor result)", failed: "Abort failed",
+    cancelled: "Request ended", expired: "Abort request expired", unknown: "Request state unknown" }[status.command];
+  return [`${tool ? `Attempt ${tool.number}` : "Attempt unknown"} · ${command} · ${ack}`, `Physical stop ${lower(PHYSICAL_TEXT[status.physical])}`];
 }
 
-/** The lifecycle steps, labelled for this intervention, with an explicit Recovery step even when none started. */
-function lifecycleSteps(row, detectedLabel) {
-  const list = steps({ ...row, stages: ordered(row) });
-  const labels = { detected: detectedLabel, decided: "Abort decided", requested: "Abort requested", accepted: "Controller acknowledgement",
-    stopped: "Skill stopped", physical: "Physical stop", retry: "Recovery" };
-  const out = list.map((step) => ({ ...step, label: labels[step.key] || step.label }));
-  if (!out.some((s) => s.key === "retry")) {
-    const final = ["confirmed", "failed", "rejected", "cancelled"].includes(row.state);
-    out.push({ key: "retry", label: "Recovery", state: "unknown", t: null, source: "",
-      note: final ? "Not started: no retry or recovery was recorded" : "Not yet: the intervention has not finished" });
-  }
-  return out;
+/** The recovery after a stop, as recorded: Not started, Running, Completed, Failed or Unknown (no request). */
+export function recoveryState(row) {
+  if (!row) return { state: "Unknown", note: "No intervention recorded" };
+  const started = row.stages.find(([s]) => s === "retry_started"), finished = row.stages.find(([s]) => s === "retry_finished");
+  if (finished) return { state: /ended with OK/.test(finished[3]) ? "Completed" : "Failed", note: finished[3].replace(/ \[[^\]]+\]$/, ""), t: finished[1], source: finished[2] };
+  if (started) return { state: "Running", note: started[3].replace(/ \[[^\]]+\]$/, ""), t: started[1], source: started[2] };
+  return { state: "Not started", note: "No retry or recovery has been recorded" };
 }
 
-function stepWord(row, step) {
-  if (step.key === "accepted" && step.state === "failed") return row.state === "timed_out" ? "Timed out" : "Refused";
-  if (step.key === "physical") return "Unverified";
-  if (step.key === "retry" && step.state === "unknown") return "Not started";
-  if (step.key === "detected" && step.state === "done") return "Confirmed by monitor";
-  if (step.key === "requested" && step.state === "done") return "Sent to executor";
-  return WORD[step.state] || step.state;
-}
-
-function stepper(app, row, list, observation, ref) {
+/** The lifecycle rows; each shows its event id on hover. */
+function lifecycle(app, row, list, observation, ref) {
   return h("ol", { class: "stepper" }, ...list.map((step) => {
     const tone = TONE[step.state] || "neutral";
     const event = step.key === "detected" && observation?.id ? `observation ${observation.id}` : step.t !== null ? `${row.id}/${step.key}` : "none recorded";
-    return h("li", { class: `step ${step.state}` }, h("span", { class: `step-dot ${tone}`, "aria-hidden": "true" }),
+    return h("li", { class: `step ${step.state}`, title: `Event: ${event}` }, h("span", { class: `step-dot ${tone}`, "aria-hidden": "true" }),
       h("div", { class: "step-body" },
-        h("div", { class: "step-head" }, h("strong", { text: step.label }), badge(tone, stepWord(row, step)),
+        h("div", { class: "step-head" }, h("strong", { text: step.label }), badge(tone, step.word || WORD[step.state] || step.state),
           step.t !== null ? h("button", { class: "link when", type: "button", title: "Show this moment on the timeline, tree and camera",
             onclick: () => app.selectMoment(step.t, ref) }, clock(step.t)) : h("span", { class: "when muted", text: "No time" })),
-        h("p", { class: "step-meta", text: [step.source, step.note].filter(Boolean).join(" · ") || "Not reported" }),
-        h("p", { class: "step-id", text: `Event: ${event}` })));
+        h("p", { class: "step-meta", text: [step.source, step.note].filter(Boolean).join(" · ") || "Not reported" })));
   }));
 }
 
-/** The detecting observation's assessment: score, threshold, confidence, input quality and reliability, apart. */
-function assessmentBlock(app, observation, incident, ref, detecting = true) {
+function lifecycleSteps(row, now, detectedLabel) {
+  const labels = { detected: detectedLabel, decided: "Abort decided", requested: "Abort requested", accepted: "Controller acknowledgement",
+    stopped: "Skill stopped", physical: "Physical stop" };
+  return steps({ ...row, stages: ordered(row) }, now).filter((s) => s.key !== "retry").map((s) => ({ ...s, label: labels[s.key] || s.label,
+    word: s.key === "physical" ? "Unverified" : s.key === "accepted" && s.state === "done" && /after the deadline/.test(s.note) ? "After deadline"
+      : s.key === "detected" && s.state === "done" ? "Confirmed by monitor" : s.key === "requested" && s.state === "done" ? "Sent to executor" : null }));
+}
+
+/** The request's times (requested, deadline, acknowledged, ended, elapsed) and its three states. */
+function requestTimes(app, status, ref) {
+  const at = (t) => (t === null ? null : h("button", { class: "link", type: "button", onclick: () => app.selectMoment(t, ref) }, clock(t)));
+  const t = status.times;
+  return facts([["Requested", at(t.requested)], ["Ack deadline", t.deadline === null ? "Unknown" : at(t.deadline)],
+    ["Acknowledged", t.acknowledged === null ? "Not received" : at(t.acknowledged)], ["Ended", t.ended === null ? "Still open" : at(t.ended)],
+    ["Elapsed", t.elapsed === null ? null : duration(t.elapsed)],
+    ["States", `Acknowledgement: ${ACK_TEXT[status.ack]} · Command: ${COMMAND_TEXT[status.command]} · Physical: ${PHYSICAL_TEXT[status.physical]}`]]);
+}
+
+/** The compact evidence card: the attributed camera frame, the score against its threshold, the input checks with their
+ * sources; the full evidence (assessment, score meaning, metadata) is behind "Inspect full evidence". */
+function evidenceCard(app, selection, ref) {
   const state = app.state;
-  const warning = inputWarning(observation);
-  const peak = incident?.evidence?.readings > 1 ? `This episode: ${incident.evidence.readings} anomalous readings, peak score ${Number(incident.evidence.risk).toFixed(2)}` : "";
-  return h("section", { class: "evidence-block" },
-    h("div", { class: "evidence-head" }, h("strong", { text: detecting ? "Monitor assessment" : "Monitor assessment (newest reading)" }),
-      h("button", { class: "link when", type: "button", title: "Show this observation's moment", onclick: () => app.selectMoment(observation.t, ref) }, clock(observation.t))),
-    detecting ? null : note("This incident was recorded before its detecting observation was kept: this is the newest reading of the episode, not necessarily the one that detected it."),
-    note([`Observation ${observation.id || "(no id: an older record)"}`, observation.source,
-      observation.sim_time !== null && observation.sim_time !== undefined ? `newest frame at sim ${observation.sim_time.toFixed(2)} s` : "no simulation time reported",
-      `applies to ${scopeText(observation, state)}`].join(" · ")),
-    warning ? h("p", { class: `input-warning ${warning.tone}`, text: `${warning.text}${warning.reason ? `: ${warning.reason}` : ""}. The score is shown as the model gave it.` }) : null,
-    h("dl", { class: "assessment" }, ...assessment(observation).flatMap((row) => [
-      h("dt", { text: row.label }),
-      h("dd", {}, row.tone ? badge(row.tone, row.value) : h("strong", { text: row.value }), row.note ? h("span", { class: "agent-meta", text: row.note }) : null)])),
-    facts([["Input", observation.input_source || "Not reported (older record)"], ["Episode", peak]]));
+  const o = selection.observation;
+  const e = selection.evidence;
+  const q = o ? qualityAttribution(o) : null;
+  const thumb = e?.frame ? h("button", { class: "evidence-thumb", type: "button", title: "Show this frame's moment",
+    onclick: () => app.selectMoment(e.frame.t, ref) }, h("img", { src: `history/${e.frame.id}.jpg`, alt: e.label,
+    onerror: (event) => event.target.replaceWith(note("No longer kept")) })) : h("div", { class: "evidence-thumb empty", text: "No recording" });
+  const score = o ? `${signalLabel(o.signal)} ${o.risk === null || o.risk === undefined ? "not reported" : Number(o.risk).toFixed(2)}`
+    + (o.threshold !== null && o.threshold !== undefined ? ` · threshold ${Number(o.threshold).toFixed(2)}` : "") : "No monitor observation linked";
+  return h("section", { class: "evidence-card" },
+    thumb,
+    h("div", { class: "evidence-facts" },
+      h("span", { class: `evidence-source ${e?.relation || "unavailable"}`, text: e?.label || "Camera evidence unavailable for this timestamp" }),
+      h("strong", { text: score }),
+      o ? h("span", { class: "agent-meta", text: `${selection.detecting ? "Detecting observation" : "Newest observation of the episode"} ${o.id || ""} · ${clock(o.t)} · applies to ${scopeText(o, state)}` }) : null,
+      q ? h("span", { class: "quality-line" }, badge(q.detector.tone || "neutral", q.detector.text)) : null,
+      q?.camera ? h("span", { class: "quality-line" }, badge(q.camera.tone || "neutral", q.camera.text)) : null),
+    h("details", { class: "evidence-more", dataset: { key: `evidence:${ref.intervention || ref.incident}` } },
+      h("summary", { text: "Inspect full evidence" }),
+      o ? h("dl", { class: "assessment" }, ...assessment(o).flatMap((row) => [h("dt", { text: row.label }),
+        h("dd", {}, row.tone ? badge(row.tone, row.value) : h("strong", { text: row.value }), row.note ? h("span", { class: "agent-meta", text: row.note }) : null)])) : null,
+      e?.frame ? h("img", { src: `history/${e.frame.id}.jpg`, alt: e.label }) : null,
+      e?.frame ? note(`${e.label}.${e.relation === "detector_input" ? "" : " Not the detector's input: the frames the monitor read are not available to the dashboard."}`) : null,
+      facts([["Input", o?.input_source || "Not reported"], ["Evidence", e?.metadata?.evidence_id],
+        ["Offset", e?.frame ? `${e.offset >= 0 ? "+" : "−"}${Math.abs(e.offset).toFixed(2)} s (${e.basis})` : null]])));
 }
 
-/** The recorded robot-camera frame for the moment, labelled as context: the dashboard stores its own frames, not the
- * frames the monitor read. */
-function cameraBlock(app, selection, incident, ref) {
-  const history = app.state.history || [];
-  const stored = incident?.frame ? history.find(([id]) => id === incident.frame) : null;
-  const frame = stored ? { id: stored[0], t: stored[1], delta: Math.abs(stored[1] - selection.t) } : selection.frame;
-  if (!frame) return h("section", { class: "evidence-block" }, h("strong", { text: "Camera" }), note("Camera evidence unavailable for this timestamp."));
-  return h("section", { class: "evidence-block" },
-    h("div", { class: "evidence-head" }, h("strong", { text: "Camera" }), badge("neutral", "Recorded"),
-      h("button", { class: "link when", type: "button", onclick: () => app.selectMoment(frame.t, ref) }, `captured ${clock(frame.t)}`)),
-    note(`Context, not detection input: the robot camera as the dashboard stored it, ${frame.delta.toFixed(1)} s from the selected moment (both on the dashboard's clock). The frames the monitor read are not available to the dashboard.`),
-    h("img", { src: `history/${frame.id}.jpg`, alt: `Recorded robot camera at ${clock(frame.t)}`,
-      onerror: (event) => event.target.replaceWith(note("That camera frame is no longer kept.")) }));
-}
-
-function attemptBlock(app, selection) {
+/** The affected attempt at the selected moment and its current result, from its recorded start and end; the tree's
+ * composite nodes keep no history, so only the attempt has one. */
+function attemptCard(app, selection) {
   const tool = selection.tool;
-  if (!tool) return h("section", { class: "evidence-block" }, h("strong", { text: "Skill attempt" }), note("Unknown: the record names no skill call."));
+  if (!tool) return note("Affected attempt: unknown (the record names no skill call).");
   return h("section", { class: "evidence-block" },
     h("div", { class: "evidence-head" }, h("strong", { text: attemptLabel(tool) }),
       h("button", { class: "link", type: "button", onclick: () => app.drawer.tool(tool.id) }, "Open tool call")),
-    facts([["Then", `${stateAt(tool, selection.t)} at ${clock(selection.t)}`], ["Now", tool.end === null ? "Running" : stateAt(tool, Infinity)],
-      ["Execution id", tool.execution || "Unknown"], ["Started", clock(tool.start)],
-      ["Duration", duration((tool.end ?? app.link.now()) - tool.start)], ["Result message", tool.message]]));
+    facts([[`At ${clock(selection.t)}`, stateAt(tool, selection.t)], ["Current result", tool.end === null ? "Running" : stateAt(tool, Infinity)],
+      ["Controller", controllerText(app.state.controller)]]));
 }
 
-function controllerBlock(app) {
-  const c = app.state.controller;
-  const text = !c ? "No controller report reaches this dashboard."
-    : c.state === "in_process" ? "In process: the session's skill executor is the controller; its reports are the lifecycle events above."
-      : `${c.state}${c.checked ? ` · checked ${clock(c.checked)}` : ""}${c.detail ? ` · ${c.detail}` : ""}. This is the current report: no history of controller reports is kept.`;
-  return h("section", { class: "evidence-block" }, h("div", { class: "evidence-head" }, h("strong", { text: "Controller" }),
-    h("button", { class: "link", type: "button", onclick: () => app.drawer.controller() }, "Controller status")), note(text));
+function controllerText(c) {
+  if (!c) return "No report reaches this dashboard";
+  if (c.state === "in_process") return "In process (the session's executor: its events are the lifecycle)";
+  return `${c.state}${c.checked ? ` · checked ${clock(c.checked)}` : ""} (current report; no history is kept)`;
 }
 
 function technical(key, data) {
@@ -143,17 +142,11 @@ function technical(key, data) {
     h("pre", { class: "json", text: json(data) }));
 }
 
-function incidentActions(drawer, incident) {
+function alertActions(drawer, incident) {
   if (!incident?.alert) return null;
   return h("div", { class: "controls wrap" },
     incident.state === "active" ? h("button", { class: "btn small", type: "button", onclick: () => drawer.alertAction("acknowledge", incident.id) }, "Acknowledge") : null,
     incident.state !== "resolved" ? h("button", { class: "btn small", type: "button", onclick: () => drawer.alertAction("resolve", incident.id) }, "Resolve") : null);
-}
-
-function inspectButtons(app, ref) {
-  return h("div", { class: "controls wrap" },
-    h("button", { class: "btn small", type: "button", onclick: () => app.select(ref, { open: false }) }, "Show on dashboard"),
-    h("button", { class: "btn small", type: "button", onclick: () => app.returnToLive() }, "Return to live"));
 }
 
 /** The drawer's view of intervention ID. */
@@ -162,43 +155,42 @@ export function interventionView(drawer, id) {
   const state = app.state;
   const row = (state.interventions || []).find((r) => r.id === id);
   if (!row) return note("This intervention is no longer kept.");
+  const now = app.link.now();
+  const ref = { intervention: id };
   const card = incidentCard(state, row);
-  const selection = resolveSelection(state, { intervention: id }, app.link.now());
+  const selection = resolveSelection(state, ref, now);
   const { incident, tool } = selection;
-  const observation = selection.observation;
+  const status = requestStatus(row, now);
+  const [statusLine, physicalLine] = overviewLines(tool, status);
   const detected = `${card.title.replace(/ detected$/, "").replace(/ stop requested by the operator$/, " stop")} detected`;
-  const list = lifecycleSteps(row, row.initiator === "Human operator" ? "Detection" : detected);
-  const byKey = Object.fromEntries(list.map((s) => [s.key, s]));
-  const [tone, word] = stateText(row.state);
-  const retry = byKey.retry;
+  const recovery = recoveryState(row);
   const node = selection.goal && state.tree?.nodes[selection.goal];
   return [
-    h("header", { class: "inspector-head" }, h("strong", { text: card.title }), badge(tone, word),
+    h("header", { class: "inspector-head" }, h("strong", { text: card.title }), badge(COMMAND_TONE[status.command], COMMAND_TEXT[status.command]),
       badge(SEVERITY[card.severity] || "neutral", card.severity)),
     h("section", { class: "inspector-summary" },
-      h("p", { class: "summary-attempt", text: `${tool ? attemptLabel(tool) : "Attempt unknown"} · detected ${clock(selection.t)} (${ago(app.link.now() - selection.t)})` }),
-      h("p", { text: concern(observation?.signal, row.initiator) }),
-      h("ul", { class: "summary-answers" }, ...answers(row, byKey).map((line) => h("li", { text: line }))),
-      card.warning ? h("p", { class: "input-warning warning", text: card.warning }) : null,
-      selection.missing.length ? h("p", { class: "agent-meta", text: `Not established: ${selection.missing.join(" · ")}` }) : null,
-      inspectButtons(app, { intervention: id })),
+      h("p", { class: "summary-attempt", text: `${tool ? attemptLabel(tool) : "Attempt unknown"} · detected ${clock(selection.t)} (${ago(now - selection.t)})` }),
+      h("p", { text: concern(selection.observation?.signal, row.initiator) }),
+      h("p", { class: "summary-status", text: statusLine }),
+      h("p", { class: "summary-physical", text: physicalLine }),
+      selection.missing.length ? h("p", { class: "agent-meta", text: `Not established: ${selection.missing.join(" · ")}` }) : null),
     h("h3", { text: "Intervention lifecycle" }),
-    stepper(app, row, list, observation, { intervention: id }),
+    lifecycle(app, row, lifecycleSteps(row, now, row.initiator === "Human operator" ? "Detection" : detected), selection.observation, ref),
+    requestTimes(app, status, ref),
     h("h3", { text: "Evidence" }),
-    observation ? assessmentBlock(app, observation, incident, { intervention: id }, selection.detecting)
-      : note(row.initiator === "Human operator" ? "The operator acted; no monitor observation is linked." : "No monitor observation reached the dashboard for this incident."),
-    cameraBlock(app, selection, incident, { intervention: id }), attemptBlock(app, selection), controllerBlock(app),
+    evidenceCard(app, selection, ref), attemptCard(app, selection),
     h("h3", { text: "Recovery and outcome" }),
-    facts([["Recovery", retry.state === "unknown" ? retry.note : `${WORD[retry.state] || retry.state}: ${retry.note}`],
-      ["Initiator", retry.source || (retry.state === "unknown" ? "None recorded" : "Unknown")],
-      ["Verification", retry.state === "done" ? "The retry attempt ended OK (its skill result; the goal's check decides the goal)" : "Not verified"],
-      ["Final outcome", card.outcome], ["Physical stop", "Unverified: no motion or safety telemetry reaches the dashboard"],
+    facts([["Recovery", h("span", {}, badge(RECOVERY_TONE[recovery.state], recovery.state), ` ${recovery.note}`)],
+      ["Initiator", recovery.source || null],
+      ["Outcome", `${COMMAND_TEXT[status.command]}: ${status.headline}`],
       ["Plan goal now", node ? `${node.label} · ${node.status}` : selection.goal ? "No longer in the tree" : "Unknown"],
       ["Alert", incident?.alert ? INCIDENT_STATE[incident.state] || incident.state : "No alert linked"]]),
-    incidentActions(drawer, incident),
-    technical(`technical:${id}`, { intervention: { ...row, stages: ordered(row) }, incident, [selection.detecting ? "detecting_observation" : "newest_observation_of_episode"]: observation,
-      newest_observation: incident?.observation || null, tool: tool && { id: tool.id, execution: tool.execution, call: tool.call, skill: tool.skill,
-        arguments: tool.arguments, stages: tool.stages, code: tool.code, message: tool.message },
+    alertActions(drawer, incident),
+    technical(`technical:${id}`, { intervention: { ...row, stages: ordered(row) }, request_status: status, incident,
+      [selection.detecting ? "detecting_observation" : "newest_observation_of_episode"]: selection.observation,
+      camera_evidence: selection.evidence?.metadata || "unavailable",
+      tool: tool && { id: tool.id, execution: tool.execution, call: tool.call, skill: tool.skill, arguments: tool.arguments, stages: tool.stages,
+        code: tool.code, message: tool.message },
       node: node ? { id: node.id, ...node.detail } : null,
       clocks: "Times are the dashboard's clock when each event arrived; sim times are the simulator's. No trace ids are reported." }),
   ];
@@ -210,8 +202,9 @@ export function incidentView(drawer, id) {
   const state = app.state;
   const incident = state.incidents.find((i) => i.id === id);
   if (!incident) return note("This incident is no longer kept.");
-  const selection = resolveSelection(state, { incident: id }, app.link.now());
-  const observation = selection.observation;
+  const now = app.link.now();
+  const ref = { incident: id };
+  const selection = resolveSelection(state, ref, now);
   const tool = selection.tool;
   const cause = incident.caused_by && state.incidents.find((i) => i.id === incident.caused_by);
   return [
@@ -219,22 +212,19 @@ export function incidentView(drawer, id) {
       badge(SEVERITY[incident.severity] || "neutral", incident.severity),
       badge("neutral", incident.alert ? INCIDENT_STATE[incident.state] || incident.state : "History")),
     h("section", { class: "inspector-summary" },
-      h("p", { class: "summary-attempt", text: `${tool ? attemptLabel(tool) : "Attempt unknown"} · ${clock(incident.t)} (${ago(app.link.now() - incident.t)})` }),
-      h("p", { text: incident.reason || (observation ? concern(observation.signal) : "No description recorded.") }),
-      h("ul", { class: "summary-answers" }, h("li", { text: `Detected by ${incident.detection || "an unrecorded source"}` }),
-        h("li", { text: incident.kind === "recovery" ? `Recovery by ${incident.executor || "an unrecorded executor"}` : `Action: ${incident.action || "none reported"}` }),
-        h("li", { text: `Outcome: ${incident.outcome || "none recorded"}` })),
-      incident.evidence?.synthetic ? h("p", { class: "badge synthetic", text: "Synthetic data: not a real safety or execution outcome" }) : null,
-      inspectButtons(app, { incident: id })),
+      h("p", { class: "summary-attempt", text: `${tool ? attemptLabel(tool) : "Attempt unknown"} · ${clock(incident.t)} (${ago(now - incident.t)})` }),
+      h("p", { text: incident.reason || (selection.observation ? concern(selection.observation.signal) : "No description recorded.") }),
+      h("p", { class: "summary-status", text: `Detected by ${incident.detection || "an unrecorded source"} · ${incident.action || "no action reported"}` }),
+      incident.evidence?.synthetic ? h("p", { class: "badge synthetic", text: "Synthetic data: not a real safety or execution outcome" }) : null),
     h("h3", { text: "Evidence" }),
-    observation ? assessmentBlock(app, observation, incident, { incident: id }, selection.detecting) : null,
-    cameraBlock(app, selection, incident, { incident: id }), attemptBlock(app, selection),
+    evidenceCard(app, selection, ref), attemptCard(app, selection),
     h("h3", { text: "Outcome" }),
     facts([["Outcome", incident.outcome || "None recorded"], ["Recovery initiator", incident.initiator || "None recorded"],
       ["Recovery executor", incident.executor || "None recorded"],
-      ["Caused by", cause ? h("button", { class: "link", type: "button", onclick: () => drawer.incident(cause.id) }, `${cause.title} (${cause.id})`) : null],
+      ["Caused by", cause ? h("button", { class: "link", type: "button", onclick: () => app.openIncident(cause.id) }, `${cause.title} (${cause.id})`) : null],
       ["Acknowledged", incident.acknowledged_at ? clock(incident.acknowledged_at) : null]]),
-    incidentActions(drawer, incident),
-    technical(`technical:${id}`, { incident, tool: tool && { id: tool.id, execution: tool.execution, arguments: tool.arguments, code: tool.code } }),
+    alertActions(drawer, incident),
+    technical(`technical:${id}`, { incident, camera_evidence: selection.evidence?.metadata || "unavailable",
+      tool: tool && { id: tool.id, execution: tool.execution, arguments: tool.arguments, code: tool.code } }),
   ];
 }

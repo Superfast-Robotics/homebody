@@ -470,7 +470,7 @@ pre.json { margin: 4px 8px 10px; padding: 8px 10px; background: var(--surface-2)
   .info-panel:not(.open):not(:has(> .intervention-card:not([hidden]), > .execution-card:not([hidden]), > .critical-banner:not([hidden]), > .pause-card:not([hidden]), > .recovery-card:not([hidden]))) { display: none; }
   .info-panel:not(.open) > :not([hidden]):last-child { margin-bottom: 12px; }
   .info-panel:not(.open) { padding-bottom: 12px; }
-  .header { flex-wrap: wrap; }
+  .header { flex-wrap: wrap; row-gap: 8px; }
   .command-group { justify-content: flex-start; }
   .command { max-width: none; }
   .workspace { display: contents; }
@@ -580,7 +580,7 @@ pre.json { margin: 4px 8px 10px; padding: 8px 10px; background: var(--surface-2)
   background: var(--violet-bg); border: 1px solid var(--violet-edge); font-size: var(--size-meta); color: var(--text-primary); }
 .tree-inspect[hidden] { display: none; }
 .tree-inspect span { flex: 1; min-width: 0; }
-.tree-node > .row.inspected { box-shadow: inset 0 0 0 1.5px var(--violet); background: var(--violet-bg); }
+
 .monitor.inspecting { box-shadow: inset 0 0 0 1px var(--violet-edge), var(--shadow); }
 /* V8: the incident inspector, evidence first */
 .inspector-head { position: sticky; top: calc(-1 * var(--card-pad)); z-index: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
@@ -617,3 +617,65 @@ details.technical > summary { cursor: pointer; color: var(--text-secondary); }
 .camera-top .live-badge { flex: none; white-space: nowrap; }
 .camera-top .select-wrap.dark { min-width: 0; flex: 0 1 auto; }
 .camera-top .select-wrap.dark select { min-width: 0; max-width: 100%; text-overflow: ellipsis; }
+
+/* V9: Investigation Mode. The incident inspector takes the robot panel's place, so camera, tree and inspector sit side
+   by side (45 / 25 / 30) above the monitoring timeline; one toolbar under the header says what is inspected. */
+.header { flex-wrap: wrap; row-gap: 8px; }
+.investigation-bar { flex: 1 1 100%; display: flex; align-items: center; gap: 10px; min-width: 0; padding: 6px 10px;
+  border-radius: var(--radius-small); background: var(--violet-bg); border: 1px solid var(--violet-edge); color: var(--text-primary);
+  font-size: var(--size-meta); }
+.investigation-bar[hidden] { display: none; }
+.investigation-bar > .icon { color: var(--violet); flex: none; }
+.investigation-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--weight-strong); }
+.investigation-tabs { display: none; gap: 2px; padding: 2px; border-radius: var(--radius-small); background: var(--surface-2); }
+.investigation-tabs button { border: 0; background: none; padding: 4px 10px; border-radius: var(--radius-small); color: var(--text-secondary); }
+.investigation-tabs button[aria-selected="true"] { background: var(--surface-3); color: var(--text-primary); }
+.investigation-panel { display: flex; flex-direction: column; overflow: hidden; }
+.investigation-panel[hidden] { display: none; }
+.investigation-head { display: flex; align-items: center; gap: 10px; padding: 12px var(--card-pad); border-bottom: 1px solid var(--border); }
+.investigation-head h2 { flex: 1; }
+.investigation-body { flex: 1; min-height: 0; padding: var(--card-pad); display: flex; flex-direction: column; gap: 12px; }
+.investigation-body h3 { font-size: var(--size-section); font-weight: var(--weight-strong); margin: 4px 0 0; }
+.investigation-body .inspector-head { top: calc(-1 * var(--card-pad)); background: var(--surface); }
+.app.investigating .workspace { grid-template-columns: var(--camera-col, minmax(0, 45fr)) minmax(280px, 25fr) minmax(340px, 30fr); }
+.app.investigating .info-panel, .app.investigating .info-panel.open { display: none; }
+.app.investigating .investigation-panel { grid-column: 3; grid-row: 1; }
+@media (max-width: 1439px) {
+  /* the tree and the inspector share the right column, chosen by the toolbar's tabs; the camera stays primary */
+  .app.investigating .workspace { grid-template-columns: var(--camera-col, minmax(0, 55fr)) minmax(340px, 45fr); }
+  .app.investigating .investigation-tabs { display: inline-flex; }
+  .app.investigating .investigation-panel { grid-column: 2; }
+  .app.investigating .tree-panel { grid-column: 2; grid-row: 1; }
+  .app.investigating[data-investigation-tab="incident"] .tree-panel { display: none; }
+  .app.investigating[data-investigation-tab="tree"] .investigation-panel { display: none; }
+  .app.investigating .info-toggle { display: none; }
+}
+@media (max-width: 1099px) {
+  /* stacked: the camera first, then the inspector, monitoring and the tree, each full width */
+  .app.investigating .investigation-tabs { display: none; }
+  .app.investigating .investigation-panel { grid-column: auto; grid-row: 3; height: 70vh; }
+  .app.investigating .tree-panel, .app.investigating[data-investigation-tab="incident"] .tree-panel { display: flex; grid-row: 5; grid-column: auto; }
+  .app.investigating[data-investigation-tab="tree"] .investigation-panel { display: flex; }
+}
+/* the historical selection is an outline: the row keeps its execution colour underneath */
+.tree-node > .row.inspected { box-shadow: inset 0 0 0 2px var(--violet); }
+/* V9: the inspector's compact evidence card */
+.summary-status { font-weight: var(--weight-strong); color: var(--text-primary); margin: 0; }
+.summary-physical { margin: 0; color: var(--warning-text); }
+.evidence-card { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 8px 12px; padding: 10px; border-radius: var(--radius-small);
+  background: var(--surface-2); border: 1px solid var(--border); }
+.evidence-thumb { padding: 0; border: 1px solid var(--border); border-radius: var(--radius-small); background: var(--video-bg); overflow: hidden;
+  aspect-ratio: 4 / 3; align-self: start; }
+.evidence-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; border: 0; border-radius: 0; }
+.evidence-thumb.empty { display: grid; place-items: center; font-size: var(--size-small); color: var(--text-muted); }
+.evidence-facts { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.evidence-source { font-size: var(--size-small); color: var(--text-secondary); }
+.evidence-source.detector_input { color: var(--success); }
+.evidence-source.synchronized { color: var(--running); }
+.evidence-source.contextual, .evidence-source.unavailable { color: var(--text-muted); }
+.quality-line .badge { white-space: normal; }
+.evidence-more { grid-column: 1 / -1; }
+.evidence-more > summary { cursor: pointer; color: var(--primary); font-size: var(--size-meta); }
+.evidence-more[open] > summary { margin-bottom: 8px; }
+.evidence-more img { width: 100%; border-radius: var(--radius-small); margin: 8px 0 4px; }
+#camera-image:not([src]) { visibility: hidden; } /* no frame: the panel's own message says why, not a broken image */

@@ -34,13 +34,13 @@ test("abort requested and abort confirmed read differently, and acceptance is no
 
 test("a timed-out, rejected or failed request says so", () => {
   const late = steps(row("timed_out", [detected, requested]));
-  assert.equal(late[3].state, "failed");
-  assert.match(late[3].note, /No acknowledgement within 10 s/);
+  assert.equal(late[3].state, "overdue"); // still awaited: overdue, not failed
+  assert.match(late[3].note, /No acknowledgement within 10 s · still awaiting/);
   const refused = steps(row("rejected", [detected, requested, ["rejected", 12, "Harness (monitor link)", "call 2 ended"]]));
   assert.equal(refused[3].state, "failed");
   assert.equal(refused[3].note, "call 2 ended");
   assert.equal(steps(row("failed", [requested, accepted, ["failed", 80, "Skill executor", "PHYSICS_INVALID"]]))[4].state, "failed");
-  assert.equal(flowText(row("timed_out", [detected, decided, requested]), "Stall detected"), "Stall detected → Abort requested → Timed out");
+  assert.equal(flowText(row("timed_out", [detected, decided, requested]), "Stall detected"), "Stall detected → Abort requested → Acknowledgement overdue");
   assert.equal(flowText(row("requested", [detected, decided, requested]), "Stall detected"), "Stall detected → Abort requested → Awaiting executor");
 });
 

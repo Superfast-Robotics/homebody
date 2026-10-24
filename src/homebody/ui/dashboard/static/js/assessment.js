@@ -2,6 +2,7 @@
 // what that score is), the model's confidence (with its calibration), the quality of the input it read (checked at
 // the observation's own time), and the assessment's reliability (an independent check, Unknown when none reports).
 // They are never combined into one number, and nothing here changes a score: pure, so node --test checks it.
+import { qualityAttribution } from "./evidence.js";
 import { attemptLabel, toolById } from "./execution.js";
 import { signalLabel } from "./interventions.js";
 
@@ -29,19 +30,31 @@ export function assessment(observation, { current = null } = {}) {
       note: o.threshold !== null && o.threshold !== undefined ? "The rules compare their running average of the score with it" : "" },
     { key: "confidence", label: "Model confidence", value: o.confidence === null || o.confidence === undefined ? "Not reported"
       : `${fixed(o.confidence)} · ${calibration}`, tone: "", note: o.confidence_semantics || "" },
-    { key: "input", label: "Camera input", value: qWord, tone: qTone,
-      note: [o.quality_reason, o.quality_source || "Checked when the reading arrived (no observation-time record)"].filter(Boolean).join(" · ") },
+    ...inputRows(o, qWord, qTone),
     { key: "reliability", label: "Assessment reliability", value: rWord, tone: rTone,
       note: o.reliability === "reliable" || o.reliability === "unreliable" ? "" : "No independent check of the monitor's assessment reports to the dashboard" },
   ];
 }
 
-/** A compact warning beside a monitor result whose input frames were not valid at its observation, or null. */
+/** The input-quality rows, each attributed to what was checked: the detector's own input (Unknown unless checked) and
+ * the dashboard's robot-camera frame (synchronized with the observation, or at receipt for an older record). */
+function inputRows(o, qWord, qTone) {
+  const q = qualityAttribution(o);
+  const camera = q.camera && { key: "input", label: "Robot camera (dashboard)", value: qWord, tone: qTone,
+    note: [o.quality_reason, o.quality_source || "Checked when the reading arrived (no observation-time record)"].filter(Boolean).join(" · ") };
+  const detector = { key: "detector", label: "Detector input", value: q.detector.state === "unknown" ? "Quality unknown" : qWord,
+    tone: q.detector.state === "unknown" ? "" : qTone, note: q.detector.note };
+  return [detector, camera].filter(Boolean);
+}
+
+/** A compact warning beside a monitor result whose checked frames were not valid at its observation, named after what
+ * was checked ("Robot camera quality warning" unless the detector's own input was checked), or null. */
 export function inputWarning(observation) {
   const q = observation?.frame_quality;
   if (q !== "invalid" && q !== "suspected_invalid") return null;
-  return { text: `Input warning: ${QUALITY[q][1].toLowerCase()} frames`, reason: observation.quality_reason || "",
-    tone: QUALITY[q][0], source: observation.quality_source || "" };
+  const detector = observation.quality_relation === "detector_input";
+  return { text: detector ? `Detector image ${QUALITY[q][1].toLowerCase()}` : `Robot camera quality warning: ${QUALITY[q][1].toLowerCase()} frames`,
+    reason: observation.quality_reason || "", tone: QUALITY[q][0], source: observation.quality_source || "", detector };
 }
 
 /** What a reading applies to, by the scope the monitor gave it; an unmatched or unscoped reading is said to be so. A

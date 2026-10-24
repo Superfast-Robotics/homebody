@@ -63,7 +63,7 @@ test("the summary gives one conclusion by priority and still says when the monit
   assert.equal(contextSummary(base({ tools, readings: [r(1, "anomaly", 1, "t2")] }), stale, 31, 0).text,
     "Current behaviour assessment unavailable · Monitor stale (last observation 30 s ago)");
   const camera = base({ tools, readings: [r(9, "expected", 0.1, "t2", { frame_quality: "invalid" })], frame_quality: { state: "valid" } });
-  assert.equal(contextSummary(camera, live, 9.2, 0).text, "Monitoring active · No significant concerns · Pick attempt 2 · Input warning: invalid frames");
+  assert.equal(contextSummary(camera, live, 9.2, 0).text, "Monitoring active · No significant concerns · Pick attempt 2 · Robot camera quality warning: invalid frames");
   const mismatch = { state: "confirmed", rule: "Behavior Tree: Pick attempt 2 running · Controller: error" };
   assert.match(contextSummary(base({ tools, readings: [r(9, "elevated", 0.5, "t2")] }), live, 9.2, 0, { check: mismatch }).text, /^Execution state mismatch/);
   assert.equal(contextSummary(base({ tools, readings: [r(9, "anomaly", 0.9, "t2")] }), live, 9.2, 0).text, "Stall risk high · Pick attempt 2"); // one reading: no duration
@@ -86,11 +86,12 @@ test("execution certainty: confirmed, overdue (uncertain, never stopped), and co
 
 test("the compact card says the attempt and the outcome the stages establish", () => {
   const state = base({ tools: [tool("t4", "running", { number: 4 })], incidents: [{ id: "x1", severity: "critical", observation: { signal: "stall" }, evidence: { risk: 1 } }] });
-  const card = incidentCard(state, { tool: "t4", incident: "x1", initiator: "Live monitor", state: "timed_out", stages: [] });
+  const asked = ["requested", 0, "Live monitor", ""];
+  const card = incidentCard(state, { tool: "t4", incident: "x1", initiator: "Live monitor", state: "timed_out", ack_timeout: 10, stages: [asked] });
   assert.deepEqual([card.title, card.status, card.attempt, card.outcome],
-    ["Pick stall detected", "Action pending", "Pick · Attempt 4 · Stall score 1.00", "Abort requested · No controller acknowledgement"]);
-  assert.equal(incidentCard(state, { tool: "t4", incident: "x1", initiator: "Live monitor", state: "executing", stages: [] }).outcome,
-    "Controller acknowledged · Skill not yet stopped"); // acknowledgement is not a stop
+    ["Pick stall detected", "Ack overdue", "Pick · Attempt 4 · Stall score 1.00", "Acknowledgement overdue · Still awaiting controller"]);
+  assert.equal(incidentCard(state, { tool: "t4", incident: "x1", initiator: "Live monitor", state: "executing", ack_timeout: 10,
+    stages: [asked, ["accepted", 5, "Skill executor", ""]] }).outcome, "Abort accepted · Physical stop unverified"); // acknowledgement is not a stop
   assert.equal(incidentCard(state, { tool: null, initiator: "Human operator", state: "requested", stages: [] }).attempt, "Skill · Attempt unknown");
 });
 
@@ -100,11 +101,12 @@ test("event markers use the standard symbols and overlapping ones cluster withou
     ["retry_started", 33, "Plan goal", ""], ["retry_finished", 50, "Skill executor", "Attempt 2 ended with OK [t2]"]] },
     { id: "v2", tool: "t3", initiator: "Human operator", state: "timed_out", ack_timeout: 10, stages: [["requested", 60, "Human operator", ""]] }];
   const markers = eventMarkers(base({ interventions: rows, incidents: [{ id: "x9", t: 40, tag: "recovery_start", title: "Recovery" }] }), 0, 100);
-  assert.deepEqual(markers.map((m) => m.kind), ["abort_requested", "acknowledged", "stopped", "recovery_started", "recovery_started",
-    "recovery_completed", "human", "failed"]);
+  // v1 was acknowledged at 30 s, after its 20 s deadline: the passed deadline stays marked; v2 is still overdue
+  assert.deepEqual(markers.map((m) => m.kind), ["abort_requested", "deadline", "acknowledged", "stopped", "recovery_started", "recovery_started",
+    "recovery_completed", "human", "deadline"]);
   assert.deepEqual(MARKERS.abort_requested, ["stop", "danger"]);
   const clusters = clusterMarkers(markers, (t) => t * 4);
-  assert.deepEqual(clusters.map((c) => c.items.length), [1, 3, 1, 1, 1, 1]); // 30, 31 and 33 s overlap at 4 px/s
+  assert.deepEqual(clusters.map((c) => c.items.length), [1, 1, 3, 1, 1, 1, 1]); // 30, 31 and 33 s overlap at 4 px/s
   assert.equal(clusters.reduce((n, c) => n + c.items.length, 0), markers.length);
 });
 

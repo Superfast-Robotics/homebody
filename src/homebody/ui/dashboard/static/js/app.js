@@ -6,6 +6,7 @@ import { $, clock, duration, h, setText, toggleClass } from "./dom.js";
 import { Drawer } from "./drawer.js";
 import { Header } from "./header.js";
 import { Info } from "./info.js";
+import { Investigation } from "./investigation.js";
 import { keepHeaderClear, setupSplitter } from "./layout.js";
 import { inputWarning } from "./assessment.js";
 import { consistency, contextLabel, contextSummary, systemSummary } from "./execution.js";
@@ -50,6 +51,7 @@ class App {
     this.tools = new Tools(this);
     this.info = new Info(this);
     this.timeline = new Timeline(this, $("timeline-canvas"));
+    this.investigation = new Investigation(this);
     setupTabs(document.querySelector(".tabs"));
     setupSplitter();
     keepHeaderClear();
@@ -61,7 +63,6 @@ class App {
     });
     document.addEventListener("keydown", (event) => { if (event.key === "Escape") { legend.hidden = true; toggle.setAttribute("aria-expanded", "false"); } });
     $("risk-source").addEventListener("change", (event) => { this.riskSource = event.target.value; });
-    document.querySelectorAll("[data-action='live']").forEach((button) => button.addEventListener("click", () => this.returnToLive()));
     setInterval(() => this.tick(), TICK_MS);
     this.banner("loading", "Connecting to the session…");
     this.link.connect();
@@ -130,6 +131,7 @@ class App {
     this.renderRiskSources(state);
     this.renderRiskLabel(state, status);
     this.renderSummary(state, status);
+    this.investigation?.render();
   }
 
   /** Live timeline, Task end · Frozen, or Inspecting history; the last two offer Return to live. */
@@ -141,7 +143,8 @@ class App {
     const pill = $("timeline-mode");
     pill.className = `pill timeline-mode ${mode[0]}`; // shown only when not live: the header stays minimal
     setText(pill.querySelector(".pill-text"), mode[1]);
-    $("monitor-inspect").hidden = !inspecting && !(held.held && held.reason === "ended");
+    // the global toolbar says what is inspected; this bar adds only a bare moment's goal, skill and reading
+    $("monitor-inspect").hidden = this.selection !== null || (!inspecting && !(held.held && held.reason === "ended"));
     toggleClass($("monitor"), "inspecting", inspecting);
     const end = this.inspectEnd ?? held.end;
     setText($("window-text"), inspecting ? `${clock(end - 60)}–${clock(end)} · Recorded` : "Last 1 min");
@@ -215,11 +218,12 @@ class App {
     return liveEnd(this.state, this.link.now(), this.link.connected, this.lastSeen, this.thawed);
   }
 
-  /** Leave inspection on every panel: the live camera, the tree following execution, the rolling 60-second window,
-   * no highlights; a task-end timeline follows the clock again. The inspector stays open (it describes a recorded
-   * incident, which stays true); its Show on dashboard selects it again. */
+  /** The one way back from inspection: the live workspace (Investigation Mode's saved layout and camera choice), the
+   * live camera, the tree following execution, the rolling 60-second window, no highlights; a task-end timeline follows
+   * the clock again. Nothing is sent to the robot: a paused task stays paused. */
   returnToLive() {
     if (this.state?.task?.end) this.thawed = this.state.task.end;
+    this.investigation.exit();
     this.selection = null;
     this.inspect(null);
     this.tree.followLive();
@@ -234,10 +238,9 @@ class App {
   select(ref, { open = true } = {}) {
     if (!this.state) return;
     const sel = resolveSelection(this.state, ref, this.timelineEnd().end);
-    this.inspect(sel.t, { window: sel.window });
     this.selection = { ref, ...sel };
-    this.tree.showSelection(this.selection, sel.t);
-    this.renderMonitor(this.state);
+    if (ref.intervention || ref.incident) this.investigation.enter(); // an incident opens Investigation Mode
+    this.inspect(sel.t, { window: sel.window, keep: true });
     if (!open) return;
     if (ref.intervention) this.drawer.intervention(ref.intervention);
     else if (ref.incident) this.drawer.incident(ref.incident);

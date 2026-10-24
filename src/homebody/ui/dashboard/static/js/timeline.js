@@ -2,7 +2,7 @@
 // drawn where they were made and stand only as long as their cadence allows; gaps are drawn as gaps.
 import { inputWarning, scopeText } from "./assessment.js";
 import { clock, duration, tokens } from "./dom.js";
-import { MARKERS, attemptLabel, clusterMarkers, eventMarkers } from "./execution.js";
+import { MARKERS, attemptLabel, clusterMarkers, eventMarkers, incidentCard } from "./execution.js";
 import { signalLabel, stateText } from "./interventions.js";
 import { observationSegments, riskBuckets, riskSources, spans } from "./model.js";
 
@@ -10,7 +10,7 @@ const ROWS = [["goal", 26], ["skill", 26], ["decisions", 26], ["readings", 26], 
 const LEFT = 8, RIGHT = 8; // px margins of the plot
 const BLOCK = 22; // px height of a risk block
 const FRAME_MS = 100;
-const DIM = 0.38; // opacity of events unrelated to the inspected selection
+const DIM = 0.5; // opacity of events unrelated to the inspected selection: dimmed, never hidden
 const STATUS_TEXT = { running: "Running", success: "Completed", failure: "Failed", ended: "Ended", cancelled: "Cancelled" };
 const RISK_TEXT = { low: "Low risk", elevated: "Elevated risk", high: "High risk (at or above threshold)", missing: "Missing" };
 const LEVEL_TEXT = { expected: "Expected", unknown: "Unknown or unclassified", elevated: "Elevated concern", anomaly: "Anomaly", missing: "No reading" };
@@ -202,6 +202,12 @@ export class Timeline {
       const ink = span.status === "running" ? c.running : recovery ? c.violet : c["text-secondary"];
       this.label(ctx, label, x0 + 6, x1 - 6, row.y + row.h / 2, ink);
       ctx.globalAlpha = 1;
+      if (tool && (track === "skill" ? span.detail.tool === tool.id : span.detail.goal === tool.goal)) { // the selected attempt and its goal
+        ctx.strokeStyle = c.violet;
+        ctx.lineWidth = 2;
+        this.rect(ctx, x0 + 1, row.y + 3, x1 - x0 - 2, row.h - 6, 5);
+        ctx.stroke();
+      }
       this.hits.push({ x0, x1, y0: row.y, y1: row.y + row.h, kind: track, item: span, t: span.start });
     }
   }
@@ -260,12 +266,21 @@ export class Timeline {
     const segments = observationSegments(state.readings, state.tasks || [], start, end);
     if (!segments.length) this.empty(view, row, view.tasks.length ? "No observations in this window" : "No task in this window");
     const colours = { expected: c["risk-low"], unknown: c["risk-missing"], elevated: c["risk-elevated"], anomaly: c["risk-high"] };
+    const tool = view.sel?.tool;
     for (const segment of segments) {
       const x0 = this.clampX(segment.start, view), x1 = Math.max(x0 + 2, this.clampX(segment.end, view));
       const missing = segment.level === "missing";
+      const mine = tool && segment.readings.some((r) => r.tool === tool.id && r.scope !== "goal"); // the attempt's own observations
+      ctx.globalAlpha = tool && !mine && !missing ? DIM : 1;
       ctx.fillStyle = missing ? view.hatch : colours[segment.level];  // quiet intervals; anomaly markers stay bright
       this.rect(ctx, x0, row.y + 7, x1 - x0 - 1, row.h - 14, 3);
       ctx.fill();
+      ctx.globalAlpha = 1;
+      if (mine) {
+        ctx.strokeStyle = c.violet;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
       if (missing) {
         ctx.strokeStyle = c.neutral;
         ctx.setLineDash([2, 2]);
@@ -379,7 +394,17 @@ export class Timeline {
     const sel = view.sel;
     const related = (m) => !sel || (sel.intervention ? m.intervention === sel.intervention.id : false) ||
       (sel.incident && m.incident === sel.incident.id) || (!sel.intervention && sel.tool && m.tool === sel.tool.id);
-    for (const cluster of clusterMarkers(markers, (t) => this.x(t, end, width))) {
+    const clusters = clusterMarkers(markers, (t) => this.x(t, end, width));
+    const group = clusters.filter((cl) => sel && cl.items.some(related)).map((cl) => cl.x);
+    if (group.length > 1) { // the selected incident's events, joined as one correlated group (by their ids)
+      ctx.strokeStyle = c.violet;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(Math.min(...group), mid);
+      ctx.lineTo(Math.max(...group), mid);
+      ctx.stroke();
+    }
+    for (const cluster of clusters) {
       const x = cluster.x;
       const mine = cluster.items.some(related);
       ctx.globalAlpha = mine ? 1 : DIM;
@@ -485,7 +510,12 @@ export class Timeline {
     if (t === null || t === undefined) return;
     const x = line(t, c.violet, []);
     if (x === null) return;
-    const text = clock(t);
+    const sel = this.app.selection;
+    const state = this.app.state;
+    const title = sel?.intervention ? incidentCard(state, sel.intervention).title : sel?.incident?.title || "";
+    const short = title.length > 32 ? `${title.slice(0, 31)}…` : title;
+    const labelled = short ? `${short} · ${clock(t)}` : clock(t);
+    const text = ctx.measureText(labelled).width + 12 < width / 3 ? labelled : clock(t); // a label only where it fits
     const w = ctx.measureText(text).width + 12;
     const left = Math.min(Math.max(LEFT, x - w / 2), width - RIGHT - w);
     ctx.fillStyle = c.primary;
@@ -584,7 +614,11 @@ export class Timeline {
     if (x < LEFT) return;
     if (hit && !hit.weak && hit.kind !== "transition") {
       if (!this.app.open(hit.kind, hit.item)) this.app.inspect(hit.t);
-    } else this.app.inspect(hit?.kind === "transition" ? hit.t : t);
+    } else {
+      const at = hit?.kind === "transition" ? hit.t : t;
+      if (this.app.investigation.active) this.app.selectMoment(at); // the investigated incident stays selected
+      else this.app.inspect(at);
+    }
   }
 
   keys(event) {
