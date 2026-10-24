@@ -11,7 +11,11 @@ decision model, which the rules average before acting), SCOPE (what it is about,
 attempt it watched during a tool call, a goal while the agent plans or for a standing claim, else unknown), SIM_TIME
 (the simulation time of the newest frame it read) and INPUT_SOURCE. The model's probabilities are not calibrated and
 nothing checks the assessment independently, so CALIBRATION is "uncalibrated" and RELIABILITY "unknown".
+
+ACTIVITY is what the decision model sees the robot doing: its most probable label, held until another label wins
+`choice_votes` of the last `choice_window` readings (monitor/choice.py); the observation bars show it.
 """
+from homebody.monitor.choice import ActivityChoice
 from homebody.monitor.decide import signals
 
 SOURCE = "Live monitor"
@@ -66,16 +70,29 @@ def verdict_for(view, reading):
     return next((v for v in reversed(view.verdicts) if v.sim_time == reading.sim_time), None)
 
 
-def feed(view, tau: float) -> dict | None:
-    """VIEW's newest reading as a dashboard reading (ui/dashboard/records.reading), or None without one."""
+def feed(view, tau: float, choice=None) -> dict | None:
+    """VIEW's newest reading as a dashboard reading (ui/dashboard/records.reading), or None without one; CHOICE: the
+    ActivityChoice that holds the shown activity across readings."""
     reading = view.reading
     if reading is None:
         return None
     this_call = reading.phase.name == "tool_call" and reading.phase.call == view.skill_call
-    return value(reading, view.vocabulary, verdict_for(view, reading), tau, this_call=this_call)
+    return value(reading, view.vocabulary, verdict_for(view, reading), tau, this_call=this_call, choice=choice)
 
 
-def value(reading, vocabulary, verdict, tau: float, *, this_call: bool = False) -> dict:
+def shown_activity(reading, choice) -> dict:
+    """The shown activity after READING: CHOICE's held label (or this reading's own top without one), its
+    probability now and the votes it holds."""
+    if choice is not None:
+        held = choice.update(reading.goal_id, reading.activity)
+        return {"activity": held.label or "", "activity_p": held.probability, "activity_votes": held.votes,
+                "activity_window": held.window}
+    label, p = reading.top()
+    return {"activity": label or "", "activity_p": p if label else None, "activity_votes": 1 if label else 0,
+            "activity_window": 1}
+
+
+def value(reading, vocabulary, verdict, tau: float, *, this_call: bool = False, choice=None) -> dict:
     """READING (with the VERDICT it gave, if any) as a dashboard reading; THIS_CALL: taken during the skill call
     the monitor watches now, so an abort or reopen on it is a stop request."""
     name, risk = strongest(reading, vocabulary)
@@ -102,7 +119,7 @@ def value(reading, vocabulary, verdict, tau: float, *, this_call: bool = False) 
             "sim_time": float(reading.sim_time), "lag_s": float(reading.lag_s), "scope": kind, "scope_goal": goal,
             "semantics": semantics(name), "confidence_semantics": "Probability of the top activity label (uncalibrated)"
             if activity is not None else "", "calibration": "uncalibrated", "reliability": "unknown",
-            "input_source": INPUT, "phase": reading.phase.name,
+            "input_source": INPUT, "phase": reading.phase.name, **shown_activity(reading, choice),
             **({"request": {"action": "stop_skill", "reason": verdict.text()}} if request else {})}
 
 
@@ -111,6 +128,7 @@ class MonitorFeed:
 
     def __init__(self, dashboard, settings):
         self.dashboard, self.tau = dashboard, settings.tau
+        self.choice = ActivityChoice(settings.choice_window, settings.choice_votes)
         self._seen = None
 
     def __call__(self, view):
@@ -118,6 +136,6 @@ class MonitorFeed:
         if key is None or key == self._seen:
             return
         self._seen = key
-        value = feed(view, self.tau)
+        value = feed(view, self.tau, self.choice)
         if value is not None:
             self.dashboard.monitor(value)

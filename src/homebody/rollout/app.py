@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 
 from homebody.monitor import offline
+from homebody.monitor.choice import ActivityChoice
 from homebody.rollout import bundle
 from homebody.rollout.reader import Rollout
 from homebody.rollout.replay import replay
@@ -110,7 +111,8 @@ class RolloutsApp:
 
         def work():
             rollout = Rollout(folder, task, source)
-            replay(self.dashboard, rollout, self.settings.monitor.tau)
+            replay(self.dashboard, rollout, self.settings.monitor.tau,
+                   choice=ActivityChoice(self.settings.monitor.choice_window, self.settings.monitor.choice_votes))
             self.opened = {"name": request["name"], "task": rollout.task_name, "source": rollout.source}
             return (f"Showing {folder.name} {rollout.task_name} with the {rollout.source} monitor's readings. "
                     "Click the timeline to inspect a moment.")

@@ -86,6 +86,7 @@ def evaluate(args, settings) -> int:
 
 
 def view(args, settings, runs: Path) -> int:
+    from homebody.monitor.choice import ActivityChoice
     from homebody.rollout.app import RolloutsApp
     from homebody.rollout.reader import Rollout
     from homebody.rollout.replay import replay
@@ -97,7 +98,8 @@ def view(args, settings, runs: Path) -> int:
     RolloutsApp(dashboard, runs=runs, imported=runs / "imported", settings=settings,
                 models=lambda: models(settings), replays=True)
     if args.rollout is not None:
-        replay(dashboard, Rollout(args.rollout, args.task), settings.monitor.tau)
+        replay(dashboard, Rollout(args.rollout, args.task), settings.monitor.tau,
+               choice=ActivityChoice(settings.monitor.choice_window, settings.monitor.choice_votes))
     print(f"Rollouts: {dashboard.url} (More → Rollouts)")
     try:
         while True:

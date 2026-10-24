@@ -57,8 +57,9 @@ def events(rollout) -> list[tuple[float, int, str, Any]]:
     return sorted(found, key=lambda item: (item[0], item[1]))
 
 
-def replay(dashboard, rollout, tau: float, now=None):
-    """Show ROLLOUT on DASHBOARD (reset first). TAU is the monitor's threshold its readings are weighed against."""
+def replay(dashboard, rollout, tau: float, now=None, choice=None):
+    """Show ROLLOUT on DASHBOARD (reset first). TAU is the monitor's threshold its readings are weighed against;
+    CHOICE (an ActivityChoice) holds the shown activity as live; without one each reading shows its own top label."""
     clock = Clock(rollout.t0, rollout.t1, time.time() if now is None else now)
     dashboard.reset(scene_name=f"Replay: {rollout.root.name}", initial_task=rollout.instruction, clock=clock)
     state = {"task": rollout.instruction, "plan": None, "robot": {}}
@@ -85,7 +86,7 @@ def replay(dashboard, rollout, tau: float, now=None):
         elif kind == "reading":
             reading, verdict = payload
             try:
-                dashboard.monitor(value(reading, rollout.by_goal.get(reading.goal_id), verdict, tau))
+                dashboard.monitor(value(reading, rollout.by_goal.get(reading.goal_id), verdict, tau, choice=choice))
             except ValueError:  # an imported rollout's reading out of range: skipped, like an unreadable row
                 continue
         elif kind == "task_finished":

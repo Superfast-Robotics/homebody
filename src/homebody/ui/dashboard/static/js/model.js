@@ -51,7 +51,8 @@ export function spans(tasks, start, end) {
 }
 
 /**
- * The observation track: runs of one level, and "missing" stretches inside a task where no reading stands.
+ * The observation track: runs of one activity (the decision model's held choice) at one level, and "missing" stretches
+ * inside a task where no reading stands.
  * Only behavioural observations made during a task count; heartbeats only show the monitor is connected.
  */
 export function observationSegments(readings, tasks, start, end) {
@@ -64,11 +65,12 @@ export function observationSegments(readings, tasks, start, end) {
     const until = Math.min(next ? Math.min(next.t, reading.t + gap) : reading.t + gap, end);
     if (until < start || reading.t > end) return;
     const last = segments.at(-1);
-    if (last && last.level === reading.level && reading.t - last.end <= 1e-6) {
+    const activity = reading.activity || "";
+    if (last && last.level === reading.level && last.activity === activity && reading.t - last.end <= 1e-6) {
       last.end = until;
       last.readings.push(reading);
     } else {
-      segments.push({ start: Math.max(start, reading.t), end: until, level: reading.level, readings: [reading] });
+      segments.push({ start: Math.max(start, reading.t), end: until, level: reading.level, activity, readings: [reading] });
     }
   });
   const missing = [];

@@ -122,6 +122,10 @@ class Reading:
     quality_source: str = ""  # how FRAME_QUALITY was established (which frame, checked by what)
     quality_relation: str = "unknown"  # the checked frame to the detector: detector_input, synchronized, receipt, unknown
     quality_reason: str = ""
+    activity: str = ""  # what the decision model sees the robot doing: the held label (monitor/choice.py)
+    activity_p: float | None = None  # that label's probability in this reading
+    activity_votes: int = 0  # readings of the window in which it was the most probable
+    activity_window: int = 0
 
 
 @dataclass(frozen=True)
@@ -239,7 +243,10 @@ def reading(value: dict, now: float, **context) -> Reading:
                    input_source=clip(value.get("input_source", ""), 200), phase=clip(value.get("phase", ""), 24),
                    quality_source=clip(value.get("quality_source", ""), 200),
                    quality_reason=clip(value.get("quality_reason", ""), 200),
-                   quality_relation=choice(value, "quality_relation", RELATIONS), **context)
+                   quality_relation=choice(value, "quality_relation", RELATIONS),
+                   activity=clip(value.get("activity", ""), 80), activity_p=unit(value, "activity_p"),
+                   activity_votes=count(value.get("activity_votes")), activity_window=count(value.get("activity_window")),
+                   **context)
 
 
 def number(value) -> float | None:
@@ -254,6 +261,10 @@ def choice(value: dict, name: str, allowed: tuple) -> str:
     """VALUE's NAME when it is one of ALLOWED, else "unknown" (an unrecognized claim is not passed on as fact)."""
     found = value.get(name, "unknown")
     return found if found in allowed else "unknown"
+
+
+def count(value) -> int:
+    return value if isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 64 else 0
 
 
 def call_number(value) -> int | None:

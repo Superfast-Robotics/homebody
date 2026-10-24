@@ -63,11 +63,22 @@ export function contrast(a, b) {
 
 const LEVELS = { expected: "Expected", unknown: "Unknown", elevated: "Elevated", anomaly: "Anomaly" };
 
-/** An observation bar's text: its level, how many monitor readings it holds and their rate per second of the bar
- * ("Elevated · 14 readings · 1.0/s"); a gap says how long it lasted ("No reading · 4 s"). */
+/** An activity label as words: "grasp_jar" -> "grasp jar"; none_of_these -> "None of the labels". */
+export function activityText(name) {
+  if (!name) return "";
+  return name === "none_of_these" ? "None of the labels" : name.replaceAll("_", " ");
+}
+
+/** An observation bar's text: the activity the decision model chose (held over its window) and its probability in the
+ * newest reading ("grasp jar · 0.82"); without one, its level and readings ("Elevated · 14 readings · 1.0/s"); a gap
+ * says how long it lasted ("No reading · 4 s"). */
 export function observationLabel(segment) {
   const seconds = Math.max(0, segment.end - segment.start);
   if (segment.level === "missing") return `No reading · ${Math.round(seconds)} s`;
+  if (segment.activity) {
+    const p = segment.readings.at(-1)?.activity_p;
+    return `${activityText(segment.activity)}${p !== null && p !== undefined ? ` · ${p.toFixed(2)}` : ""}`;
+  }
   const n = segment.readings.length;
   const rate = seconds >= 1 ? ` · ${(n / seconds).toFixed(1)}/s` : "";
   return `${LEVELS[segment.level] || segment.level} · ${n} reading${n === 1 ? "" : "s"}${rate}`;

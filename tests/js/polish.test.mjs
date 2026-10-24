@@ -93,3 +93,14 @@ test("an observation bar says its level and its readings per second, a gap how l
   assert.equal(observationLabel({ level: "expected", start: 0, end: 0.5, readings: readings.slice(0, 1) }), "Expected · 1 reading");
   assert.equal(observationLabel({ level: "missing", start: 2, end: 6.4, readings: [] }), "No reading · 4 s");
 });
+
+test("an observation bar names the decision model's held activity, and a new activity starts a new bar", async () => {
+  const { observationLabel, activityText } = await import("../../src/homebody/ui/dashboard/static/js/timeline_style.js");
+  const { observationSegments } = await import("../../src/homebody/ui/dashboard/static/js/model.js");
+  const r = (t, activity, p) => ({ t, kind: "observation", during_task: true, level: "expected", activity, activity_p: p });
+  const readings = [r(0, "reach_jar", 0.6), r(1, "reach_jar", 0.7), r(2, "grasp_jar", 0.8), r(3, "grasp_jar", 0.9)];
+  const segments = observationSegments(readings, [{ start: 0, end: 4 }], 0, 4).filter((s) => s.level !== "missing");
+  assert.deepEqual(segments.map((s) => s.activity), ["reach_jar", "grasp_jar"]);
+  assert.equal(observationLabel(segments[1]), "grasp jar · 0.90");
+  assert.equal(activityText("none_of_these"), "None of the labels");
+});

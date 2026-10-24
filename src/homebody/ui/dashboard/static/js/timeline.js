@@ -5,7 +5,7 @@ import { clock, duration, tokens } from "./dom.js";
 import { MARKERS, attemptLabel, clusterMarkers, eventMarkers, incidentCard } from "./execution.js";
 import { signalLabel, stateText } from "./interventions.js";
 import { observationSegments, riskBuckets, riskSources, spans } from "./model.js";
-import { TIMELINE, observationLabel, segmentLabel, segmentStyle } from "./timeline_style.js";
+import { TIMELINE, activityText, observationLabel, segmentLabel, segmentStyle } from "./timeline_style.js";
 
 const ROWS = [["goal", 26], ["skill", 26], ["decisions", 26], ["readings", 26], ["risk", 30], ["interventions", 34], ["axis", 20]];
 const LEFT = 8, RIGHT = 8; // px margins of the plot
@@ -574,7 +574,8 @@ export class Timeline {
       }
       const last = item.readings.at(-1);
       const count = `${item.readings.length} reading${item.readings.length > 1 ? "s" : ""}`;
-      return `${LEVEL_TEXT[item.level]} · ${count}\n${clock(item.start)}–${clock(item.end)} · ${last.source}${last.synthetic ? " · synthetic" : ""}${last.reason ? `\n${last.reason}` : ""}`;
+      const held = last.activity ? `${activityText(last.activity)} (top in ${last.activity_votes} of the last ${last.activity_window} readings)\n` : "";
+      return `${held}${LEVEL_TEXT[item.level]} · ${count}\n${clock(item.start)}–${clock(item.end)} · ${last.source}${last.synthetic ? " · synthetic" : ""}${last.reason ? `\n${last.reason}` : ""}`;
     }
     if (kind === "risk") {
       const span = `${clock(item.start)}–${clock(item.end)}`;

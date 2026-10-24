@@ -212,7 +212,8 @@ class Monitor:
     `stall_s` simulation seconds for no progress); a firing aborts the running skill at most `max_aborts_per_goal` times per goal
     (0: flag only), never within `grace_s` of a skill's start nor `cooldown_s` after an abort. A stall is only flagged:
     labelled on the dashboard, never a stop. `max_cost_usd` caps
-    one task's decision spend (0: no cap)."""
+    one task's decision spend (0: no cap). The dashboard shows the most probable activity label, switching only when
+    another is the top one in `choice_votes` of the last `choice_window` readings (monitor/choice.py)."""
     enabled: bool = False
     vocab_model: str = "qwen3.8-27b"
     vocab_base_url: str = "http://127.0.0.1:4000/v1"
@@ -246,6 +247,8 @@ class Monitor:
     cooldown_s: float = 3.0
     max_aborts_per_goal: int = 2
     max_cost_usd: float = 0.0
+    choice_window: int = 5  # the dashboard's activity: a new label must be the top one in choice_votes of these
+    choice_votes: int = 3
     keep_frames: bool = False  # write every captured frame under the task's monitor/frames (tools/monitor_bench.py)
 
     def __post_init__(self):
@@ -255,6 +258,8 @@ class Monitor:
             raise ValueError("monitor.tau and monitor.tau_unsafe must be between 0.5 and 1")
         if not 0 < self.ema <= 1:
             raise ValueError("monitor.ema must be above 0 and at most 1")
+        if not 1 <= self.choice_votes <= self.choice_window:
+            raise ValueError("monitor.choice_votes must be from 1 to monitor.choice_window")
         for name in ("decision_base_url", "vocab_base_url"):  # keys and camera frames go there
             url = getattr(self, name)
             if not url.startswith(("https://", "http://127.0.0.1", "http://localhost", "http://[::1]")) \
