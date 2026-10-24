@@ -7,6 +7,7 @@ import { Drawer } from "./drawer.js";
 import { Header } from "./header.js";
 import { Info } from "./info.js";
 import { liveEnd, momentAt, monitorStatus, riskSources } from "./model.js";
+import { Scenarios } from "./scenarios.js";
 import { summarize } from "./story.js";
 import { Link } from "./socket.js";
 import { Timeline } from "./timeline.js";
@@ -34,6 +35,7 @@ class App {
     });
     this.drawer = new Drawer(this);
     this.header = new Header(this);
+    this.scenarios = new Scenarios(this);
     this.controls = new Controls(this);
     this.camera = new Camera(this);
     this.tree = new TreeView(this);
@@ -53,7 +55,7 @@ class App {
   update(state) {
     this.state = state;
     this.lastSeen = state.now;
-    for (const part of [this.header, this.controls, this.camera, this.tree, this.logs, this.tools, this.info]) {
+    for (const part of [this.header, this.scenarios, this.controls, this.camera, this.tree, this.logs, this.tools, this.info]) {
       try {
         part.render(state);
       } catch (error) {

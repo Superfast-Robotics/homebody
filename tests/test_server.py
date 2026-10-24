@@ -212,24 +212,38 @@ def test_the_remote_console_gets_the_skill_stages_but_not_events_that_draw_on_ha
     assert console.skill_event.call_args_list[-1].args[0]["result"].code == "OK"
 
 
-def test_the_console_camera_choice_reaches_the_harness_and_commands_are_recorded(monkeypatch, tmp_path):
-    from fakes import mocked_console
+def test_a_dashboard_elsewhere_shows_the_sessions_state_frames_and_decisions_and_picks_the_camera(tmp_path):
+    from fakes import fake_dashboard
 
     from homebody.server.client import RemoteControls
     recorded = []
     settings = Settings(monitor=MONITOR, server=Server(port=free_port()))
     hub, controls = Hub(), Controls()
     ui = UiLink(hub, quality=80, view_hz=1000.0)
+    ui.session = SimpleNamespace(history=[{"operator_task": "pick the jar"}], planner=None,
+                                 context=SimpleNamespace(carried={"right": {"state": "held"}}))
     server = HarnessServer(settings, controls, ui, MonitorLink(hub, MONITOR, quality=80, root=tmp_path),
                            session_dir=recorded_session(tmp_path), token=TOKEN, hub=hub,
                            sink=lambda kind, **fields: recorded.append((kind, fields)))
     server.start()
     try:
-        client = HarnessClient(url(server), TOKEN, folder=tmp_path / "client").connect()
-        console = mocked_console(monkeypatch)
+        client = HarnessClient(url(server), TOKEN, folder=tmp_path / "client")
         remote = RemoteControls(client)
-        console.camera_choice.value = "Observer view"
-        remote.camera(console.camera)
+        dashboard = fake_dashboard(controls=remote)
+        client.console = dashboard
+        client.connect()
+        ui.update("Executing", "picking")
+        assert wait_for(lambda: dashboard.store.status == "Executing")
+        assert dashboard.remote_state["task"] == "pick the jar"
+        assert dashboard.store.robot["hands"] == {"left": "free", "right": "held"}
+        frame = SimpleNamespace(rgb=np.zeros((8, 8, 3), np.uint8), time=1.5, sequence=3, epoch=1,
+                                base_pose=np.array([1.0, 2.0, 0.5]))
+        ui.show(frame)
+        assert wait_for(lambda: any(view == "robot" for view, _, _ in dashboard.hub.frames))
+        assert wait_for(lambda: dashboard.hub.telemetries) and dashboard.hub.telemetries[-1]["pose"] == [1.0, 2.0, 0.5]
+        ui.select(SimpleNamespace(text="Pick it", skill="pick", arguments={"point_normalized_1000": [500, 500]}), frame)
+        assert wait_for(lambda: any(d.skill == "pick" for d in dashboard.store.decisions.values()))
+        dashboard.hub.views = {"observer"}  # the page watches the observer: the harness renders that camera
         assert wait_for(lambda: ui.camera == "observer")
         remote.stop()
         assert wait_for(lambda: any(kind == "operator_command" and f["command"] == "stop" for kind, f in recorded))
@@ -272,21 +286,20 @@ def test_a_preset_runs_here_or_asks_for_its_scene_and_never_mid_task(harness, tm
     assert harness.take_switch() == (there, "pick there") and harness.take_switch() == (None, None)
 
 
-def test_the_console_offers_the_harness_presets_and_runs_the_chosen_one(monkeypatch, tmp_path):
-    from fakes import mocked_console
+def test_the_dashboard_offers_the_harness_presets_and_runs_the_chosen_one(tmp_path):
+    from fakes import fake_dashboard
 
     from homebody.server.client import RemoteControls
+    from homebody.server.commands import run_preset
     sent = []
-    client = SimpleNamespace(send=lambda kind, **fields: sent.append((kind, fields)))
+    client = HarnessClient("ws://unused", TOKEN, folder=tmp_path)
+    client.send = lambda kind, **fields: sent.append((kind, fields))
     controls = RemoteControls(client)
-    console = mocked_console(monkeypatch, controls=controls)
-    console.set_presets([{"name": "One jar", "scene": "warehouse_cart", "task": "pick one jar"},
-                         {"name": "Apple", "scene": "kitchen_baskets", "task": "put the apple away"}],
-                        "warehouse_cart")
-    console.scenario.value = "Apple"
-    console._chose_scenario()
-    assert console.task.value == "put the apple away" and console.run_scenario.visible
-    assert console.run_scenario.label == "Load kitchen_baskets and run"
-    console.run_scenario.disabled = False
-    console._run_scenario()
-    assert sent == [("preset", {"name": "Apple", "text": "put the apple away"})]
+    dashboard = fake_dashboard(controls=controls)
+    dashboard.extras["scenarios"] = lambda: client.presets
+    dashboard.handlers["run_scenario"] = lambda request: run_preset(controls, request)
+    client.handle({"type": "state", "presets": [{"name": "Apple", "scene": "kitchen_baskets", "task": "put the apple away"},
+                                                 "not a preset"]}, None)
+    assert [p["name"] for p in dashboard._snapshot()["scenarios"]] == ["Apple"]
+    assert dashboard.command({"type": "run_scenario", "name": "Apple", "text": "put it away"})["ok"]
+    assert sent == [("preset", {"name": "Apple", "text": "put it away"})]

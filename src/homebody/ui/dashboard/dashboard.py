@@ -11,6 +11,7 @@ from homebody.session.settings import Topdown
 from homebody.skills import navigate, pick, place
 from homebody.ui.controls import capabilities
 from homebody.ui.dashboard.server import Hub
+from homebody.ui.dashboard.session_state import session_state
 from homebody.ui.dashboard.store import PLANNER, Store
 from homebody.ui.dashboard.views import (
     AUTO_CAMERAS,
@@ -31,18 +32,6 @@ TARGET_KEYS = ("point_normalized_1000", "goal_map_1000", "facing_map_1000", "goa
                "release_point_1000", "x_ahead_m", "y_left_m", "hand")
 
 
-def goal_texts(tree):
-    texts = {}
-
-    def walk(node):
-        if node.get("type") == "goal":
-            texts[node["id"]] = node.get("goal", node["id"])
-        for child in node.get("children", ()):
-            walk(child)
-    walk(tree)
-    return texts
-
-
 def target(decision):
     """What a decision aims at, as its own arguments state it: pixel clicks and map points, never object names."""
     args = decision.arguments if isinstance(decision.arguments, dict) else {}
@@ -53,8 +42,9 @@ def target(decision):
 class Dashboard:
     def __init__(self, controls, *, host="127.0.0.1", port=8080, initial_task="", scene_name="Simulation",
                  model_name="", topdown_settings: Topdown | None = None, render_in_background=True,
-                 scene_port=None, hub=Hub, clock=time.time, places=None):
-        """The page is served at HOST:PORT; the 3D scene, when a SceneView asks for it, at SCENE_PORT (PORT + 1)."""
+                 scene_port=None, hub=Hub, clock=time.time, places=None, monitor=None):
+        """The page is served at HOST:PORT; the 3D scene, when a SceneView asks for it, at SCENE_PORT (PORT + 1).
+        MONITOR: the [monitor] settings when the live monitor feeds this dashboard (monitor_update)."""
         self.controls, self.clock = controls, clock
         self.host, self.scene_port = host, port + 1 if scene_port is None else scene_port
         self.store = Store(scene_name=scene_name, model_name=model_name, initial_task=initial_task, clock=clock)
@@ -62,6 +52,13 @@ class Dashboard:
         self.history = History()
         self.places = places  # the scene's fixtures, for a location label grounded in its own metadata
         self.scene_view = self.session = self._scene_server = None
+        self.remote_state = None  # the task, plan and hands a harness server sent, for a session elsewhere
+        self.extras: dict = {}  # name -> callable: more state for the page (the monitor app's servers, scenarios)
+        self.handlers: dict = {}  # command type -> callable(request) -> reply: the page's commands beyond the session's
+        self._feed = None
+        if monitor is not None:
+            from homebody.ui.dashboard.monitor_feed import MonitorFeed
+            self._feed = MonitorFeed(self, monitor)
         self._stills, self._sent, self._telemetry_at, self._force = {}, {}, float("-inf"), False
         self.hub = hub(host, port, snapshot=self._snapshot, on_command=self.command, history=self.history).start()
         self._pending, self._latest, self._closing, self._render_failed = Condition(), None, False, False
@@ -189,10 +186,13 @@ class Dashboard:
     def select(self, decision, frame):
         """Show an executed decision on its captured frame; the click view stays until the next decision."""
         self.clear_selection()
-        self.overlays.select(decision, frame)
         self.store.decision(decision, goal=self._active_goal())
         if decision.skill not in PLANNER:
             self.store.note_robot(target=target(decision))
+        if frame is None:  # a decision made by a harness elsewhere: its frame stays there
+            self.hub.changed()
+            return
+        self.overlays.select(decision, frame)
         selection = self.overlays.selection
         if selection is not None:
             self._still("decision", selection.overlay(frame, frame.rgb))
@@ -229,8 +229,11 @@ class Dashboard:
         if isinstance(plan, (pick.Plan, place.Plan)) and overlays.palm_path is not None:
             self.scene_view.show_arm_path(overlays.palm_path)
 
-    def update(self, status, text=""):
-        self.store.update(status, text, task=self._task(), plan=self._plan(), robot=self._robot())
+    def update(self, status, text="", state=None):
+        """A session status; STATE (task, plan, robot) when the session runs elsewhere, else read from it."""
+        if state is not None:
+            self.remote_state = state
+        self.store.update(status, text, **self.session_state())
         if status == "Ready":
             self.clear_selection()
         self.hub.changed()
@@ -241,34 +244,38 @@ class Dashboard:
         self.store.monitor(reading)
         self.hub.changed()
 
-    # --- what the session thread reads for the store ---
-    def _task(self):
-        history = getattr(self.session, "history", None) or ()
-        return next((entry["operator_task"] for entry in reversed(history) if "operator_task" in entry), None)
+    def monitor_update(self, view):
+        """The live monitor's view changed (its on_update): its new reading, if any, joins the timeline."""
+        if self._feed is not None:
+            self._feed(view)
 
-    def _plan(self):
-        planner = getattr(self.session, "planner", None)
-        if planner is None:
-            return None
-        plan = planner.plan
-        if plan is None:
-            return {"tree": None, "abandoned": planner.abandoned}
-        goal = planner.goal
-        return {"tree": plan.tree, "goals": goal_texts(plan.tree), "status": dict(plan.status),
-                "reasons": dict(plan.reasons), "active": None if goal is None else goal["id"],
-                "replans": planner.replans, "replans_allowed": planner.replans_allowed, "feedback": planner.feedback}
+    # --- what the session thread reads for the store ---
+    def session_state(self):
+        return self.remote_state if self.remote_state is not None else session_state(self.session)
 
     def _active_goal(self):
-        goal = getattr(getattr(self.session, "planner", None), "goal", None)
-        return None if goal is None else goal["id"]
+        return ((self.session_state() or {}).get("plan") or {}).get("active")
 
-    def _robot(self):
-        context = getattr(self.session, "context", None)
-        if context is None:
-            return {}
-        carried = dict(context.carried)
-        return {"hands": {side: "free" if side not in carried else carried[side].get("state", "held")
-                          for side in ("left", "right")}}
+    # --- frames from elsewhere (a harness server, a simulation server's stream) ---
+    def remote_frame(self, view, rgb, meta=None):
+        """RGB for VIEW from a camera elsewhere, sent while someone watches it; the robot view is also kept in
+        the history and its pose (META base_pose) is the telemetry."""
+        now, meta = self.clock(), dict(meta or {})
+        if view not in LIVE:
+            self._stills[view] = True
+        if view in self.hub.wanted() and now - self._sent.get(view, float("-inf")) >= FRAME_PERIOD:
+            self._sent[view] = now
+            self.hub.frame(view, {"t": now, **meta}, jpeg(rgb))
+        if view != "robot":
+            return
+        if self.history.due(now):
+            self.store.frame_id = self.history.add(now, jpeg(rgb, HISTORY_QUALITY, HISTORY_WIDTH))
+        pose = meta.get("base_pose")
+        if pose is not None and now - self._telemetry_at >= TELEMETRY_PERIOD:
+            self._telemetry_at = now
+            x, y, yaw = (float(v) for v in pose)
+            place = None if self.places is None else self.places.near(x, y)
+            self.hub.telemetry({"t": now, **meta, "pose": [x, y, yaw], "frame": "map", "place": place})
 
     # --- browser commands (server loop thread) ---
     def command(self, request: dict) -> dict:
@@ -277,9 +284,13 @@ class Dashboard:
                    "acknowledge": self._acknowledge, "resolve": self._resolve, "pause": self._optional("pause", "Pause requested"),
                    "resume": self._optional("resume", "Resume requested"),
                    "stop_skill": self._optional("stop_skill", "Stop requested for the current skill")}.get(kind)
+        handler = handler or self.handlers.get(kind)
         if handler is None:
             return {"ok": False, "message": f"Unknown command {str(kind)[:40]!r}"}
-        return handler(request)
+        try:
+            return handler(request)
+        except Exception as error:  # noqa: BLE001 -- a failed command is the page's message, not a dropped page
+            return {"ok": False, "message": f"{kind} failed: {error}"[:300]}
 
     def _submit(self, request):
         text = request.get("text")
@@ -300,10 +311,7 @@ class Dashboard:
         self.store.instruction(text, "pending")
         return {"ok": True, "message": "Queued. The agent starts it next."}
 
-    def monitor_feed(self, settings):
-        """The live monitor's on_update for this dashboard ([monitor] SETTINGS)."""
-        from homebody.ui.dashboard.monitor_feed import MonitorFeed
-        return MonitorFeed(self, settings)
+
 
     def _busy_reason(self):
         status = self.store.status
@@ -358,7 +366,8 @@ class Dashboard:
         state = self.store.snapshot({**controls, "paused": held})
         views = {name: {"label": label, "available": live or self._stills.get(name, False)}
                  for name, (label, live) in VIEWS.items()}
-        return {**state, "views": views, "history": self.history.index(), "auto_cameras": AUTO_CAMERAS,
+        extras = {name: provide() for name, provide in self.extras.items()}
+        return {**state, **extras, "views": views, "history": self.history.index(), "auto_cameras": AUTO_CAMERAS,
                 "scene_port": self.scene_port if self._scene_server is not None else None}
 
     def close(self):

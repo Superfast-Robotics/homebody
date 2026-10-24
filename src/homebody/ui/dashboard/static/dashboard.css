@@ -68,6 +68,23 @@ h1 { font-size: var(--size-title); font-weight: var(--weight-title); letter-spac
 .outcome-badge.partial, .outcome-badge.unverified { color: var(--warning); border-color: var(--state-warning-edge); background: var(--warning-light); }
 .outcome-badge.failed { color: var(--danger); border-color: var(--state-error-edge); background: var(--danger-light); }
 .alert-chip.critical { border-color: var(--state-error-edge); background: var(--danger-light); color: var(--danger); }
+.servers-chip { border: 1px solid var(--border); background: var(--surface-2); color: var(--text-secondary);
+  border-radius: 999px; padding: 2px 10px; font-size: var(--size-meta); font-weight: var(--weight-strong); }
+.servers-chip.success { color: var(--success); border-color: var(--state-success-edge); }
+.servers-chip.warning { color: var(--warning-text); border-color: var(--state-warning-edge); background: var(--warning-light); }
+.servers-chip.danger { color: var(--danger); border-color: var(--state-error-edge); background: var(--danger-light); }
+.scenario-select { width: 100%; margin-bottom: 6px; padding: 5px 8px; background: var(--surface-2); color: var(--text-primary);
+  border: 1px solid var(--border); border-radius: var(--radius-small); font-size: var(--size-meta); }
+.server-list { list-style: none; margin: 0 0 var(--gap); padding: 0; }
+.server-list .server { display: grid; grid-template-columns: 12px auto 1fr auto; gap: 4px 8px; align-items: baseline;
+  padding: 8px 0; border-bottom: 1px solid var(--border); }
+.server-list .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--text-muted); }
+.server-list .server.up .dot { background: var(--success); }
+.server-list .server.down .dot { background: var(--danger); }
+.server-list .server.unknown .dot { background: var(--warning); }
+.server-list .latency { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.server-list .server-detail, .server-list .server-error { grid-column: 2 / 5; font-size: var(--size-meta); color: var(--text-secondary); }
+.server-list .server-error { color: var(--danger); }
 
 .command-group { display: flex; align-items: flex-start; gap: var(--gap); flex: 1 1 760px; justify-content: flex-end; min-width: 0; }
 .command { flex: 1 1 420px; max-width: 520px; min-width: 240px; position: relative; }

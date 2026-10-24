@@ -61,6 +61,8 @@ export class Header {
     const text = raw.trim();
     const state = this.app.state;
     if (this.sending || !text) return;
+    const scenario = this.app.scenarios?.chosen();
+    if (scenario && !state?.controls.busy) return this.runScenario(scenario, text);
     if (!state?.controls.accepting && !noting(state)) return this.show("bad", state?.controls.busy ? BUSY_HINT : "The session cannot take a task now.");
     this.sending = true;
     this.renderControls(state);
@@ -72,6 +74,16 @@ export class Header {
       this.resize();
     }
     this.show(reply.ok ? "pending" : "bad", reply.message);
+    this.renderControls(this.app.state);
+  }
+
+  async runScenario(name, text) {
+    this.sending = true;
+    this.renderControls(this.app.state);
+    this.show("pending", `Starting ${name}…`);
+    const reply = await this.app.link.request("run_scenario", { name, text });
+    this.sending = false;
+    this.show(reply.ok ? "pending" : "bad", reply.message || "The request failed.");
     this.renderControls(this.app.state);
   }
 
@@ -94,7 +106,8 @@ export class Header {
     const connected = this.app.link.connected;
     const busy = Boolean(state?.controls.busy);
     const note = noting(state);
-    const accepting = (Boolean(state?.controls.accepting) || note) && connected && !this.sending;
+    const scenario = !busy && Boolean(this.app.scenarios?.chosen());
+    const accepting = (Boolean(state?.controls.accepting) || note || scenario) && connected && !this.sending;
     this.send.disabled = !accepting || !this.input.value.trim();
     this.send.title = note ? NOTE_HINT : accepting ? "Start this instruction as a task (Enter). Shift+Enter adds a line."
       : busy ? BUSY_HINT : "The session cannot take a task now";

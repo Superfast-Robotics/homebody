@@ -1,13 +1,14 @@
-"""A console and its monitor connected to a harness server (`homebody connect`).
+"""A dashboard and its monitor connected to a harness server (`homebody connect`).
 
-The server's messages drive the console (status, camera, skill events) and this machine's monitor (the session's
-monitor calls and the head camera frames). The monitor's stop and verdicts, its events and the operator's commands
+The server's messages drive the dashboard (status with the session's task, plan and hands, decisions, camera
+frames, skill events) and this machine's monitor (the session's monitor calls and the head camera frames). The monitor's stop and verdicts, its events and the operator's commands
 go back to the server. The monitor's files are written here, under FOLDER/<session>/<task>/monitor.
 """
 import re
 import threading
 from dataclasses import asdict
 from pathlib import Path
+from types import SimpleNamespace
 
 from websockets.exceptions import ConnectionClosed
 from websockets.sync.client import connect
@@ -17,6 +18,8 @@ from homebody.server import protocol
 from homebody.skills.contract import Result
 
 CONSOLE_SKILL_EVENTS = ("skill_started", "skill_stage", "skill_finished")
+VIEWS = ("robot", "observer", "hand")  # the cameras a harness renders for a dashboard elsewhere
+CAMERA_POLL_S = 0.5  # how often the dashboard's watched view is checked, to ask the harness for that camera
 
 
 class RemoteControls:
@@ -25,35 +28,43 @@ class RemoteControls:
     def __init__(self, client: "HarnessClient"):
         self.client = client
 
+    def _send(self, kind: str, **fields):
+        self.client.send(kind, **fields)
+
     def submit(self, text: str):
-        self.client.send("submit", text=text)
+        self._send("submit", text=text)
 
     def tell(self, text: str):
-        self.client.send("tell", text=text)
+        self._send("tell", text=text)
 
     def stop(self):
-        self.client.send("stop")
+        self._send("stop")
 
     def pause(self):
-        self.client.send("pause")
+        self._send("pause")
 
     def unpause(self):
-        self.client.send("unpause")
+        self._send("unpause")
+
+    def resume(self):
+        """The dashboard's Resume: from the operator's pause and from one the monitor asked for."""
+        self._send("unpause")
+        self._send("resume_task")
 
     def stop_skill(self):
-        self.client.send("stop_skill")
+        self._send("stop_skill")
 
     def dismiss(self):
-        self.client.send("dismiss")
+        self._send("dismiss")
 
     def resume_task(self):
-        self.client.send("resume_task")
+        self._send("resume_task")
 
     def camera(self, name: str):
-        self.client.send("camera", camera=name)
+        self._send("camera", camera=name)
 
     def preset(self, name: str, text: str = ""):
-        self.client.send("preset", name=name, text=text)
+        self._send("preset", name=name, text=text)
 
 
 def safe_name(value, default: str) -> str:
@@ -83,7 +94,9 @@ class HarnessClient:
         self.requests = 0
         self.sent_stop = None
         self.calls: dict[int, int] = {}  # the local monitor's skill call -> the server's number for it
-        self.offer_presets = True  # the harness's presets fill the console's Scenario list (not in the monitor app)
+        self.offer_presets = True  # the harness's presets are the dashboard's scenarios (not in the monitor app)
+        self.presets: list[dict] = []
+        self.camera_sent = "robot"
         self.closed = threading.Event()
         self.received_state = threading.Event()
         self.listener: threading.Thread | None = None
@@ -94,6 +107,7 @@ class HarnessClient:
         self.connection.send(protocol.text("hello", token=self.token, role=self.role))
         self.listener = threading.Thread(target=self.listen, name="harness-client", daemon=True)
         self.listener.start()
+        threading.Thread(target=self.follow_camera, name="harness-camera", daemon=True).start()
         if not self.received_state.wait(timeout):
             raise ConnectionError("the harness server sent no state (a bad token closes the connection)")
         return self
@@ -134,17 +148,23 @@ class HarnessClient:
             self.epoch, self.session = fields.get("epoch", self.epoch), fields.get("session", self.session)
             self.role = fields.get("role", self.role)
             self.received_state.set()
-            if self.console is not None and self.offer_presets and isinstance(fields.get("presets"), list):
-                self.console.set_presets(fields["presets"], fields.get("scene", ""))
+            if self.offer_presets and isinstance(fields.get("presets"), list):
+                self.presets = [p for p in fields["presets"] if isinstance(p, dict) and p.get("name")]
             if "status" in fields:
                 self.update(fields["status"], fields.get("notice") or fields.get("text", ""))
         elif kind == "status":
-            self.update(fields.get("status", ""), fields.get("text", ""))
+            state = fields.get("state")
+            self.update(fields.get("status", ""), fields.get("text", ""), state if isinstance(state, dict) else None)
         elif kind in ("notice", "refused"):
             self.show(fields.get("text") or f"Refused: {fields.get('reason', '')}")
         elif kind == "view" and rgb is not None and self.console is not None:
-            self.console.ego.image = rgb
-            self.console.ego.label = fields.get("label", "Live camera")
+            view = fields.get("camera") if fields.get("camera") in VIEWS else "robot"
+            meta = {key: fields[key] for key in ("sim", "seq", "epoch", "base_pose", "label") if key in fields}
+            self.console.remote_frame(view, rgb, meta)
+        elif kind == "decision" and self.console is not None:
+            decision = SimpleNamespace(text=str(fields.get("text", "")), skill=str(fields.get("skill", "")),
+                                       arguments=fields.get("arguments") if isinstance(fields.get("arguments"), dict) else {})
+            self.console.select(decision, None)
         elif kind == "skill" and self.console is not None:
             event = dict(fields.get("event") or {})
             if event.get("type") not in CONSOLE_SKILL_EVENTS:  # the others draw on frames only the harness has
@@ -161,14 +181,22 @@ class HarnessClient:
         elif kind == "monitor" and self.monitor is not None:
             self.monitor_call(fields.get("call"), fields)
 
-    def update(self, status: str, text: str = ""):
+    def update(self, status: str, text: str = "", state: dict | None = None):
         self.status = (status, text)
         if self.console is not None:
-            self.console.update(status, text)
+            self.console.update(status, text, state)
 
     def show(self, text: str):
         if self.console is not None:
             self.console.update(self.status[0], text)
+
+    def follow_camera(self):
+        """Ask the harness for the camera the dashboard's page watches (its observer or hand view)."""
+        while not self.closed.wait(CAMERA_POLL_S):
+            camera = getattr(self.console, "camera", "robot")
+            if camera != self.camera_sent:
+                self.camera_sent = camera
+                self.send("camera", camera=camera)
 
     def request(self, data: dict) -> VocabularyRequest:
         self.requests += 1

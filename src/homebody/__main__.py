@@ -128,7 +128,7 @@ def live_monitor(settings, recorder, ui):
     from homebody.monitor.monitor import Monitor
     from homebody.monitor.vocabulary import VocabularyModel
     return Monitor(settings.monitor, VocabularyModel(settings.monitor), OpenAiDecisions(settings.monitor),
-                   sink=recorder.event, on_update=ui.monitor_feed(settings.monitor) if ui is not None else None)
+                   sink=recorder.event, on_update=ui.monitor_update if ui is not None else None)
 
 
 def robot_profile(root, settings):
@@ -161,7 +161,8 @@ def run(args, settings, output):
                          scene_name=task_scene.get("name", "Simulation"),
                          model_name=model_label(settings.agent),
                          topdown_settings=settings.topdown, render_in_background=True,
-                         places=Places.from_scene(args.scene, task_scene.get("name", "")))
+                         places=Places.from_scene(args.scene, task_scene.get("name", "")),
+                         monitor=settings.monitor if settings.monitor.enabled else None)
         backend = MujocoBackend(args.root, settings, scene=args.scene, spawns=args.spawns)
         scene_update = None
         if ui is not None:

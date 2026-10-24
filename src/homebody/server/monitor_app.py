@@ -1,7 +1,7 @@
-"""The monitor app (homebody monitor --config FILE): a console and the monitor on this machine, over the harnesses and
-simulation servers a config names. It watches every server's status, takes camera frames straight from the active
-simulation server's stream (the live view and the monitor's frames), and runs a scenario by attaching its harness to
-its simulation server and submitting its task."""
+"""The monitor app (homebody monitor --config FILE): a dashboard and the monitor on this machine, over the harnesses
+and simulation servers a config names. It watches every server's status (the dashboard's Servers list), takes camera
+frames straight from the active simulation server's stream (the dashboard's views and the monitor's frames), and runs
+a scenario by attaching its harness to its simulation server and submitting its task."""
 import threading
 import time
 from pathlib import Path
@@ -9,14 +9,14 @@ from pathlib import Path
 from homebody.server.client import RemoteControls
 from homebody.server.config import load
 from homebody.server.watch import SimVideo, Watcher, harness_status
+from homebody.ui.servers import server_rows
 
 ATTACH_WAIT_S = 240.0  # a harness rebuilding its session on another server: settings, models, the first frames
-CAMERAS = {"robot": "ego", "observer": "observer", "hand": "right_wrist"}  # the console's view -> the stream's camera
-VIEW_PERIOD_S = 0.1  # the live view is redrawn at most this often
+VIEWS = {"ego": "robot", "observer": "observer", "right_wrist": "hand"}  # the stream's camera -> the dashboard's view
 
 
 class MonitorControls(RemoteControls):
-    """The console's buttons, sent to whichever harness the app is connected to; a scenario runs through the app."""
+    """The dashboard's buttons, sent to whichever harness the app is connected to."""
 
     def __init__(self, app):
         self.app = app
@@ -25,8 +25,10 @@ class MonitorControls(RemoteControls):
     def client(self):
         return self.app.client
 
-    def preset(self, name: str, text: str = ""):
-        self.app.run_scenario_soon(name, text)
+    def _send(self, kind, **fields):
+        if self.client is None:
+            raise RuntimeError("no harness connected; run a scenario first")
+        self.client.send(kind, **fields)
 
 
 class MonitorApp:
@@ -43,7 +45,7 @@ class MonitorApp:
         self.client, self.harness, self.sim = None, None, None
         self.running = threading.Lock()  # one scenario at a time
         self.message = ""
-        self._last_view = 0.0
+        self.statuses: dict = {}
         self._last_shot = float("-inf")
 
     # --- the active harness ---
@@ -132,26 +134,42 @@ class MonitorApp:
 
     # --- frames from the simulation server ---
     def on_frame(self, frame: dict):
-        """A camera frame from the active server's stream: the live view (the console's camera choice) and, for the
-        robot's own camera, the monitor's frames."""
+        """A camera frame from the active server's stream: the dashboard's view of that camera and, for the robot's
+        own camera, the monitor's frames."""
         camera, rgb, sim_time = frame["camera"], frame["rgb"], float(frame["stamp"]["sim_time_s"])
         if camera == "ego" and self.monitor is not None and self.monitor.capture_due(sim_time):
             self.monitor.capture(rgb, sim_time)
-        console = self.console
-        if getattr(console, "replaying", False) or camera != CAMERAS.get(console.camera, "ego"):
-            return
-        now = time.monotonic()
-        if now - self._last_view < VIEW_PERIOD_S:
-            return
-        self._last_view = now
-        console.ego.image = rgb
-        console.ego.label = f"{self.sim.name if self.sim else 'Simulation'}: {camera}"
+        view = VIEWS.get(camera)
+        if view is not None:
+            label = f"{self.sim.name if self.sim else 'Simulation'}: {camera}"
+            self.console.remote_frame(view, rgb, {"sim": sim_time, "label": label})
 
-    # --- the Servers panel ---
+    # --- the dashboard's Servers list and scenarios ---
+    def attach(self, dashboard):
+        """DASHBOARD shows this app's servers and scenarios and runs its commands."""
+        dashboard.extras.update(servers=self.server_rows, scenarios=self.scenarios)
+        dashboard.handlers.update(run_scenario=self._run_command, refresh_config=self._refresh_command)
+
+    def server_rows(self) -> list[dict]:
+        return server_rows(self.config, self.statuses, self.harness, self.sim.name if self.sim else None)
+
+    def _run_command(self, request: dict) -> dict:
+        name, text = request.get("name"), request.get("text", "")
+        if not isinstance(name, str) or name not in self.config.scenarios:
+            return {"ok": False, "message": "Choose a scenario from the list."}
+        self.run_scenario_soon(name, text if isinstance(text, str) else "")
+        return {"ok": True, "message": f"Starting {name}…"}
+
+    def _refresh_command(self, request: dict) -> dict:
+        message = self.refresh_config()
+        self.statuses = self.watcher.refresh()
+        return {"ok": not message.startswith("Config not"), "message": message}
+
     def _statuses(self, statuses):
-        panel = getattr(self, "panel", None)
-        if panel is not None:
-            panel.draw(statuses)
+        self.statuses = statuses
+        changed = getattr(getattr(self.console, "hub", None), "changed", None)
+        if changed is not None:
+            changed()
 
     def refresh_config(self) -> str:
         """Read the config again: new servers are watched, removed ones dropped; a bad config changes nothing."""
@@ -161,7 +179,6 @@ class MonitorApp:
             return f"Config not reloaded: {error}"
         self.config = config
         self.watcher.use(config)
-        self.console.set_presets(self.scenarios(), self.sim.name if self.sim else "")
         if self.harness not in config.harnesses and self.client is not None:
             self.client.close()
             self.client, self.harness = None, None

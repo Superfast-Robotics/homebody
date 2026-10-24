@@ -119,6 +119,7 @@ def run_scene(args, target, task: str | None, output, *, controls, ui, monitor, 
         session = Session(backend, make(settings.agent), settings, recorder, controls, arms=arms,
                           jaw_samples=calibration["jaw_samples"], ui=ui, real_time=True,
                           semantic_context=semantic_prior(scene), **({"monitor": monitor} if monitor else {}))
+        ui.session = session  # read on the session thread only: its task, plan and hands go with each status
         if monitor is not None:
             monitor.root, monitor.sink = recorder.path, recorder.event
         server.attach(recorder.path, scene, recorder.event, sim=backend if remote else None)
@@ -140,14 +141,12 @@ def run_scene(args, target, task: str | None, output, *, controls, ui, monitor, 
 
 
 def connect(args, settings, output) -> int:
-    """A console (and, with [monitor] enabled, the monitor) on this machine, driving a harness server."""
+    """A dashboard (and, with [monitor] enabled, the monitor) on this machine, driving a harness server."""
     from homebody.monitor.decision import OpenAiDecisions
     from homebody.monitor.monitor import Monitor
     from homebody.monitor.vocabulary import VocabularyModel
-    from homebody.rollout.cli import models
     from homebody.server.client import HarnessClient, RemoteControls
-    from homebody.ui.console import Console
-    from homebody.ui.rollouts import RolloutsPanel
+    from homebody.ui.dashboard import Dashboard
 
     token_file = Path(args.token_file or settings.server.token_file).expanduser()
     if not token_file.is_file():
@@ -155,18 +154,19 @@ def connect(args, settings, output) -> int:
               file=sys.stderr)
         return 2
     client = HarnessClient(args.url, token_file.read_text().strip(), folder=output / "remote")
-    console = Console(RemoteControls(client), host=args.host, port=args.port, scene_name="Harness",
-                      monitor=replace(settings.monitor, enabled=True))
+    controls = RemoteControls(client)
+    console = Dashboard(controls, host=args.host, port=args.port, scene_name="Harness",
+                        monitor=settings.monitor if settings.monitor.enabled else None)
+    console.extras["scenarios"] = lambda: client.presets
+    console.handlers["run_scenario"] = lambda request: run_preset(controls, request)
     client.console = console
     if settings.monitor.enabled:
         client.monitor = Monitor(settings.monitor, VocabularyModel(settings.monitor),
                                  OpenAiDecisions(settings.monitor), sink=client.monitor_event,
                                  on_update=client.monitor_updated)
-    RolloutsPanel(console, runs=output, imported=output / "imported", settings=settings,
-                  models=lambda: models(settings))
     try:
         client.connect()
-        print(f"Console: http://{console.server.get_host()}:{console.server.get_port()} -> {args.url} "
+        print(f"Dashboard: {console.url} -> {args.url} "
               f"({client.role}{'' if client.monitor else ', no monitor: [monitor] enabled = false'})")
         client.closed.wait()
         print("The harness closed the connection.", file=sys.stderr)
@@ -183,23 +183,29 @@ def connect(args, settings, output) -> int:
         console.close()
 
 
+def run_preset(controls, request: dict) -> dict:
+    """The dashboard's Run scenario on a harness's own presets."""
+    name, text = request.get("name"), request.get("text", "")
+    if not isinstance(name, str) or not name:
+        return {"ok": False, "message": "Choose a scenario from the list."}
+    controls.preset(name, text if isinstance(text, str) else "")
+    return {"ok": True, "message": f"Starting {name}…"}
+
+
 def monitor(args, settings, output) -> int:
-    """The monitor app: a console and the monitor here, over the harnesses and simulation servers --config names."""
+    """The monitor app: a dashboard and the monitor here, over the harnesses and simulation servers --config names."""
     from homebody.monitor.decision import OpenAiDecisions
     from homebody.monitor.monitor import Monitor
     from homebody.monitor.vocabulary import VocabularyModel
-    from homebody.rollout.cli import models
     from homebody.server.monitor_app import MonitorApp, MonitorControls
-    from homebody.ui.console import Console
-    from homebody.ui.rollouts import RolloutsPanel
-    from homebody.ui.servers import ServersPanel
+    from homebody.ui.dashboard import Dashboard
 
     if not args.config:
         print("homebody monitor needs --config FILE (the harnesses, simulation servers and scenarios)", file=sys.stderr)
         return 2
     controls = MonitorControls(None)
-    console = Console(controls, host=args.host, port=args.port, scene_name="Monitor",
-                      monitor=replace(settings.monitor, enabled=True))
+    console = Dashboard(controls, host=args.host, port=args.port, scene_name="Monitor app",
+                        monitor=settings.monitor if settings.monitor.enabled else None)
     watch = None
     if settings.monitor.enabled:
         watch = Monitor(settings.monitor, VocabularyModel(settings.monitor), OpenAiDecisions(settings.monitor),
@@ -211,10 +217,7 @@ def monitor(args, settings, output) -> int:
         console.close()
         return 2
     controls.app = app
-    app.panel = ServersPanel(app)
-    console.set_presets(app.scenarios())
-    RolloutsPanel(console, runs=output, imported=output / "imported", settings=settings,
-                  models=lambda: models(settings))
+    app.attach(console)
     app.watcher.start()
     app.video.start()
     first = next(iter(app.config.harnesses), None)
@@ -223,7 +226,7 @@ def monitor(args, settings, output) -> int:
             app.use_harness(first)
         except (OSError, ConnectionError, ValueError) as error:
             app.say("Ready", f"Harness {first} is not reachable yet: {error}")
-    print(f"Monitor: http://{console.server.get_host()}:{console.server.get_port()} "
+    print(f"Monitor app: {console.url} "
           f"({len(app.config.harnesses)} harnesses, {len(app.config.sims)} simulation servers, "
           f"{len(app.config.scenarios)} scenarios from {args.config})", flush=True)
     try:

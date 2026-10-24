@@ -52,11 +52,14 @@
         <span class="outcome-badge" id="outcome-badge" role="status" hidden title="Task outcome, from the plan's verified goals"><span class="mark"></span><span class="outcome-text"></span></span>
         <span class="elapsed" id="elapsed" title="Time since the task started"></span>
         <button class="alert-chip" id="alert-chip" type="button" hidden></button>
+        <button class="servers-chip" id="servers-chip" type="button" hidden aria-label="Servers"></button>
       </div>
       <p class="summary" id="summary">Connecting to the session…</p>
     </div>
     <div class="command-group">
       <form class="command" id="command" autocomplete="off">
+        <label class="visually-hidden" for="scenario">Scenario</label>
+        <select class="scenario-select" id="scenario" hidden title="A scenario fills the instruction and runs on its harness and simulation server"></select>
         <label class="visually-hidden" for="instruction">Instruction for the agent</label>
         <div class="command-input">
           <svg class="icon accent"><use href="#i-sparkle"/></svg>

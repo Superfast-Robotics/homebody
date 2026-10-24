@@ -1,28 +1,17 @@
-"""The monitor app with fake harnesses and simulation servers: the Servers rows, a scenario run step by step (and
-each step's refusal), and frames from the simulation server's stream reaching the live view and the monitor."""
+"""The monitor app with fake harnesses and simulation servers over a real dashboard: the Servers rows, a scenario
+run step by step (and each step's refusal), and frames from the simulation server's stream reaching the dashboard's
+views and the monitor."""
 import types
 
 import numpy as np
+from fakes import fake_dashboard
 from test_monitor_config import CONFIG
 
-from homebody.server.monitor_app import MonitorApp
+from homebody.server.monitor_app import MonitorApp, MonitorControls
 from homebody.server.watch import Status
-from homebody.ui.servers import servers_html
+from homebody.ui.servers import server_rows
 
 NAME = "Warehouse: one jam jar into the cart"
-
-
-class Console:
-    def __init__(self):
-        self.updates, self.camera, self.replaying = [], "robot", False
-        self.ego = types.SimpleNamespace(image=None, label="")
-        self.presets = None
-
-    def update(self, status, text=""):
-        self.updates.append((status, text))
-
-    def set_presets(self, presets, scene=""):
-        self.presets = presets
 
 
 class Watcher:
@@ -51,9 +40,13 @@ def app(tmp_path, states, sim=None, monitor=None):
     state_iter = iter(states)
     video = types.SimpleNamespace(watched=None)
     video.watch = lambda endpoint: setattr(video, "watched", endpoint)
-    made = MonitorApp(path, console=Console(), monitor=monitor, make_client=lambda harness: client,
+    controls = MonitorControls(None)
+    dashboard = fake_dashboard(controls=controls)
+    made = MonitorApp(path, console=dashboard, monitor=monitor, make_client=lambda harness: client,
                       harness_state=lambda harness: next(state_iter),
                       watcher=Watcher({("sim", "warehouse_cart"): sim or up()}), video=video)
+    controls.app = made
+    made.attach(dashboard)
     return made, sent, video
 
 
@@ -67,7 +60,7 @@ def test_a_scenario_attaches_its_harness_to_its_server_then_sends_its_task(tmp_p
     assert sent[0] == ("attach_sim", {"target": made.config.sims["warehouse_cart"].target()})
     assert sent[1] == ("submit", {"text": "Pick one jam jar, edited."})
     assert video.watched == "tcp://127.0.0.1:15721" and made.harness == "demo_with_monitor"
-    assert "task sent" in made.console.updates[-1][1]
+    assert "task sent" in made.message
 
 
 def test_an_attached_harness_is_not_reattached_and_a_busy_one_gets_no_task(tmp_path):
@@ -75,41 +68,51 @@ def test_an_attached_harness_is_not_reattached_and_a_busy_one_gets_no_task(tmp_p
     assert made.run_scenario(NAME) and [kind for kind, _ in sent] == ["submit"]
     made, sent, _ = app(tmp_path, [{"status": "Executing", "sim": {"endpoint": "tcp://127.0.0.1:5720", "connected": True}}])
     assert not made.run_scenario(NAME) and sent == []
-    assert "running a task" in made.console.updates[-1][1]
+    assert "running a task" in made.message
 
 
 def test_a_scenario_stops_with_its_reason_when_the_server_is_down_or_has_no_controller(tmp_path):
     down = Status("warehouse_cart", "sim", False, error="TimeoutError: describe timed out")
     made, sent, _ = app(tmp_path, [], sim=down)
     assert not made.run_scenario(NAME) and sent == []
-    assert "does not answer" in made.console.updates[-1][1] and "timed out" in made.console.updates[-1][1]
+    assert "does not answer" in made.message and "timed out" in made.message
     made, sent, _ = app(tmp_path, [], sim=up(controller=False))
-    assert not made.run_scenario(NAME) and "boom" in made.console.updates[-1][1]
-    assert not made.run_scenario("nonsense") and "no scenario" in made.console.updates[-1][1]
+    assert not made.run_scenario(NAME) and "boom" in made.message
+    assert not made.run_scenario("nonsense") and "no scenario" in made.message
 
 
-def test_stream_frames_feed_the_chosen_live_view_and_the_monitors_frames(tmp_path):
+def test_stream_frames_feed_the_watched_view_and_the_monitors_frames(tmp_path):
     captured = []
     monitor = types.SimpleNamespace(capture_due=lambda t: True, capture=lambda rgb, t: captured.append(t))
     made, _, _ = app(tmp_path, [], monitor=monitor)
-    rgb = np.zeros((4, 4, 3), np.uint8)
-    made.on_frame({"camera": "ego", "stamp": {"sim_time_s": 2.5}, "rgb": rgb})
-    assert captured == [2.5] and made.console.ego.image is rgb
-    made.console.camera = "observer"
-    made._last_view = 0.0
+    hub = made.console.hub
+    made.on_frame({"camera": "ego", "stamp": {"sim_time_s": 2.5}, "rgb": np.zeros((4, 4, 3), np.uint8)})
+    assert captured == [2.5] and [f[0] for f in hub.frames] == ["robot"]
+    hub.views = {"observer"}  # the page watches the observer: an ego frame only feeds the monitor and the history
     made.on_frame({"camera": "ego", "stamp": {"sim_time_s": 2.6}, "rgb": np.ones((4, 4, 3), np.uint8)})
-    assert made.console.ego.image is rgb  # the live view shows the observer, so an ego frame only feeds the monitor
     made.on_frame({"camera": "observer", "stamp": {"sim_time_s": 2.7}, "rgb": np.full((4, 4, 3), 7, np.uint8)})
-    assert made.console.ego.image[0, 0, 0] == 7 and captured == [2.5, 2.6]
+    assert [f[0] for f in hub.frames] == ["robot", "observer"] and captured == [2.5, 2.6]
+    assert hub.frames[-1][1]["label"] == "Simulation: observer"  # no scenario ran yet: no server named
 
 
 def test_a_refreshed_config_offers_its_scenarios_and_a_bad_one_changes_nothing(tmp_path):
     made, _, _ = app(tmp_path, [])
     made.config_path.write_text(CONFIG.replace("one jam jar into the cart", "two jam jars into the cart"))
     assert "reloaded" in made.refresh_config()
-    assert [p["name"] for p in made.console.presets] == ["Warehouse: two jam jars into the cart"]
+    assert [p["name"] for p in made.console._snapshot()["scenarios"]] == ["Warehouse: two jam jars into the cart"]
     made.config_path.write_text("[[harness]]\nname = 1\n")
     assert "not reloaded" in made.refresh_config() and "Warehouse: two jam jars into the cart" in made.config.scenarios
+
+
+def test_the_page_runs_a_scenario_and_refuses_one_the_config_lacks(tmp_path):
+    made, _, _ = app(tmp_path, [])
+    started = []
+    made.run_scenario_soon = lambda name, text: started.append((name, text))
+    assert made.console.command({"type": "run_scenario", "name": NAME, "text": "edited"})["ok"]
+    assert started == [(NAME, "edited")]
+    assert not made.console.command({"type": "run_scenario", "name": "nonsense"})["ok"]
+    reply = made.console.command({"type": "submit", "text": "pick"})  # no harness connected yet
+    assert not reply["ok"]
 
 
 def test_the_servers_rows_say_who_answers_what_runs_where_and_the_harness_link():
@@ -128,8 +131,11 @@ def test_the_servers_rows_say_who_answers_what_runs_where_and_the_harness_link()
                                                   {"profile": "homebody-warehouse_cart", "controller": {"running": True},
                                                    "stream": "tcp://127.0.0.1:5721", "overshoot": {"left_ankle_roll_joint": 0.04}},
                                                   checked=100.0)}
-    html = servers_html(config, statuses, "demo_with_monitor", "warehouse_cart", now=101.0)
-    assert "lost its simulation server tcp://127.0.0.1:5720" in html and "does not answer" in html
-    assert "controller running" in html and "video on" in html and "left_ankle_roll_joint 0.040" in html
-    assert "kitchen_baskets" in html and "not checked yet" in html
-    assert "no status for" in servers_html(config, statuses, now=200.0)  # a stalled watcher shows as down
+    harness, cart, kitchen = server_rows(config, statuses, "demo_with_monitor", "warehouse_cart", now=101.0)
+    assert harness["health"] == "down" and "lost its simulation server tcp://127.0.0.1:5720" in harness["detail"]
+    assert harness["error"] == "does not answer" and harness["active"]
+    assert cart["health"] == "up" and "controller running" in cart["detail"] and "video on" in cart["detail"]
+    assert "left_ankle_roll_joint 0.040" in cart["detail"]
+    assert kitchen["name"] == "kitchen_baskets" and kitchen["detail"] == "not checked yet"
+    stalled = server_rows(config, statuses, now=200.0)[0]  # a stalled watcher shows as down
+    assert stalled["health"] == "down" and "no status for" in stalled["error"]
