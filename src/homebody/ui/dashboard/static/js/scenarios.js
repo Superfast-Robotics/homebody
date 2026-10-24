@@ -22,7 +22,9 @@ export class Scenarios {
   constructor(app) {
     this.app = app;
     this.host = $("scenario");
-    this.select = new Select(this.host, { label: "Scenario", onChange: (id) => this.choose(id) });
+    this.select = new Select(this.host, { label: "Scenario", onChange: (id) => this.choose(id),
+      trigger: (option) => (option.id === CUSTOM ? "Custom" : option.label) });  // a compact prefix in the instruction bar
+    this.host.dataset.menuWidth = "460";
     this.select.value = CUSTOM;
   }
 

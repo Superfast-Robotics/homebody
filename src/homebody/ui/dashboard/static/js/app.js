@@ -112,7 +112,6 @@ class App {
 
   tick() {
     if (!this.state) return;
-    this.header.tick();
     this.camera.renderFreshness();
     this.info.renderStatus(this.state);
     this.renderMonitor(this.state);

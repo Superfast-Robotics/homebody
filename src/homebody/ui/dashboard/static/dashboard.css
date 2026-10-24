@@ -41,13 +41,10 @@ button:disabled { cursor: not-allowed; }
   min-height: var(--header-height); display: flex; align-items: center; gap: 24px;
   padding: 10px 0; border-bottom: 1px solid var(--border);
 }
-.task-summary { min-width: 0; flex: 1 1 320px; }
+.task-summary { min-width: 0; flex: 0 1 520px; }
 .title-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 h1 { font-size: var(--size-title); font-weight: var(--weight-title); letter-spacing: -0.01em; }
 .summary { color: var(--text-secondary); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.elapsed { font-variant-numeric: tabular-nums; color: var(--text-secondary); background: var(--surface-2);
-  border-radius: 999px; padding: 2px 10px; font-size: var(--size-meta); }
-.elapsed:empty { display: none; }
 .pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px;
   font-size: var(--size-meta); font-weight: var(--weight-strong); background: var(--surface-2); color: var(--text-secondary); }
 .pill .dot, .live-badge .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--neutral); }
@@ -61,22 +58,26 @@ h1 { font-size: var(--size-title); font-weight: var(--weight-title); letter-spac
 .tone-danger .dot { background: var(--danger); }
 .alert-chip { border: 1px solid var(--state-warning-edge); background: var(--warning-light); color: var(--warning-text);
   border-radius: 999px; padding: 2px 10px; font-size: var(--size-meta); font-weight: var(--weight-strong); }
-.outcome-badge { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: var(--size-meta);
-  font-weight: var(--weight-strong); background: var(--surface-2); color: var(--text-secondary); border: 1px solid var(--border); }
-.outcome-badge .mark { font-size: var(--size-small); }
-.outcome-badge.success { color: var(--success); border-color: var(--state-success-edge); background: var(--success-light); }
-.outcome-badge.partial, .outcome-badge.unverified { color: var(--warning); border-color: var(--state-warning-edge); background: var(--warning-light); }
-.outcome-badge.failed { color: var(--danger); border-color: var(--state-error-edge); background: var(--danger-light); }
 .alert-chip.critical { border-color: var(--state-error-edge); background: var(--danger-light); color: var(--danger); }
 .servers-chip { border: 1px solid var(--border); background: var(--surface-2); color: var(--text-secondary);
   border-radius: 999px; padding: 2px 10px; font-size: var(--size-meta); font-weight: var(--weight-strong); }
 .servers-chip.success { color: var(--success); border-color: var(--state-success-edge); }
 .servers-chip.warning { color: var(--warning-text); border-color: var(--state-warning-edge); background: var(--warning-light); }
 .servers-chip.danger { color: var(--danger); border-color: var(--state-error-edge); background: var(--danger-light); }
-.scenario-select { margin-bottom: 6px; }
+/* the scenario choice sits inside the instruction bar, before the text: one bar for both */
+.command-input > .scenario-select { flex: 0 1 160px; min-width: 110px; align-self: stretch; display: flex; align-items: center;
+  margin: -5px 2px -5px -12px; padding-right: 6px; border-right: 1px solid var(--border); }
+.command-input > .scenario-select[hidden] { display: none; }
+.command-input > .scenario-select .dropdown-trigger { min-height: 0; height: 100%; border: 0; border-radius: var(--radius-small) 0 0 var(--radius-small);
+  background: transparent; padding: 0 10px 0 12px; font-size: var(--size-meta); color: var(--text-secondary); }
+.command-input > .scenario-select .dropdown-trigger:hover { background: rgba(255, 255, 255, 0.04); color: var(--text-primary); }
+.command-input > .scenario-select .dropdown-trigger[aria-expanded="true"] { box-shadow: none; color: var(--text-primary); }
+.command-input > .scenario-select .dropdown-trigger:focus-visible { box-shadow: inset 0 0 0 2px #A78BFA; }
+.command-input { align-items: center; }
+.command-input > .icon { margin-bottom: 0; }
 
 .command-group { display: flex; align-items: flex-start; gap: var(--gap); flex: 1 1 760px; justify-content: flex-end; min-width: 0; }
-.command { flex: 1 1 420px; max-width: 520px; min-width: 240px; position: relative; }
+.command { flex: 1 1 480px; max-width: 680px; min-width: 260px; position: relative; }
 .command-input { display: flex; align-items: flex-end; gap: 8px; min-height: 44px; padding: 5px 5px 5px 12px;
   background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-small); }
 .command-input:focus-within { border-color: var(--primary); }

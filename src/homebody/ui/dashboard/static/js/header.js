@@ -1,6 +1,6 @@
-// The header: task summary, status, elapsed time, the agent instruction input and the primary action.
+// The header: task summary, status, the agent instruction input (with the scenario choice) and the primary action.
 import { confirmAction } from "./controls.js";
-import { $, elapsed, setText, statusTone, toggleClass } from "./dom.js";
+import { $, setText, statusTone, toggleClass } from "./dom.js";
 import { primaryAction } from "./model.js";
 
 const STATES = {
@@ -16,10 +16,6 @@ const STATES = {
 const LIFECYCLE = {
   Loading: "", Ready: "", Planning: "running", Running: "running", Stopping: "warning", Paused: "warning",
   Resetting: "warning", Finished: "", Interrupted: "warning", Error: "danger",
-};
-const OUTCOME = {
-  success: ["success", "✓"], success_with_recoveries: ["success", "✓"], partial: ["partial", "◐"],
-  unverified: ["unverified", "?"], failed: ["failed", "✗"], cancelled: ["", "–"],
 };
 const BUSY_HINT = "The agent is working on a task. Stop it to give a new instruction.";
 const NOTE_HINT = "Message the live agent: applied at its next decision, never to a recorded plan (Enter).";
@@ -133,14 +129,12 @@ export class Header {
     setText(pill.querySelector(".pill-text"), this.app.link.connected ? life : "Disconnected");
     pill.title = `Executor: ${life} (session status: ${statusTone(state.status)[0]})`;
     if (!this.app.link.connected) pill.className = "pill tone-danger";
-    this.renderOutcome(state.outcome);
     const ready = !state.task && state.controls.accepting && state.initial_task;
     setText($("summary"), state.task?.text || (ready ? `Ready to start: ${state.initial_task}` : state.text || "Ready for a task."));
     $("summary").title = state.task?.text || state.initial_task || "";
     this.renderControls(state);
     this.renderInstruction(state.instructions.at(-1));
     this.renderAlerts(state);
-    this.tick(state);
   }
 
   renderInstruction(latest) {
@@ -150,30 +144,11 @@ export class Header {
     this.show(kind, latest.reason && latest.state !== "running" ? `${text} ${latest.reason}` : text);
   }
 
-  /** The task's outcome, shown only once the task has ended: never "done" as a stand-in for success. */
-  renderOutcome(outcome) {
-    const badge = $("outcome-badge");
-    const shown = outcome && outcome.state !== "not_evaluated";
-    badge.hidden = !shown;
-    if (!shown) return;
-    const [kind, mark] = OUTCOME[outcome.state] || ["", "?"];
-    badge.className = `outcome-badge ${kind}`;
-    setText(badge.querySelector(".mark"), mark);
-    setText(badge.querySelector(".outcome-text"), outcome.label);
-    badge.title = `Task outcome: ${outcome.reason}`;
-  }
-
   renderAlerts(state) {
     const open = state.incidents.filter((i) => i.alert && i.state !== "resolved");
     const chip = $("alert-chip");
     chip.hidden = open.length === 0;
     toggleClass(chip, "critical", open.some((i) => i.severity === "critical" && i.state === "active"));
     setText(chip, `${open.length} unresolved alert${open.length === 1 ? "" : "s"}`);
-  }
-
-  /** The task clock: runs while the task does, then holds its final duration. */
-  tick(state = this.app.state) {
-    const task = state?.task;
-    setText($("elapsed"), task ? elapsed((task.end ?? this.app.link.now()) - task.start) : "");
   }
 }

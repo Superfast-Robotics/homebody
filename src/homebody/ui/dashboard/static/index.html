@@ -53,10 +53,8 @@
       <div class="title-row">
         <h1 id="title">HomeBody</h1>
         <span class="pill" id="status" role="status" aria-live="polite" title="Executor lifecycle"><span class="dot"></span><span class="pill-text">Connecting</span></span>
-        <span class="outcome-badge" id="outcome-badge" role="status" hidden title="Task outcome, from the plan's verified goals"><span class="mark"></span><span class="outcome-text"></span></span>
-        <span class="elapsed" id="elapsed" title="Time since the task started"></span>
-        <button class="alert-chip" id="alert-chip" type="button" hidden></button>
         <button class="servers-chip" id="servers-chip" type="button" hidden aria-haspopup="dialog" aria-expanded="false" aria-controls="session-panel"></button>
+        <button class="alert-chip" id="alert-chip" type="button" hidden></button>
       </div>
       <p class="summary" id="summary">Connecting to the session…</p>
       <section class="session-panel" id="session-panel" role="dialog" aria-labelledby="session-title" hidden>
@@ -85,9 +83,9 @@
     </div>
     <div class="command-group">
       <form class="command" id="command" autocomplete="off">
-        <div class="scenario-select" id="scenario" hidden title="A scenario fills the instruction and runs on its harness and simulation server"></div>
         <label class="visually-hidden" for="instruction">Instruction for the agent</label>
         <div class="command-input">
+          <div class="scenario-select" id="scenario" hidden title="A scenario fills the instruction and runs on its harness and simulation server"></div>
           <svg class="icon accent"><use href="#i-sparkle"/></svg>
           <textarea id="instruction" rows="1" maxlength="4000" placeholder="Tell the agent what to do..."></textarea>
           <button class="send" id="send" type="submit" aria-label="Send instruction" title="Send (Enter)" disabled><svg class="icon"><use href="#i-send"/></svg></button>
