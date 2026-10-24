@@ -222,9 +222,7 @@ class MonitorApp:
         simulation server that harness reports being attached to), the harness's lifecycle, an Apply in progress or
         its failure, the last config refresh, and warnings for an active server the config no longer names."""
         harness = self.harness if self.client is not None and not self.client.closed.is_set() else None
-        status = self.statuses.get(("harness", harness)) if harness else None
-        link = ((status.detail or {}).get("sim") or {}) if status is not None and status.connected else {}
-        confirmed = next((name for name, sim in self.config.sims.items() if sim.endpoint == link.get("endpoint")), None)
+        confirmed = self.confirmed_sim()
         sim = confirmed or (self.sim.name if self.sim is not None else None)
         warnings = [f"The active {kind} {name} is no longer in the configuration; it stays active until you switch"
                     for kind, name, names in (("harness", harness, self.config.harnesses), ("simulation server", sim, self.config.sims))
@@ -331,8 +329,25 @@ class MonitorApp:
         threading.Thread(target=self._apply_held, args=(harness, sim), name="session", daemon=True).start()
         return {"ok": True, "message": f"Applying {harness} → {sim}…"}
 
+    def confirmed_sim(self) -> str | None:
+        """The configured simulation server the harness this app drives reports being attached to, or None."""
+        harness = self.harness if self.client is not None and not self.client.closed.is_set() else None
+        status = self.statuses.get(("harness", harness)) if harness else None
+        link = ((status.detail or {}).get("sim") or {}) if status is not None and status.connected else {}
+        return next((name for name, sim in self.config.sims.items() if sim.endpoint == link.get("endpoint")), None)
+
+    def follow_sim(self):
+        """The video (and so the monitor's frames) on the server the driven harness is attached to: also when no
+        Apply or scenario bound it here, e.g. after this app restarted beside a harness already attached."""
+        confirmed = self.confirmed_sim()
+        if confirmed is None or self.applying or (self.sim is not None and self.sim.name == confirmed):
+            return
+        self.sim = self.config.sims[confirmed]
+        self.video.watch(self.sim.local_stream)
+
     def _statuses(self, statuses):
         self.statuses = statuses
+        self.follow_sim()
         changed = getattr(getattr(self.console, "hub", None), "changed", None)
         if changed is not None:
             changed()

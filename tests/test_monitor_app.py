@@ -274,3 +274,14 @@ def test_a_harness_whose_session_faulted_on_its_server_is_attached_again(tmp_pat
     made.wait_attached = lambda harness, sim: MonitorApp.wait_attached(made, harness, sim, timeout=5, poll=0)
     assert made.apply_session("demo_with_monitor", "warehouse_cart")
     assert [kind for kind, _ in sent] == ["attach_sim"] and video.watched == "tcp://127.0.0.1:15721"
+
+
+def test_the_video_follows_the_server_the_driven_harness_is_already_attached_to(tmp_path):
+    made, _, video = app(tmp_path, [])
+    made.harness = "demo_with_monitor"
+    made.client = types.SimpleNamespace(closed=types.SimpleNamespace(is_set=lambda: False), close=lambda: None)
+    assert video.watched is None  # this app just started: nothing bound yet
+    attached = {"status": "Ready", "sim": {"endpoint": "tcp://127.0.0.1:5720", "connected": True}}
+    made._statuses({("harness", "demo_with_monitor"): Status("demo_with_monitor", "harness", True, 1.0, attached)})
+    assert video.watched == "tcp://127.0.0.1:15721" and made.sim.name == "warehouse_cart"
+    assert made.session()["sim"] == "warehouse_cart" and made.session()["sim_confirmed"]
