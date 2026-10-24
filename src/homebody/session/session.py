@@ -536,6 +536,9 @@ class Session:
                                     simulation_advanced=self.backend.time - sim)
 
     def run_task(self, task: str) -> dict:
+        paused = getattr(self.controls, "paused", None)
+        if paused is not None:  # a pause belongs to the task it held (e.g. a console that went away): not this one
+            paused.clear()
         task_dir = self.recorder.start_task(task, self.backend.epoch, skills=list(self.skill_lines()))
         self.skill_calls, self._call = 0, None  # skill calls of this task, numbered as the monitor numbers them
         started_wall, started_sim = time.monotonic(), self.backend.time

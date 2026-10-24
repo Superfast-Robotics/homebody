@@ -1374,3 +1374,19 @@ def test_a_command_given_while_the_robot_settles_after_done_reopens_the_task(bui
     monkeypatch.setattr(session, "settle", operator_speaks_while_settling)
     outcome = session.run_task("Look at the shelf.")
     assert outcome["model_claim"] == "turned to the cart" and "turn to the cart" in provider.prompts[1]
+
+
+def test_a_pause_left_from_an_earlier_task_does_not_hold_the_next_one(build, monkeypatch):
+    controls = Controls()
+    session = build(Provider([Decision("Finished.", "done", {"summary": "looked"})]),
+                    settings=Settings(agent=Agent(done_settle_seconds=0.)), controls=controls)
+    controls.pause()  # e.g. the commanding console went away during the last task (server.on_disconnect = "pause")
+    held = []
+    def tick():  # held by the stale pause: counted, and released after a few ticks so a regression fails, not hangs
+        if controls.paused.is_set():
+            held.append(1)
+            if len(held) > 3:
+                controls.unpause()
+    monkeypatch.setattr(session, "paused_tick", tick)
+    assert session.run_task("Look at the shelf.")["status"] == "model_done"
+    assert not held and not controls.paused.is_set()
