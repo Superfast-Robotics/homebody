@@ -209,6 +209,12 @@ evaluates with the monitor (the cost is shown before it runs). `homebody rollout
 appears as it ran, and clicking the timeline inspects any moment (camera frame, plan, alerts). Rollouts recorded
 before plans were saved replay without the tree.
 
+**Extract dataset** (in the Automatic Monitoring panel) picks sample types from the session the dashboard holds,
+most valuable first: failure + recovery samples, monitor incidents, human interventions, robot state + actions, task +
+language episodes, and RGB camera clips. Each extraction is a folder under `runs/datasets/` with `manifest.json`, one
+JSON-lines file per type and the camera frames the samples point to, all on one time axis. It is rule-based, from the
+dashboard's own record: joint states, end-effector poses and depth are not captured there yet (the manifest says so).
+
 </details>
 
 <details>

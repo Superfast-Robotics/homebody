@@ -16,6 +16,7 @@ import { Rollouts } from "./rollouts.js";
 import { Scenarios } from "./scenarios.js";
 import { resolveSelection } from "./selection.js";
 import { Select } from "./select.js";
+import { DatasetModal } from "./dataset.js";
 import { SessionPanel } from "./session.js";
 import { Link } from "./socket.js";
 import { Timeline } from "./timeline.js";
@@ -46,6 +47,7 @@ class App {
     this.header = new Header(this);
     this.scenarios = new Scenarios(this);
     this.session = new SessionPanel(this);
+    this.dataset = new DatasetModal(this);
     this.rollouts = new Rollouts(this);
     this.controls = new Controls(this);
     this.camera = new Camera(this);
@@ -77,7 +79,7 @@ class App {
     if (this.selection) { // the same records by identity, with what they say now; the inspected moment stays
       this.selection = { ref: this.selection.ref, ...resolveSelection(state, this.selection.ref, this.timelineEnd().end) };
     }
-    for (const part of [this.header, this.scenarios, this.session, this.controls, this.camera, this.tree, this.logs, this.tools, this.info]) {
+    for (const part of [this.header, this.scenarios, this.session, this.dataset, this.controls, this.camera, this.tree, this.logs, this.tools, this.info]) {
       try {
         part.render(state);
       } catch (error) {

@@ -136,9 +136,12 @@ def live_monitor(settings, recorder, ui):
 
 
 def rollouts(dashboard, settings, output):
-    """The dashboard's Rollouts (export, import, evaluate) over OUTPUT's recorded sessions."""
+    """The dashboard's Rollouts (export, import, evaluate) over OUTPUT's recorded sessions, and its Extract dataset
+    (into OUTPUT/datasets)."""
     from homebody.rollout.app import RolloutsApp
     from homebody.rollout.cli import models
+    from homebody.ui.dashboard import dataset
+    dataset.attach(dashboard, output / "datasets")
     return RolloutsApp(dashboard, runs=output, imported=output / "imported", settings=settings,
                        models=lambda: models(settings))
 

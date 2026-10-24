@@ -4,7 +4,7 @@ Every write takes the lock and replaces records whole; `snapshot` reads one cons
 Times are wall-clock seconds from one clock, so every panel shares one time axis.
 """
 import time
-from collections import OrderedDict
+from collections import OrderedDict, deque
 from dataclasses import asdict, replace
 from itertools import count
 from threading import RLock
@@ -44,6 +44,7 @@ ENDINGS = {
 LOG_LIMIT, TOOL_LIMIT, INSTRUCTION_LIMIT, INCIDENT_LIMIT, TASK_LIMIT = 500, 200, 50, 100, 20
 ANOMALY_GAP = 3.  # s between anomalous readings of one source that still belong to one episode
 KEEP_SECONDS = 600.  # timeline history kept for the expanded view; the main view shows the last 60 s
+ROBOT_TRACE = 4096  # robot state samples kept for dataset extraction (one per change of what the dashboard knows)
 
 
 def bounded(records: OrderedDict, limit: int) -> OrderedDict:
@@ -63,6 +64,7 @@ class Store(PlanTracking, InterventionTracking):
         self.stop_pending = self.reset_pending = False
         self.plan = None  # {"tree", "status", "reasons", "active"} from the session's planner
         self.robot = {}
+        self.robot_trace = deque(maxlen=ROBOT_TRACE)  # (t, status, robot) at each change, for dataset extraction
         self.frame_id = None  # the newest stored camera frame, attached to incidents
         self.version = 0
         self.intervals, self.decisions, self.tools = OrderedDict(), OrderedDict(), OrderedDict()
@@ -87,7 +89,18 @@ class Store(PlanTracking, InterventionTracking):
     def note_robot(self, **values):
         with self.lock:
             self.robot = {**self.robot, **values}
+            self._traced()
             self._touch()
+
+    def _traced(self):
+        """Keep the robot state as it is now, when it changed since the last sample (lock held)."""
+        if not self.robot_trace or self.robot_trace[-1][2] != self.robot:
+            self.robot_trace.append((self.clock(), self.status, dict(self.robot)))
+
+    def robot_samples(self, since=float("-inf")):
+        """The robot state samples from SINCE on: [(t, status, robot)]."""
+        with self.lock:
+            return [sample for sample in self.robot_trace if sample[0] >= since]
 
     def _id(self, prefix):
         return f"{prefix}{next(self._ids)}"
@@ -120,6 +133,7 @@ class Store(PlanTracking, InterventionTracking):
             busy, was_busy = status in BUSY, self.status in BUSY
             if robot:
                 self.robot = {**self.robot, **robot}
+                self._traced()
             if busy and not was_busy:
                 self._task_started(task or self.text)
             self._plan(plan if plan is None or busy else {**plan, "active": None})  # idle: no goal runs

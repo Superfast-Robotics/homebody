@@ -36,6 +36,7 @@
   <symbol id="i-robot" viewBox="0 0 24 24"><rect x="5" y="8" width="14" height="11" rx="3"/><path d="M12 4v4M9 13h.01M15 13h.01M9.5 16.5h5"/></symbol>
   <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/></symbol>
   <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M8 10l4 4 4-4"/></symbol>
+  <symbol id="i-dataset" viewBox="0 0 24 24"><ellipse cx="12" cy="5.5" rx="7" ry="2.5"/><path d="M5 5.5v6c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5v-6"/><path d="M5 11.5v6c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5v-6"/></symbol>
   <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
   <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></symbol>
   <symbol id="i-follow" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/></symbol>
@@ -285,6 +286,7 @@
       </ul>
       </div>
       <span class="window-label"><svg class="icon"><use href="#i-clock"/></svg><span id="window-text">Last 1 min</span></span>
+      <button class="btn small dataset-open" type="button" id="dataset-open" aria-haspopup="dialog" aria-controls="dataset-modal"><svg class="icon"><use href="#i-dataset"/></svg><span>Extract dataset</span></button>
       <button class="btn small" type="button" id="monitor-expand">View details</button>
     </div>
     <ol class="summary-strip" id="summary-strip" aria-label="What happened in this window"></ol>
@@ -316,6 +318,33 @@
   <div class="drawer-body scroll" id="drawer-body"></div>
 </aside>
 
+<dialog class="dataset-modal" id="dataset-modal" aria-labelledby="dataset-title" aria-describedby="dataset-subtitle">
+  <form method="dialog" class="dataset-shell">
+    <header class="dataset-head">
+      <div>
+        <h2 id="dataset-title">Extract dataset samples</h2>
+        <p id="dataset-subtitle">Choose sample types to export from this monitoring session.</p>
+        <p class="dataset-source" id="dataset-source"></p>
+      </div>
+      <button class="btn icon-only small" value="cancel" aria-label="Close"><svg class="icon"><use href="#i-x"/></svg></button>
+    </header>
+    <div class="dataset-cards" id="dataset-cards" role="group" aria-label="Sample types, most valuable first"></div>
+    <div class="dataset-empty" id="dataset-empty" hidden>
+      <strong>No extractable samples</strong>
+      <p>This session does not contain exportable dataset samples yet.</p>
+    </div>
+    <p class="dataset-note">All exported samples keep synchronized timestamps across video, robot state, actions, and monitor events when available.</p>
+    <p class="dataset-result" id="dataset-result" role="status" aria-live="polite"></p>
+    <footer class="dataset-actions">
+      <div class="dataset-bulk">
+        <button type="button" class="link-btn" id="dataset-all">Select all</button>
+        <button type="button" class="link-btn" id="dataset-clear">Clear</button>
+      </div>
+      <button class="btn" value="cancel">Close</button>
+      <button type="button" class="btn primary" id="dataset-extract">Extract samples</button>
+    </footer>
+  </form>
+</dialog>
 <dialog class="confirm" id="confirm">
   <form method="dialog">
     <h2 id="confirm-title"></h2>
