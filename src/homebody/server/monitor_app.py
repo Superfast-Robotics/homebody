@@ -12,6 +12,7 @@ from homebody.server.watch import SimVideo, Watcher, harness_status
 from homebody.ui.servers import server_rows
 
 ATTACH_WAIT_S = 240.0  # a harness rebuilding its session on another server: settings, models, the first frames
+FAULTED = ("Error", "Reset required")  # a harness session that needs a new attach before it runs again
 BUSY = ("Thinking", "Executing", "Paused", "Stopping")  # a harness with a task: never switched under it
 VIEWS = {"ego": "robot", "observer": "observer", "right_wrist": "hand"}  # the stream's camera -> the dashboard's view
 
@@ -101,8 +102,8 @@ class MonitorApp:
         client = self.use_harness(harness_name)
         harness = self.config.harnesses[harness_name]
         state = self.harness_state(harness) or {}
-        attached = (state.get("sim") or {}).get("endpoint") == sim.endpoint
-        if not attached:
+        attached = (state.get("sim") or {}).get("endpoint") == sim.endpoint and state.get("status") not in FAULTED
+        if not attached:  # a harness whose session faulted on this server attaches again: that builds a new session
             if state.get("status") in BUSY:
                 raise RuntimeError(f"{harness_name} is running a task on another server; stop it first")
             self.say("Loading", f"{label}: attaching {harness_name} to {sim.name}…")
@@ -235,7 +236,7 @@ class MonitorApp:
         while time.monotonic() < deadline:
             state = self.harness_state(harness) or {}
             link = state.get("sim") or {}
-            if link.get("endpoint") == sim.endpoint and link.get("connected") and state.get("status") != "Loading":
+            if link.get("endpoint") == sim.endpoint and link.get("connected") and state.get("status") not in ("Loading", *FAULTED):
                 return state
             loading = loading or state.get("status") == "Loading"
             if loading and state.get("status") == "Error":  # an Error from before this attach does not count

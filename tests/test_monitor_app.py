@@ -259,3 +259,13 @@ def test_an_attach_the_harness_reports_failed_ends_the_wait_at_once(tmp_path):
         raise AssertionError("expected the failed attach to raise")
     except RuntimeError as error:
         assert "serves another model" in str(error)
+
+
+def test_a_harness_whose_session_faulted_on_its_server_is_attached_again(tmp_path):
+    endpoint = {"endpoint": "tcp://127.0.0.1:5720", "connected": True}
+    states = [{"status": "Reset required", "sim": endpoint}, {"status": "Reset required", "sim": endpoint},
+              {"status": "Loading", "sim": None}, {"status": "Ready", "sim": endpoint}]
+    made, sent, video = app(tmp_path, states)
+    made.wait_attached = lambda harness, sim: MonitorApp.wait_attached(made, harness, sim, timeout=5, poll=0)
+    assert made.apply_session("demo_with_monitor", "warehouse_cart")
+    assert [kind for kind, _ in sent] == ["attach_sim"] and video.watched == "tcp://127.0.0.1:15721"

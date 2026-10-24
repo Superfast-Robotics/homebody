@@ -8,6 +8,7 @@ import { Select } from "./select.js";
 const HEALTH = { healthy: ["success", "Healthy"], degraded: ["warning", "Degraded"], unavailable: ["danger", "Unavailable"],
   unknown: ["neutral", "Unknown"] };
 const BUSY = ["Thinking", "Executing", "Paused", "Stopping"];
+const FAULTED = ["Error", "Reset required"]; // the harness's session needs a new attach: the same pair can be applied again
 const CONTROLLER = { running: "Controller running", stopped: "Controller stopped", none: "No controller", unknown: "Controller unknown" };
 const VIDEO = { on: "Video on", ready: "Video ready", none: "No video", unknown: "Video unknown" };
 
@@ -44,7 +45,8 @@ export function applyState(rows, session, draft) {
   const find = (kind, name) => (rows || []).find((r) => r.kind === kind && r.name === name);
   if (session?.applying) return { enabled: false, reason: "Applying…", applying: true };
   if (!draft.harness || !draft.sim) return { enabled: false, reason: "Choose a harness and a simulation server" };
-  if (draft.harness === session?.harness && draft.sim === session?.sim) return { enabled: false, reason: "No changes" };
+  const same = draft.harness === session?.harness && draft.sim === session?.sim;
+  if (same && !FAULTED.includes(session?.lifecycle)) return { enabled: false, reason: "No changes" };
   const harness = find("harness", draft.harness), sim = find("simulation", draft.sim);
   if (!harness) return { enabled: false, reason: `${draft.harness} is no longer configured` };
   if (!sim) return { enabled: false, reason: `${draft.sim} is no longer configured` };
@@ -54,7 +56,7 @@ export function applyState(rows, session, draft) {
   if (session?.harness && BUSY.includes(session.lifecycle)) {
     return { enabled: false, reason: `A task is running on ${session.harness}: stop it or let it finish before switching` };
   }
-  return { enabled: true, reason: "" };
+  return { enabled: true, reason: "", reconnect: same };
 }
 
 /** The header's session label: "harness → sim", or what is missing. */
@@ -139,7 +141,7 @@ export class SessionPanel {
     const can = applyState(rows, session, this.draft);
     const apply = $("session-apply");
     apply.disabled = !can.enabled;
-    setText(apply, can.applying ? "Applying…" : "Apply selection");
+    setText(apply, can.applying ? "Applying…" : can.reconnect ? "Reconnect" : "Apply selection");
     apply.title = can.reason;
     setText($("session-apply-reason"), can.enabled ? "" : can.reason === "No changes" ? "" : can.reason);
     setText($("session-error"), session.error || "");

@@ -55,6 +55,9 @@ test("Apply is enabled only for a changed, reachable, idle pair", () => {
   const rows = ROWS.map((r) => (r.name === "kitchen" ? { ...r, controller: "running" } : r));
   assert.match(applyState(rows, { ...session, lifecycle: "Executing" }, { harness: "demo", sim: "kitchen" }).reason, /A task is running/);
   assert.equal(applyState(rows, session, { harness: "demo", sim: "kitchen" }).enabled, true);
+  const faulted = applyState(ROWS, { ...session, lifecycle: "Reset required" }, { harness: "demo", sim: "warehouse_cart" });
+  assert.equal(faulted.enabled, true);
+  assert.equal(faulted.reconnect, true);
   assert.equal(sessionLabel(session), "demo → warehouse_cart");
   assert.equal(sessionLabel({}), "Session · not set");
 });
