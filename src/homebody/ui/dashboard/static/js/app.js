@@ -157,7 +157,7 @@ class App {
     const head = condition ? [h("li", { class: `condition ${condition.level}`, text: condition.text,
       title: "The monitor's current condition (not its connectivity)" })] : [];
     if (!blocks.length) {
-      strip.replaceChildren(...head, condition ? null : h("li", { class: "empty-note", text: "No significant events in this window" }));
+      strip.replaceChildren(...head, ...(condition ? [] : [h("li", { class: "empty-note", text: "No significant events in this window" })]));
       return;
     }
     const items = [...head, ...(earlier ? [h("li", { class: "earlier", text: `+${earlier} earlier` })] : [])];
