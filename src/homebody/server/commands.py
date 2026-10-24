@@ -6,6 +6,8 @@ import time
 from dataclasses import replace
 from pathlib import Path
 
+SWITCH_POLL_S = 0.5  # how often a harness without a working simulation server checks for an attach
+
 
 def scene_settings(args, scene: Path):
     """The settings of SCENE: configs/simulation.toml, the scene's settings.toml, --settings and --model."""
@@ -50,7 +52,15 @@ def serve(args, settings, output) -> int:
     signal.signal(signal.SIGTERM, interrupted)  # a stop signal cleans up like Ctrl-C (a simulation server is released)
     try:
         while target is not None:
-            run_scene(args, target, task, output, controls=controls, ui=ui, monitor=monitor, server=server)
+            try:
+                run_scene(args, target, task, output, controls=controls, ui=ui, monitor=monitor, server=server)
+            except Exception as error:
+                if not is_remote(target):
+                    raise
+                ui.update("Error", f"The simulation server {target.endpoint} failed: {error}"[:600])
+                print(f"Simulation server {target.endpoint} failed: {error}; waiting to be attached to another "
+                      "(attach_sim) or stopped", file=sys.stderr, flush=True)
+                wait_for_switch(server)
             target, task = server.take_switch()
             controls.closing.clear()
             controls.cancel.clear()
@@ -69,6 +79,17 @@ def monitor_link(hub, settings, quality: int, output):
     except ImportError:
         return None
     return MonitorLink(hub, settings.monitor, quality=quality, root=output)
+
+
+def is_remote(target) -> bool:
+    from homebody.backends.warehouse import SimTarget
+    return isinstance(target, SimTarget)
+
+
+def wait_for_switch(server, poll_s: float = SWITCH_POLL_S):
+    """Until a client attaches this harness to another simulation server (or the harness is stopped)."""
+    while server.switch is None:
+        time.sleep(poll_s)
 
 
 def interrupted(signum, frame):

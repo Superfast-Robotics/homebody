@@ -130,3 +130,40 @@ def test_a_late_camera_frame_is_waited_for_and_one_that_never_comes_stops_the_ta
         raise ObservationUnavailable("latest frame is stale")
     with pytest.raises(SimLinkLost, match="no fresh camera frame"):
         robot(types.SimpleNamespace(snapshot=stale)).snapshot()
+
+
+def test_a_failed_simulation_server_leaves_the_harness_up_until_it_is_attached_elsewhere(tmp_path, monkeypatch):
+    import json
+    import socket
+    import threading
+    from pathlib import Path
+
+    from homebody.server import commands
+    from homebody.session.config import Server
+    from homebody.session.settings import Settings
+    scene = tmp_path / "warehouse_cart"
+    scene.mkdir()
+    (scene / "scene.xml").write_text("<mujoco/>")
+    (scene / "task_scene.json").write_text(json.dumps({"name": "Warehouse", "default_task": "pick a jar"}))
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    settings = Settings(server=Server(port=port, token_file=str(tmp_path / "token")))
+    args = types.SimpleNamespace(backend="sim", presets=None, scene=scene, task=None, sim="tcp://127.0.0.1:5720",
+                                 sim_profile=Path("/x/profile.toml"), sim_root=[])
+    seen = []
+
+    def run_scene(args, target, task, output, *, ui, server, **kw):
+        seen.append(target)
+        if len(seen) == 1:
+            threading.Timer(0.2, lambda: setattr(server, "switch", (None, None))).start()  # a client re-attaches
+            raise RuntimeError("physics failed: simulation clock discontinuity")
+    monkeypatch.setattr(commands, "run_scene", run_scene)
+    monkeypatch.setattr(commands, "SWITCH_POLL_S", 0.01)
+    monkeypatch.setattr(commands.signal, "signal", lambda *a: None)
+    statuses = []
+    from homebody.server import links
+    original = links.UiLink.update
+    monkeypatch.setattr(links.UiLink, "update", lambda self, s, t="": (statuses.append((s, t)), original(self, s, t)))
+    assert commands.serve(args, settings, tmp_path / "runs") == 0
+    assert len(seen) == 1 and statuses[-1][0] == "Error" and "clock discontinuity" in statuses[-1][1]
