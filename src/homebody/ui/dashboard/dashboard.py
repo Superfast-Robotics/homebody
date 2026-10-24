@@ -371,7 +371,7 @@ class Dashboard:
             return {"ok": False, "message": f"Instructions are limited to {INSTRUCTION_LIMIT} characters."}
         if self.store.busy and capabilities(self.controls)["tell"]:
             self.controls.tell(text)
-            if self.store.status == "Paused":  # session.hold_for_operator: a command while paused is the next goal
+            if self.held():  # session.hold_for_operator: a command while paused is the next goal
                 reason = ("Added as the plan's next goal; it runs now, then the robot waits again. Say continue to go "
                           "on with the plan.") if text.strip().lower() not in ("continue", "resume") else "Continuing the plan."
                 self.store.instruction(text, "sent", reason)
@@ -387,6 +387,11 @@ class Dashboard:
         return {"ok": True, "message": "Queued. The agent starts it next."}
 
 
+
+    def held(self) -> bool:
+        """The operator's pause (mid-skill too) or one the monitor asked for (status Paused until Resume)."""
+        paused = getattr(self.controls, "paused", None)
+        return bool(paused is not None and paused.is_set()) or self.store.status == "Paused"
 
     def _busy_reason(self):
         status = self.store.status
@@ -438,9 +443,7 @@ class Dashboard:
 
     def _snapshot(self):
         controls = capabilities(self.controls)
-        paused = getattr(self.controls, "paused", None)
-        # paused: the operator's pause, or one the monitor asked for (status Paused until Resume)
-        held = (paused is not None and paused.is_set()) or self.store.status == "Paused"
+        held = self.held()
         if self.read_only:
             controls = {name: False for name in controls}
         state = self.store.snapshot({**controls, "paused": held})

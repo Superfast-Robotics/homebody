@@ -72,6 +72,15 @@ def test_an_instruction_while_the_agent_works_reaches_it_as_a_note():
     assert dashboard.controls.take_notes() == ["Use the left hand"] and dashboard.controls.next() is None
 
 
+def test_a_command_while_paused_mid_skill_is_the_plans_next_goal():
+    dashboard = fake_dashboard()
+    dashboard.update("Executing", "picking")  # the pause holds the skill; the status stays Executing until it ends
+    dashboard.controls.pause()
+    reply = dashboard.command({"type": "submit", "text": "Turn to the cart"})
+    assert reply["ok"] and "next goal" in reply["message"]
+    assert dashboard.controls.take_notes() == ["Turn to the cart"]
+
+
 def test_a_pause_keeps_the_task_running_and_resume_ends_a_monitor_pause():
     dashboard = fake_dashboard()
     dashboard.update("Ready")

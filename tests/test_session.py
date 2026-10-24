@@ -1330,3 +1330,25 @@ def test_a_command_while_a_skill_is_frozen_stops_that_skill_so_the_command_can_r
     assert session.commanded() and not session.observed._paused()  # the frozen skill runs on to its next check
     code, reason = session.interruption()
     assert code == OPERATOR_STOPPED and "command while paused" in reason
+
+
+def test_a_done_decided_while_the_operator_paused_and_gave_a_command_leaves_the_task_open_for_it(build, monkeypatch):
+    from homebody.skills.contract import Result
+    decisions = [Decision("Looked.", "done", {"summary": "basil and jam"}), Decision("Turned.", "pick", {"hand": "right"}),
+                 Decision("Finished.", "done", {"summary": "turned to the cart"})]
+    controls = Controls()
+
+    class PausedWhileDeciding(Provider):
+        def generate(self, prompt, **kwargs):
+            decision = super().generate(prompt, **kwargs)
+            if len(self.prompts) == 1:  # the operator pauses and gives a command while the agent decides
+                controls.pause()
+                controls.tell("turn to the cart")
+            return decision
+    provider = PausedWhileDeciding(decisions)
+    session = build(provider, settings=Settings(agent=Agent(done_settle_seconds=0.)), controls=controls)
+    monkeypatch.setattr(session.runner, "run", lambda skill, arguments, frame, **kw: Result(skill, "OK", "done"))
+    monkeypatch.setattr(session, "paused_tick", lambda: controls.unpause() if not session.commanded() else None)
+    outcome = session.run_task("Look at the shelf.")
+    assert outcome["status"] == "model_done" and outcome["model_claim"] == "turned to the cart"
+    assert "turn to the cart" in provider.prompts[1]  # the agent read the command before it could close the task

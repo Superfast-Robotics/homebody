@@ -337,6 +337,11 @@ class Session:
         paused = getattr(self.controls, "paused", None)
         return bool(paused is not None and paused.is_set() and not self.controls.cancel.is_set())
 
+    def operator_pending(self):
+        """Whether the operator paused, or gave a note the agent has not read yet (a done waits for either)."""
+        has_notes = getattr(self.controls, "has_notes", None)
+        return self.frozen() or bool(has_notes is not None and has_notes())
+
     def commanded(self):
         """Whether the operator gave a command while the world is paused (the session runs it as the plan's next goal:
         hold_for_operator)."""
@@ -594,6 +599,14 @@ class Session:
                 self.update("Executing", decision.text)
                 if self.ui is not None:
                     self.ui.select(decision, frame)
+                if decision.skill == "done" and self.operator_pending():
+                    # the operator paused or spoke while the agent decided: the task stays open for them
+                    result = {"skill": "done", "code": "OPERATOR_PENDING",
+                              "message": "The operator paused or gave a command before the task closed; read it first"}
+                    self.history.append({"base_pose": frame.base_pose.tolist(), "decision": asdict(decision),
+                                         "epoch": frame.epoch, "frame_sequence": frame.sequence, "result": result})
+                    self.recorder.event("result", step=step, simulation_time=self.backend.time, result=result)
+                    continue
                 if decision.skill == "done":
                     summary = decision.arguments.get("summary", decision.text)
                     if not isinstance(summary, str):
