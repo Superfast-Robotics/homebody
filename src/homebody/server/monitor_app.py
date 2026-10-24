@@ -229,12 +229,17 @@ class MonitorApp:
                 "warnings": warnings}
 
     def wait_attached(self, harness, sim, timeout: float = ATTACH_WAIT_S, poll: float = 1.0) -> dict:
-        deadline = time.monotonic() + timeout
+        """HARNESS's state once it reports SIM attached; raises at once when, after Loading, it reports the attach
+        failed (its Error text says why: a server that does not answer or serves another model), else at TIMEOUT."""
+        deadline, loading = time.monotonic() + timeout, False
         while time.monotonic() < deadline:
             state = self.harness_state(harness) or {}
             link = state.get("sim") or {}
             if link.get("endpoint") == sim.endpoint and link.get("connected") and state.get("status") != "Loading":
                 return state
+            loading = loading or state.get("status") == "Loading"
+            if loading and state.get("status") == "Error":  # an Error from before this attach does not count
+                raise RuntimeError(state.get("text") or f"{harness.name} could not attach to {sim.name}")
             time.sleep(poll)
         raise RuntimeError(f"{harness.name} did not attach to {sim.name} within {timeout:.0f} s")
 

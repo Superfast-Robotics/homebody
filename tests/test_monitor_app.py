@@ -248,3 +248,14 @@ def test_an_active_harness_dropped_from_the_config_keeps_its_running_task_guard(
     assert made.lifecycle() == "Executing"
     made.statuses = {}  # a refresh pruned it
     assert "running a task" in made.apply_refusal("demo_openmodels", "warehouse_cart")
+
+
+def test_an_attach_the_harness_reports_failed_ends_the_wait_at_once(tmp_path):
+    failed = {"status": "Error", "text": "The simulation server tcp://127.0.0.1:5720 failed: serves another model", "sim": None}
+    made, _, _ = app(tmp_path, [failed, {"status": "Loading", "sim": None}, failed])
+    harness, sim = made.config.harnesses["demo_with_monitor"], made.config.sims["warehouse_cart"]
+    try:
+        made.wait_attached(harness, sim, timeout=5, poll=0)  # the first Error predates the attach: it waits on
+        raise AssertionError("expected the failed attach to raise")
+    except RuntimeError as error:
+        assert "serves another model" in str(error)
