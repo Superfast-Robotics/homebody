@@ -166,13 +166,13 @@ export function interventionView(drawer, id) {
   const recovery = recoveryState(row);
   const node = selection.goal && state.tree?.nodes[selection.goal];
   return [
+    // the outcome stays pinned while the evidence scrolls: title, status, severity and the two lines that matter
     h("header", { class: "inspector-head" }, h("strong", { text: card.title }), badge(COMMAND_TONE[status.command], COMMAND_TEXT[status.command]),
-      badge(SEVERITY[card.severity] || "neutral", card.severity)),
+      badge(SEVERITY[card.severity] || "neutral", card.severity),
+      h("p", { class: "summary-status", text: statusLine }), h("p", { class: "summary-physical", text: physicalLine })),
     h("section", { class: "inspector-summary" },
       h("p", { class: "summary-attempt", text: `${tool ? attemptLabel(tool) : "Attempt unknown"} · detected ${clock(selection.t)} (${ago(now - selection.t)})` }),
       h("p", { text: concern(selection.observation?.signal, row.initiator) }),
-      h("p", { class: "summary-status", text: statusLine }),
-      h("p", { class: "summary-physical", text: physicalLine }),
       selection.missing.length ? h("p", { class: "agent-meta", text: `Not established: ${selection.missing.join(" · ")}` }) : null),
     h("h3", { text: "Intervention lifecycle" }),
     lifecycle(app, row, lifecycleSteps(row, now, row.initiator === "Human operator" ? "Detection" : detected), selection.observation, ref),

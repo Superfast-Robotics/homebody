@@ -69,6 +69,7 @@
         <div class="instruction-state" id="instruction-state" role="status" aria-live="polite"></div>
       </form>
       <div class="controls" data-controls="header">
+        <span class="live-label" title="These controls act on the robot's current execution, never on an inspected incident">Live robot</span>
         <button class="btn primary" type="button" id="primary-action" hidden><svg class="icon"><use href="#i-play"/></svg><span>Start task</span></button>
         <button class="btn" type="button" data-control="pause"><svg class="icon"><use href="#i-pause"/></svg><span>Pause</span></button>
         <button class="btn" type="button" data-control="stop_skill"><svg class="icon"><use href="#i-hand"/></svg><span>Stop skill</span></button>
@@ -78,7 +79,9 @@
     </div>
     <div class="investigation-bar" id="investigation-bar" role="status" aria-live="polite" hidden>
       <svg class="icon"><use href="#i-clock"/></svg>
+      <button class="btn small nav" type="button" id="investigation-prev" title="The previous incident, by its own time">← Previous</button>
       <span class="investigation-text" id="investigation-text"></span>
+      <button class="btn small nav" type="button" id="investigation-next" title="The next incident, by its own time">Next →</button>
       <span class="spacer"></span>
       <div class="investigation-tabs" id="investigation-tabs" role="tablist" aria-label="Investigation panels">
         <button type="button" role="tab" data-tab="tree" aria-selected="false">Behavior Tree</button>
@@ -95,6 +98,11 @@
         <iframe id="camera-scene" title="3D scene" hidden></iframe>
         <div class="camera-empty" id="camera-empty" role="status">Waiting for camera frames…</div>
         <div class="camera-quality" id="camera-quality" role="status" hidden></div>
+        <div class="camera-placeholder" id="camera-placeholder" role="status">
+          <strong>No camera evidence</strong>
+          <p>No recording at this incident's detection time.</p>
+          <button class="btn small" type="button" id="camera-expand" title="Give the camera its full width again for this incident">Expand camera</button>
+        </div>
       </div>
       <div class="camera-top">
         <span class="live-badge" id="live-badge"><span class="dot"></span><span>Connecting</span></span>

@@ -22,7 +22,7 @@ const OUTCOME = {
   unverified: ["unverified", "?"], failed: ["failed", "✗"], cancelled: ["", "–"],
 };
 const BUSY_HINT = "The agent is working on a task. Stop it to give a new instruction.";
-const NOTE_HINT = "Send to the running agent: it reads this before its next decision (Enter).";
+const NOTE_HINT = "Message the live agent: applied at its next decision, never to a recorded plan (Enter).";
 
 /** Whether an instruction now goes to the running agent as a note (its controls take notes). */
 const noting = (state) => Boolean(state?.controls.busy && state.controls.tell);
@@ -113,7 +113,7 @@ export class Header {
     this.send.title = note ? NOTE_HINT : accepting ? "Start this instruction as a task (Enter). Shift+Enter adds a line."
       : busy ? BUSY_HINT : "The session cannot take a task now";
     this.send.setAttribute("aria-label", note ? "Send to the running agent" : accepting ? "Start task with this instruction" : this.send.title);
-    this.input.placeholder = note ? "Message the agent (not a robot command): it reads it before its next decision"
+    this.input.placeholder = note ? "Message live agent — applied at next decision"
       : busy ? "The agent is working… stop the task to give a new instruction" : "Tell the agent what to do...";
     const action = primaryAction(state, this.input.value, connected);
     this.primary.hidden = action.kind === "none";

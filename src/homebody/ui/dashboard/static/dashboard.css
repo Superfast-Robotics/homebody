@@ -679,3 +679,40 @@ details.technical > summary { cursor: pointer; color: var(--text-secondary); }
 .evidence-more[open] > summary { margin-bottom: 8px; }
 .evidence-more img { width: 100%; border-radius: var(--radius-small); margin: 8px 0 4px; }
 #camera-image:not([src]) { visibility: hidden; } /* no frame: the panel's own message says why, not a broken image */
+
+/* V10: timeline tokens (the canvas reads timeline_style.js; these name the same values for the page) */
+:root {
+  --timeline-bg: #12141d; --timeline-track: #1c2030; --timeline-goal: #243650; --timeline-skill: #26314a;
+  --timeline-running: #304a78; --timeline-related: #302947; --timeline-selected: #a78bfa; --timeline-selected-border: #65569a;
+  --timeline-text: #f1f2fa; --timeline-text-muted: #a6aabd; --timeline-grid: #292d3b;
+}
+.timeline { background: var(--timeline-bg); border-radius: var(--radius-small); }
+/* the selected tree row: a thin outline, third in the selection hierarchy, over its execution colour */
+.tree-node > .row.inspected { box-shadow: inset 0 0 0 1.5px var(--timeline-selected-border), inset 3px 0 0 var(--timeline-selected); }
+/* V10: the sticky outcome: title, status, severity and the two outcome lines */
+.inspector-head .summary-status { flex: 1 1 100%; margin: 0; font-size: var(--size-meta); font-weight: var(--weight-strong); }
+.inspector-head .summary-physical { flex: 1 1 100%; margin: 0; font-size: var(--size-meta); }
+/* V10: live robot controls are named as such while history is inspected */
+.live-label { display: none; align-items: center; white-space: nowrap; flex: none; padding: 2px 8px; border-radius: 999px; font-size: var(--size-small);
+  font-weight: var(--weight-strong); color: var(--running); background: var(--running-light); border: 1px solid var(--state-running-edge); }
+.app.inspecting .live-label { display: inline-flex; }
+.app.inspecting [data-controls="header"] { padding: 4px 6px; border-radius: var(--radius); border: 1px solid var(--state-running-edge); }
+.investigation-bar .nav { flex: none; }
+.investigation-bar .nav[hidden] { display: none; }
+/* V10: without recorded camera evidence the camera column is compact and the tree and inspector gain the space */
+.camera-placeholder { display: none; position: absolute; inset: 0; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  padding: 16px; text-align: center; color: var(--text-secondary); }
+.camera-placeholder strong { color: var(--text-primary); }
+.camera-placeholder p { margin: 0; font-size: var(--size-meta); }
+.app.investigating.no-evidence .camera:not(.peeking) .camera-placeholder { display: flex; }
+.app.investigating.no-evidence .camera-empty, .app.investigating.no-evidence .camera:not(.peeking) #camera-image,
+.app.investigating.no-evidence .camera-top > :not(.live-badge),
+.app.investigating.no-evidence #inspect-text { display: none; }
+.app.investigating.no-evidence .inspect-banner { top: auto; bottom: 12px; left: 12px; }
+.app.investigating.no-evidence .workspace { grid-template-columns: minmax(200px, 22fr) minmax(280px, 39fr) minmax(320px, 39fr); }
+@media (max-width: 1439px) {
+  .app.investigating.no-evidence .workspace { grid-template-columns: minmax(200px, 30fr) minmax(340px, 70fr); }
+}
+@media (max-width: 1099px) {
+  .app.investigating.no-evidence .camera { aspect-ratio: auto; height: 160px; }
+}

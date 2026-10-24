@@ -207,3 +207,29 @@ export function liveEnd(state, now, connected, lastSeen, thawed = null) {
   }
   return { end: now, held: false, reason: "" };
 }
+
+/**
+ * How much of the task time in [start, end] the monitor's observations cover, from their own timestamps: a reading
+ * stands for up to three of its source's intervals (gapFor), the rest is a gap. Without an established cadence (fewer
+ * than two observations) there is no percentage, only counts. Readings on invalid camera frames are counted apart.
+ * Returns {kind: "none" | "counts" | "coverage", text, covered, total, gaps, longest, invalid}.
+ */
+export function coverage(readings, tasks, start, end) {
+  const total = spans(tasks, start, end).reduce((sum, [a, b]) => sum + (b - a), 0);
+  if (total <= 0) return { kind: "none", text: "No task time in this window" };
+  const observed = readings.filter((r) => r.kind === "observation" && r.during_task);
+  const inWindow = observed.filter((r) => r.t >= start && r.t <= end);
+  const invalid = inWindow.filter((r) => r.frame_quality === "invalid" || r.frame_quality === "suspected_invalid").length;
+  const onInvalid = invalid ? ` · ${invalid} reading${invalid > 1 ? "s" : ""} on unusable camera frames (counted above)` : "";
+  const s = (n) => `${Math.round(n)} s`;
+  if (cadence(observed.slice(-40)) === null) {
+    return { kind: "counts", total, invalid, text: `${inWindow.length} monitor reading${inWindow.length === 1 ? "" : "s"} in ${s(total)} of task time · no established cadence, so no coverage figure${onInvalid}` };
+  }
+  const gaps = observationSegments(readings, tasks, start, end).filter((g) => g.level === "missing").map((g) => g.end - g.start);
+  const missing = gaps.reduce((sum, g) => sum + g, 0);
+  const covered = Math.max(0, total - missing);
+  const longest = gaps.length ? Math.max(...gaps) : 0;
+  return { kind: "coverage", covered, total, gaps: gaps.length, longest, invalid,
+    text: `Monitor data ${s(covered)} / ${s(total)} of task time (${Math.floor((100 * covered) / total)}%)` // never rounded up
+      + (gaps.length ? ` · ${gaps.length} gap${gaps.length > 1 ? "s" : ""}, longest ${s(longest)}` : "") + onInvalid };
+}

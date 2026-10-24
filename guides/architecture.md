@@ -109,6 +109,24 @@ and holds the only Return to Live, which restores the saved live workspace (the 
 view), the live camera, the tree following execution and the rolling window. The camera's own "Live camera" shows the
 stream in that panel without leaving the investigation. Nothing in the mode sends a robot command.
 
+Investigation Mode adapts to its incident's evidence once, when the incident is selected (from the recorded frames'
+index, so nothing waits on a load and moving the cursor never resizes panels): without a recording the camera column
+becomes a compact placeholder and the tree and the inspector share the space; Expand camera gives it back for that
+incident. A stale live camera does not count. Previous and Next walk the incidents by their own times
+(`selection.incidentSequence`). While anything is inspected the header's controls are labelled "Live robot": they act on
+the current execution (the store's running attempt), never on the selection.
+
+**Timeline paint** (`static/js/timeline_style.js`) keeps three layers apart: the execution state is a left accent and an
+icon (running, failed, succeeded, recovery), the selected incident's attempt and goal a quiet violet tint, the operator's
+exact selection a thin border; labels are one high-contrast colour in every state, and nothing translucent is drawn over
+text. The strongest emphasis is the cursor and the selected event's ring; risk and observation colours keep their
+meaning under a selection. The skill track says "Pick · Attempt 4", the goal's attempt number the tree shows; the
+skill's own call count and the execution id are named apart in the tooltip and the tree's technical view.
+
+**Monitoring coverage** (`model.coverage`), shown while inspecting history: the task time a reading stands for (up to
+three of its source's intervals) against the task time in the window, with the gaps and the readings on unusable
+camera frames; without an established cadence it gives counts, not a percentage.
+
 **Evidence attribution** (`static/js/evidence.js`): each piece of evidence says what it is to the detection. Detector
 input is claimed only when an observation names the recorded frame the detector consumed (no monitor reports that yet);
 a recorded robot-camera frame whose simulation time matches the observation's is a synchronized observation (the

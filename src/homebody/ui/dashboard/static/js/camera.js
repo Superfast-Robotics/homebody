@@ -94,6 +94,7 @@ export class Camera {
     this.frameAt = meta.t;
     this.frameSim = meta.sim ?? this.frameSim;
     this.rate = [...this.rate.filter((t) => meta.t - t < 2), meta.t];
+    if (this.inspecting !== null) $("camera-live-toggle").hidden = false; // a live stream now exists to peek at
     if (this.inspecting !== null && !this.peek) return;
     const previous = this.url;
     this.url = URL.createObjectURL(blob);
@@ -108,6 +109,7 @@ export class Camera {
     if (t === null) {
       this.recorded = this.evidence = null;
       this.peek = false;
+      toggleClass(this.panel, "peeking", false);
       $("inspect-banner").hidden = true;
       if (this.url) this.image.src = this.url;
       return this.render(this.app.state);
@@ -125,6 +127,8 @@ export class Camera {
    * the operator peeks at it. */
   showInspected() {
     const toggle = $("camera-live-toggle");
+    toggle.hidden = this.frameAt === null && !this.peek; // the live stream only when one has arrived
+    toggleClass(this.panel, "peeking", this.peek);
     toggle.setAttribute("aria-pressed", String(this.peek));
     setText(toggle, this.peek ? "Recorded evidence" : "Live camera");
     const e = this.evidence;
@@ -187,7 +191,11 @@ export class Camera {
     let kind = "on";
     let text = "Live";
     if (!this.app.link.connected) [kind, text] = this.app.link.attempt > RECONNECTS ? ["off", "Camera offline"] : ["stale", "Reconnecting"];
-    else if (this.inspecting !== null && !this.peek) [kind, text] = ["inspect", this.recorded ? this.evidence.short : "No recording"];
+    else if (this.inspecting !== null && !this.peek) {
+      // the badge names the evidence's kind; the banner below it carries the full label and the capture time
+      [kind, text] = ["inspect", !this.recorded ? "No recording" : { detector_input: "Recorded · detector input",
+        synchronized: "Recorded · synchronized", contextual: "Recorded · context" }[this.evidence.relation] || "Recorded"];
+    }
     else if (this.view === SCENE) [kind, text] = ["on", "Live 3D"];
     else if (!this.live()) [kind, text] = ["on", "Still"];
     else if (age === null) [kind, text] = ["stale", "No frames received"];

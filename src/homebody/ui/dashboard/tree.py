@@ -75,9 +75,10 @@ def action_nodes(tools, interventions=()):
     return [{"id": f"tool:{tool.id}", "type": "action", "label": tool.skill,
              "status": TOOL_STATUS.get(tool.state, "skipped"), "children": [],
              "detail": {"tool": tool.id, "code": tool.code, "message": tool.message, "start": tool.start,
-                        "end": tool.end, "attempt": tool.attempt, "recovery": tool.recovery, "number": number,
+                        "end": tool.end, "attempt": tool.attempt, "recovery": tool.recovery,
+                        "number": tool.number, "execution": tool.execution,  # the store's identity, as the timeline shows it
                         "interventions": on.get(tool.id, [])}}
-            for number, tool in enumerate(tools, 1)]
+            for tool in tools]
 
 
 def grouped(goal_id, actions, nodes):

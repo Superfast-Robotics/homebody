@@ -131,7 +131,8 @@ export class Controls {
         title = "More actions";
       }
       button.disabled = disabled;
-      button.title = title;
+      // in an investigation these still act on the robot's current execution, never on the inspected incident
+      button.title = title && document.getElementById("app")?.classList.contains("inspecting") ? `Live robot: ${title}` : title;
       toggleClass(button, "pending", pending);
       if (control !== "more") button.setAttribute("aria-label", title ? `${button.textContent.trim()}: ${title}` : button.textContent.trim());
     }

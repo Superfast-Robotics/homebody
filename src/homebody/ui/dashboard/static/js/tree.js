@@ -363,7 +363,10 @@ export class TreeView {
       return `${status}${time} · ${d.used}/${d.budget} skill calls${recovers} · check: ${d.check}`;
     }
     const time = d.start ? ` · ${duration((d.end ?? this.app.link.now()) - d.start)}` : "";
-    const attempt = d.attempt > 1 ? ` · attempt ${d.attempt}` : "";
-    return `${status}${time}${attempt}${d.code ? ` · ${d.code}` : ""}`;
+    // the technical view names each counter: the goal's attempt (as everywhere else), the skill's own call count, the
+    // execution id
+    const counters = [d.number ? `goal attempt ${d.number}` : "", d.attempt ? `${node.label} call ${d.attempt} in this goal` : "",
+      d.execution ? `execution ${d.execution}` : ""].filter(Boolean).join(" · ");
+    return `${status}${time}${counters ? ` · ${counters}` : ""}${d.code ? ` · ${d.code}` : ""}`;
   }
 }

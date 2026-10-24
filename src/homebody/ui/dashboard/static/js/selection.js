@@ -77,3 +77,29 @@ export function resolveSelection(state, ref, now) {
   return { t, intervention: row, incident, tool, node, goal, observation, detecting, frame, evidence, window, historical: window.historical || t < now - 1,
     label, missing };
 }
+
+const order = (id) => Number(String(id).replace(/^\D+/, "")) || 0; // the store's ids count up in creation order
+
+/** Every incident the operator can investigate, oldest first by its own time (then by creation): each intervention
+ * (its detection or request time) and each alert no intervention acted on; [{ref, t, id}]. */
+export function incidentSequence(state) {
+  const rows = (state.interventions || []).map((r) => ({ ref: { intervention: r.id }, t: startOf(r), id: r.id, incident: r.incident }));
+  const linked = new Set(rows.map((r) => r.incident).filter(Boolean));
+  const alerts = state.incidents.filter((i) => i.alert && !linked.has(i.id)).map((i) => ({ ref: { incident: i.id }, t: i.t, id: i.id }));
+  return [...rows, ...alerts].filter((e) => e.t !== null && e.t !== undefined).sort((a, b) => a.t - b.t || order(a.id) - order(b.id));
+}
+
+/** The incidents before and after REF in incidentSequence: {previous, next, index, total} (null at either end). An
+ * incident an intervention acted on is that intervention's entry; any other incident (a recovery, an operator's stop)
+ * sits between the entries by its own time (index -1). */
+export function neighbours(state, ref) {
+  const sequence = incidentSequence(state);
+  const row = ref?.incident ? (state.interventions || []).find((r) => r.incident === ref.incident) : null;
+  const id = ref?.intervention || row?.id || ref?.incident;
+  const index = sequence.findIndex((e) => e.id === id);
+  if (index >= 0) return { previous: sequence[index - 1] || null, next: sequence[index + 1] || null, index, total: sequence.length };
+  const own = ref?.incident ? state.incidents.find((i) => i.id === ref.incident) : null;
+  if (!own) return { previous: null, next: null, index, total: sequence.length };
+  const before = (e) => e.t < own.t || (e.t === own.t && order(e.id) < order(own.id));
+  return { previous: sequence.filter(before).at(-1) || null, next: sequence.find((e) => !before(e)) || null, index, total: sequence.length };
+}

@@ -11,7 +11,7 @@ import { keepHeaderClear, setupSplitter } from "./layout.js";
 import { inputWarning } from "./assessment.js";
 import { consistency, contextLabel, contextSummary, systemSummary } from "./execution.js";
 import { signalLabel } from "./interventions.js";
-import { gapFor, liveEnd, momentAt, monitorStatus, riskSources } from "./model.js";
+import { coverage, gapFor, liveEnd, momentAt, monitorStatus, riskSources } from "./model.js";
 import { Rollouts } from "./rollouts.js";
 import { Scenarios } from "./scenarios.js";
 import { resolveSelection } from "./selection.js";
@@ -173,7 +173,7 @@ class App {
     const condition = live ? contextSummary(state, status, now, end - 60, {
       gap: gapFor(state.readings.filter((r) => r.kind === "observation")), check: consistency(state, now),
       system: state.servers ? systemSummary(state.servers) : null })
-      : { level: "history", text: `Showing ${clock(end - 60)}–${clock(end)}: View details lists what happened` };
+      : { level: "history", text: `Showing ${clock(end - 60)}–${clock(end)} · ${coverage(state.readings, state.tasks || [], end - 60, end).text}` };
     if (condition.text === this.summaryShown) return;
     this.summaryShown = condition.text;
     $("summary-strip").replaceChildren(h("li", { class: `condition ${condition.level}`, text: condition.text,
@@ -239,7 +239,10 @@ class App {
     if (!this.state) return;
     const sel = resolveSelection(this.state, ref, this.timelineEnd().end);
     this.selection = { ref, ...sel };
-    if (ref.intervention || ref.incident) this.investigation.enter(); // an incident opens Investigation Mode
+    if (ref.intervention || ref.incident) { // an incident opens Investigation Mode, laid out for its evidence
+      this.investigation.enter();
+      this.investigation.settle(ref);
+    }
     this.inspect(sel.t, { window: sel.window, keep: true });
     if (!open) return;
     if (ref.intervention) this.drawer.intervention(ref.intervention);
