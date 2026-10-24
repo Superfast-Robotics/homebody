@@ -63,10 +63,15 @@ export function contrast(a, b) {
 
 const LEVELS = { expected: "Expected", unknown: "Unknown", elevated: "Elevated", anomaly: "Anomaly" };
 
-/** An activity label as words: "grasp_jar" -> "grasp jar"; none_of_these -> "None of the labels". */
+// the monitor's own labels, as the operator reads them: "working" is the placeholder it decides with while the goal's
+// labels are being written (or when they could not be), so it reads as Processing, not as something seen
+const ACTIVITY_NAMES = { none_of_these: "None of the labels", working: "Processing" };
+
+/** An activity label as words: "grasp_jar" -> "grasp jar"; none_of_these -> "None of the labels"; working ->
+ * "Processing". */
 export function activityText(name) {
   if (!name) return "";
-  return name === "none_of_these" ? "None of the labels" : name.replaceAll("_", " ");
+  return ACTIVITY_NAMES[name] || name.replaceAll("_", " ");
 }
 
 /** An observation bar's text: the activity the decision model chose (held over its window) and its probability in the
