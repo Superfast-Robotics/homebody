@@ -144,6 +144,11 @@ def test_the_servers_rows_say_who_answers_what_runs_where_and_the_harness_link()
     stalled = server_rows(config, statuses, now=200.0)[0]  # a stalled watcher shows as unavailable
     assert stalled["health"] == "unavailable" and "no status for" in stalled["error"]
     assert server_rows(config, {}, None, "warehouse_cart", now=101.0)[1]["impact"] == "unknown"  # link not confirmed
+    slow = {("harness", "demo_with_monitor"): Status("demo_with_monitor", "harness", error="TimeoutError", checked=110.0)}
+    once = server_rows(config, slow, "demo_with_monitor", now=111.0, last_ok={("harness", "demo_with_monitor"): 105.0})[0]
+    assert once["health"] == "degraded" and "slow to answer" in once["detail"] and once["connected"] is False
+    gone = server_rows(config, slow, "demo_with_monitor", now=111.0, last_ok={("harness", "demo_with_monitor"): 90.0})[0]
+    assert gone["health"] == "unavailable"  # silent for longer than the grace: a lost server
 
 
 def test_the_robot_row_says_which_harness_runs_where_and_when_its_simulation_server_is_lost(tmp_path):

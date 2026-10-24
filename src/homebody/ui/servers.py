@@ -9,6 +9,17 @@ import time
 
 from homebody.server.watch import stale
 
+GRACE_S = 15.0  # a server that answered this recently and misses a check is slow (degraded), not yet unavailable
+
+
+def missed(name, kind, status, last_ok, extra, now=None):
+    """The row of a server whose last check failed: degraded while it answered within GRACE_S, else unavailable."""
+    now = time.time() if now is None else now
+    if last_ok is not None and now - last_ok <= GRACE_S:
+        return row(name, kind, "degraded", None, f"slow to answer (last answer {now - last_ok:.0f} s ago)",
+                   status.error or "no answer", connected=False, **extra)
+    return row(name, kind, "unavailable", None, "", status.error or "no answer", connected=False, **extra)
+
 
 def row(name, kind, health, latency, detail, error="", active=False, last_ok=None, dependency="", impact="unknown",
         connected=None, controller="unknown", video="unknown", checking=False):
@@ -19,14 +30,14 @@ def row(name, kind, health, latency, detail, error="", active=False, last_ok=Non
             "controller": controller, "video": video, "checking": checking}
 
 
-def harness_row(name, status, active, last_ok=None) -> dict:
+def harness_row(name, status, active, last_ok=None, now=None) -> dict:
     dependency, impact = ("Runs the task (the harness this dashboard drives)", "critical") if active \
         else ("Not used by this dashboard", "noncritical")
     extra = {"active": active, "last_ok": last_ok, "dependency": dependency, "impact": impact}
     if status is None:
         return row(name, "harness", "unknown", None, "not checked yet", checking=True, **extra)
     if not status.connected:
-        return row(name, "harness", "unavailable", None, "", status.error or "no answer", connected=False, **extra)
+        return missed(name, "harness", status, last_ok, extra, now)
     state = status.detail
     link = state.get("sim")
     if link is None:
@@ -52,13 +63,13 @@ def sim_dependency(sim, harness_status, active_sim):
     return "Not the active harness's server", "noncritical"
 
 
-def sim_row(sim, status, active, harness_status=None, active_sim=None, last_ok=None) -> dict:
+def sim_row(sim, status, active, harness_status=None, active_sim=None, last_ok=None, now=None) -> dict:
     dependency, impact = sim_dependency(sim, harness_status, active_sim)
     extra = {"active": active, "last_ok": last_ok, "dependency": dependency, "impact": impact}
     if status is None:
         return row(sim.name, "simulation", "unknown", None, "not checked yet", checking=True, **extra)
     if not status.connected:
-        return row(sim.name, "simulation", "unavailable", None, "", status.error or "no answer", connected=False, **extra)
+        return missed(sim.name, "simulation", status, last_ok, extra, now)
     detail = status.detail
     controller = detail.get("controller") or {}
     if not controller:
@@ -82,6 +93,6 @@ def server_rows(config, statuses: dict, active_harness=None, active_sim=None, no
     last_ok = last_ok or {}
     harness_status = stale(statuses.get(("harness", active_harness)), now) if active_harness else None
     rows = [harness_row(name, stale(statuses.get(("harness", name)), now), name == active_harness,
-                        last_ok.get(("harness", name))) for name in config.harnesses]
+                        last_ok.get(("harness", name)), now) for name in config.harnesses]
     return rows + [sim_row(sim, stale(statuses.get(("sim", name)), now), name == active_sim, harness_status,
-                           active_sim, last_ok.get(("sim", name))) for name, sim in config.sims.items()]
+                           active_sim, last_ok.get(("sim", name)), now) for name, sim in config.sims.items()]
