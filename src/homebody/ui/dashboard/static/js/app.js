@@ -63,6 +63,7 @@ class App {
     });
     document.addEventListener("keydown", (event) => { if (event.key === "Escape") { legend.hidden = true; toggle.setAttribute("aria-expanded", "false"); } });
     $("risk-source").addEventListener("change", (event) => { this.riskSource = event.target.value; });
+    $("history-slider").addEventListener("input", (event) => this.scrub(Number(event.target.value)));
     setInterval(() => this.tick(), TICK_MS);
     this.banner("loading", "Connecting to the session…");
     this.link.connect();
@@ -131,6 +132,7 @@ class App {
     this.renderRiskSources(state);
     this.renderRiskLabel(state, status);
     this.renderSummary(state, status);
+    this.renderSlider(state);
     this.investigation?.render();
   }
 
@@ -282,6 +284,27 @@ class App {
     if (this.selection) this.tree.showSelection(this.selection, this.inspectAt);
     else this.tree.highlightAt(this.inspectAt);
     if (this.state) this.renderMonitor(this.state);
+  }
+
+  /** Show the monitoring window ending BACK seconds before now (0: live again), with the cursor in its middle; an
+   * investigation keeps its incident. Only the view moves: nothing reaches the robot. */
+  scrub(back) {
+    if (back >= 0) return this.returnToLive();
+    const end = this.timelineEnd().end + back;
+    this.inspect(end - 30, { keep: this.investigation.active, window: { start: end - 60, end, historical: true } });
+  }
+
+  /** The history slider follows the shown window (not while the operator drags it): its range is the kept
+   * history with data, its position the window's end. */
+  renderSlider(state) {
+    const slider = $("history-slider");
+    const live = this.timelineEnd().end;
+    const oldest = Math.min(...(state.tasks || []).map((t) => t.start), live);
+    const span = Math.max(60, Math.min(state.keep_s || 600, live - oldest));
+    slider.min = String(-Math.round(span));
+    const back = this.inspectEnd === null ? 0 : Math.round(this.inspectEnd - live);
+    if (document.activeElement !== slider) slider.value = String(back);
+    setText($("history-text"), back >= 0 ? "Live" : `${duration(-back)} ago`);
   }
 
   /** Open what the timeline hit names; returns whether it selected (and so inspected) something itself. */

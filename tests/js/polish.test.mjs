@@ -85,3 +85,11 @@ test("an incident outside the sequence still has neighbours, by its own time", (
   const viaIncident = neighbours(state, { incident: "x4" }); // the intervention's own incident is its entry
   assert.deepEqual([viaIncident.previous.id, viaIncident.next.id], ["x2", "x9"]);
 });
+
+test("an observation bar says its level and its readings per second, a gap how long it lasted", async () => {
+  const { observationLabel } = await import("../../src/homebody/ui/dashboard/static/js/timeline_style.js");
+  const readings = Array.from({ length: 14 }, (_, i) => ({ t: i }));
+  assert.equal(observationLabel({ level: "elevated", start: 0, end: 14, readings }), "Elevated · 14 readings · 1.0/s");
+  assert.equal(observationLabel({ level: "expected", start: 0, end: 0.5, readings: readings.slice(0, 1) }), "Expected · 1 reading");
+  assert.equal(observationLabel({ level: "missing", start: 2, end: 6.4, readings: [] }), "No reading · 4 s");
+});

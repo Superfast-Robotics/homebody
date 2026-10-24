@@ -5,7 +5,7 @@ import { clock, duration, tokens } from "./dom.js";
 import { MARKERS, attemptLabel, clusterMarkers, eventMarkers, incidentCard } from "./execution.js";
 import { signalLabel, stateText } from "./interventions.js";
 import { observationSegments, riskBuckets, riskSources, spans } from "./model.js";
-import { TIMELINE, segmentLabel, segmentStyle } from "./timeline_style.js";
+import { TIMELINE, observationLabel, segmentLabel, segmentStyle } from "./timeline_style.js";
 
 const ROWS = [["goal", 26], ["skill", 26], ["decisions", 26], ["readings", 26], ["risk", 30], ["interventions", 34], ["axis", 20]];
 const LEFT = 8, RIGHT = 8; // px margins of the plot
@@ -270,7 +270,7 @@ export class Timeline {
       const missing = segment.level === "missing";
       const mine = tool && segment.readings.some((r) => r.tool === tool.id && r.scope !== "goal"); // the attempt's own observations
       ctx.fillStyle = missing ? view.hatch : colours[segment.level];  // semantic colours stay as they are under a selection
-      this.rect(ctx, x0, row.y + 7, x1 - x0 - 1, row.h - 14, 3);
+      this.rect(ctx, x0, row.y + 4, x1 - x0 - 1, row.h - 8, 3);
       ctx.fill();
       if (mine) { // the selected attempt's own observations: a thin border, the level's colour kept
         ctx.strokeStyle = TIMELINE.selectedBorder;
@@ -283,6 +283,8 @@ export class Timeline {
         ctx.stroke();
         ctx.setLineDash([]);
       }
+      // what the bar is, like the skill bars: its level and its readings, where the bar is wide enough to say so
+      this.label(ctx, observationLabel(segment), x0 + 6, x1 - 6, row.y + row.h / 2, missing ? TIMELINE.textSecondary : TIMELINE.text);
       this.hits.push({ x0, x1, y0: row.y, y1: row.y + row.h, kind: "observation", item: segment, t: segment.start });
     }
     for (const incident of state.incidents) {

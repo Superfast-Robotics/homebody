@@ -60,3 +60,15 @@ export function contrast(a, b) {
   const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p);
   return (x + 0.05) / (y + 0.05);
 }
+
+const LEVELS = { expected: "Expected", unknown: "Unknown", elevated: "Elevated", anomaly: "Anomaly" };
+
+/** An observation bar's text: its level, how many monitor readings it holds and their rate per second of the bar
+ * ("Elevated · 14 readings · 1.0/s"); a gap says how long it lasted ("No reading · 4 s"). */
+export function observationLabel(segment) {
+  const seconds = Math.max(0, segment.end - segment.start);
+  if (segment.level === "missing") return `No reading · ${Math.round(seconds)} s`;
+  const n = segment.readings.length;
+  const rate = seconds >= 1 ? ` · ${(n / seconds).toFixed(1)}/s` : "";
+  return `${LEVELS[segment.level] || segment.level} · ${n} reading${n === 1 ? "" : "s"}${rate}`;
+}

@@ -266,6 +266,10 @@
         <li><span class="glyph">3</span>Overlapping events (click to list)</li>
       </ul>
       </div>
+      <label class="history-slider" title="Drag back through the kept monitoring history; all the way right is live. Only the view moves: the robot is not affected.">
+        <span id="history-text">Live</span>
+        <input type="range" id="history-slider" min="-600" max="0" step="1" value="0" aria-label="Monitoring history: seconds before now">
+      </label>
       <span class="window-label"><svg class="icon"><use href="#i-clock"/></svg><span id="window-text">Last 1 min</span></span>
       <button class="btn small" type="button" id="monitor-expand">View details</button>
     </div>

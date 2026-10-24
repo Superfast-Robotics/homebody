@@ -716,3 +716,7 @@ details.technical > summary { cursor: pointer; color: var(--text-secondary); }
 @media (max-width: 1099px) {
   .app.investigating.no-evidence .camera { aspect-ratio: auto; height: 160px; }
 }
+/* the monitoring history slider: drag back through the kept history; right is live */
+.history-slider { display: inline-flex; align-items: center; gap: 8px; flex: none; font-size: var(--size-meta); color: var(--text-secondary); }
+.history-slider span { min-width: 64px; text-align: right; font-variant-numeric: tabular-nums; }
+.history-slider input { width: 180px; accent-color: var(--violet); }
