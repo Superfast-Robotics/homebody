@@ -296,11 +296,15 @@ class Store(PlanTracking, InterventionTracking):
             self._touch()
 
     def _continues(self, entry):
-        """Whether ENTRY extends its source's open anomaly (one incident per episode, not one per reading); the
-        incident then keeps the newest observation and the peak risk."""
+        """Whether ENTRY extends its source's open anomaly (one incident per episode, not one per reading; an episode
+        lasts while its readings come within ANOMALY_GAP, or while the stop it asked for is still open); the incident
+        then keeps the newest observation and the peak risk."""
         incident_id, last = self._anomalies.get(entry.source, (None, None))
         incident = self.incidents.get(incident_id)
-        if incident is None or incident.state == "resolved" or entry.t - last > ANOMALY_GAP:
+        if incident is None or incident.state == "resolved":
+            return False
+        request = self._open_intervention("Live monitor")
+        if entry.t - last > ANOMALY_GAP and (request is None or request.incident != incident_id):
             return False
         risks = [v for v in (incident.evidence.get("risk"), entry.risk) if v is not None]
         evidence = {**incident.evidence, "readings": incident.evidence.get("readings", 1) + 1,

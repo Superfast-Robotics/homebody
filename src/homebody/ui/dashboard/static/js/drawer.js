@@ -1,5 +1,7 @@
 // The details drawer: incidents, tree nodes, decisions, tool calls, lists, diagnostics and the expanded timeline.
 import { $, ago, clock, duration, h, json } from "./dom.js";
+import { interventionView } from "./inspector.js";
+import { stateText } from "./interventions.js";
 import { Timeline } from "./timeline.js";
 
 const LABELS = ["Goal", "Skill", "Agent decisions", "Monitor observations", "Risk", "Interventions", ""];
@@ -217,6 +219,12 @@ export class Drawer {
       if (!node) return h("p", { class: "note", text: "This node is no longer in the tree." });
       const d = node.detail;
       if (node.type === "action") return this.toolView(d.tool);
+      if (node.type === "attempts") {
+        const tools = node.children.map((child) => this.app.state.tree.nodes[child]?.detail.tool).filter(Boolean)
+          .map((tool) => this.app.state.tools.find((t) => t.id === tool)).filter(Boolean);
+        return [h("p", { class: "note", text: "The goal's earlier attempts, grouped for reading; the goal is the tree's retry boundary." }),
+          this.toolList(tools), this.technical(node)];
+      }
       const recovery = d.recovers ? `Recovers from goal ${d.recovers} (${d.recovers_label || d.recovers})` : null;
       const tools = this.app.state.tools.filter((t) => d.goal && t.goal === d.goal);
       const span = this.app.state.intervals.findLast((i) => i.track === "goal" && i.detail.goal === d.goal);
@@ -254,11 +262,39 @@ export class Drawer {
         ["Duration", duration((tool.end ?? this.app.link.now()) - tool.start)], ["Result", tool.code], ["Message", tool.message]]),
       h("h3", { text: "Arguments" }), h("pre", { class: "json", text: json(tool.arguments) }),
       tool.stages.length ? [h("h3", { text: "Stages" }), h("pre", { class: "json", text: tool.stages.map(([t, s]) => `${clock(t)}  ${s}`).join("\n") })] : null,
+      this.toolInterventions(tool),
+      this.toolReadings(tool),
     ].flat();
+  }
+
+  /** The requests to stop this call, each opening its inspector. */
+  toolInterventions(tool) {
+    const rows = (this.app.state.interventions || []).filter((r) => r.tool === tool.id);
+    if (!rows.length) return null;
+    return [h("h3", { text: "Interventions" }), h("ol", { class: "drawer-list" }, ...rows.map((r) => h("li", {},
+      h("button", { type: "button", onclick: () => this.intervention(r.id) }, h("strong", { text: `${r.initiator}: stop` }),
+        ` · ${stateText(r.state)[1]} · ${r.id}${r.incident ? ` · incident ${r.incident}` : ""}`))))];
+  }
+
+  /** The monitor's observations made while this call ran. */
+  toolReadings(tool) {
+    const end = tool.end ?? this.app.link.now();
+    const readings = this.app.state.readings.filter((r) => r.kind === "observation" && r.t >= tool.start && r.t <= end);
+    if (!readings.length) return null;
+    const counts = {};
+    for (const r of readings) counts[r.level] = (counts[r.level] || 0) + 1;
+    return [h("h3", { text: "Monitor observations during the call" }),
+      h("p", { class: "note", text: Object.entries(counts).map(([level, n]) => `${n} ${level}`).join(" · ") })];
   }
 
   tool(id) {
     this.open("Tool call", "tool", id, () => this.toolView(id));
+  }
+
+  /** The provenance inspector of an intervention (inspector.js). */
+  intervention(id) {
+    this.open("Intervention", "intervention", id, () => interventionView(this, id),
+      { signature: () => JSON.stringify((this.app.state.interventions || []).find((r) => r.id === id) || null) });
   }
 
   toolList(tools) {

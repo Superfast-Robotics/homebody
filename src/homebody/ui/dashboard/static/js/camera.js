@@ -137,6 +137,15 @@ export class Camera {
       !["decision", "topdown"].includes(this.view);
   }
 
+  /** The camera's state from actual frame receipt: {kind: live | stale | reconnecting | offline | unknown, age}. A
+   * connected session without recent frames is stale, never live. */
+  freshness() {
+    const age = this.frameAt === null ? null : Math.max(0, this.app.link.now() - this.frameAt);
+    if (!this.app.link.connected) return { kind: this.app.link.attempt > RECONNECTS ? "offline" : "reconnecting", age };
+    if (age === null) return { kind: "unknown", age };
+    return { kind: age > STALE ? "stale" : "live", age };
+  }
+
   renderFreshness(state = this.app.state) {
     const badge = $("live-badge");
     const age = this.frameAt === null ? null : this.app.link.now() - this.frameAt;

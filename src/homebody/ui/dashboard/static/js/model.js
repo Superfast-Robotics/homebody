@@ -36,7 +36,7 @@ export function monitorStatus(readings, incidents, now, connected) {
   const heard = latest ? Math.max(0, now - (latest.received ?? latest.t)) : null;
   const state = !connected ? "offline" : !latest ? "unknown" : heard > staleAfter ? "stale" : "connected";
   return {
-    state, heard,
+    state, heard, staleAfter,
     observationAge: lastObservation ? Math.max(0, now - lastObservation.t) : null,
     synthetic: recent.some((r) => r.synthetic),
     observations: observations.length,

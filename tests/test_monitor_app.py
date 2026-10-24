@@ -140,3 +140,15 @@ def test_the_servers_rows_say_who_answers_what_runs_where_and_the_harness_link()
     assert kitchen["name"] == "kitchen_baskets" and kitchen["detail"] == "not checked yet"
     stalled = server_rows(config, statuses, now=200.0)[0]  # a stalled watcher shows as down
     assert stalled["health"] == "down" and "no status for" in stalled["error"]
+
+
+def test_the_robot_row_says_which_harness_runs_where_and_when_its_simulation_server_is_lost(tmp_path):
+    made, _, _ = app(tmp_path, [])
+    assert made.robot_link()["state"] == "unknown"
+    made.client = types.SimpleNamespace(closed=types.SimpleNamespace(is_set=lambda: False))
+    made.harness = "demo_with_monitor"
+    made.statuses = {("harness", "demo_with_monitor"): Status("demo_with_monitor", "harness", True, 3.0, {
+        "sim": {"connected": False, "endpoint": "tcp://127.0.0.1:5720", "error": "does not answer"}})}
+    link = made.robot_link()
+    assert link == {"state": "lost", "detail": "Harness demo_with_monitor on tcp://127.0.0.1:5720: does not answer"}
+    assert made.console._snapshot()["robot_link"] == link

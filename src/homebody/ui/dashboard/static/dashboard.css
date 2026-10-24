@@ -321,6 +321,31 @@ pre.json { margin: 4px 8px 10px; padding: 8px 10px; background: var(--surface-2)
 .critical-banner p { color: var(--text-secondary); font-size: var(--size-meta); }
 .critical-banner .btn { grid-column: 2; justify-self: start; }
 .pause-card { background: var(--warning-light); border: 1px solid var(--state-warning-edge); }
+/* the critical intervention card: each step from a recorded stage; pending and unknown steps are said, not filled */
+.intervention-card { margin: 12px 12px 0; padding: 12px; border-radius: var(--radius-small); background: var(--danger-light);
+  border: 1px solid var(--state-error-edge); display: flex; flex-direction: column; gap: 8px; }
+.intervention-card.executing, .intervention-card.requested { background: var(--warning-light); border-color: var(--state-warning-edge); }
+.intervention-head { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; gap: 10px; align-items: start; }
+.intervention-head > .icon { color: var(--danger); margin-top: 2px; }
+.intervention-card.requested .intervention-head > .icon, .intervention-card.executing .intervention-head > .icon { color: var(--warning-text); }
+.intervention-head p, .intervention-age { color: var(--text-secondary); font-size: var(--size-meta); }
+.intervention-state { font-weight: var(--weight-strong); }
+.intervention-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: var(--size-meta); }
+.intervention-steps li { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; gap: 8px; align-items: baseline; }
+.intervention-steps .mark { font-weight: var(--weight-strong); text-align: center; }
+.intervention-steps .done .mark { color: var(--success); }
+.intervention-steps .pending .mark { color: var(--warning-text); }
+.intervention-steps .failed .mark { color: var(--danger); }
+.intervention-steps .unknown .mark, .intervention-steps .skipped .mark { color: var(--text-muted); }
+.intervention-steps .note { grid-column: 2 / 4; color: var(--text-secondary); }
+.intervention-steps .when { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.recovery-card { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 8px 10px; margin: 12px 12px 0; padding: 12px;
+  border-radius: var(--radius-small); background: var(--recovery-light); border: 1px solid var(--violet-edge); }
+.recovery-card > .icon { color: var(--violet); }
+.recovery-card p { color: var(--text-secondary); font-size: var(--size-meta); }
+.alert-steps { grid-column: 2 / 4; list-style: none; margin: 4px 0 0; padding: 0; font-size: var(--size-meta); color: var(--text-secondary); }
+.alert-steps li::before { content: "↳ "; color: var(--text-muted); }
+.alert.historical { opacity: 0.6; }
 .pause-card > .icon { color: var(--warning-text); }
 .alerts { display: flex; flex-direction: column; gap: 8px; }
 .alert { width: 100%; display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; gap: 8px; text-align: left; padding: 10px 12px;
@@ -473,3 +498,28 @@ pre.json { margin: 4px 8px 10px; padding: 8px 10px; background: var(--surface-2)
 /* a frozen or inspected timeline keeps its Return to live button whole; the legend gives way */
 .inspect-bar { flex: 0 0 auto; }
 .monitor-head .legend { flex: 0 1 auto; min-width: 0; overflow: hidden; }
+/* the intervention inspector's stage flow */
+.flow { list-style: none; margin: 0 0 var(--gap); padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.flow-step button { width: 100%; text-align: left; border: 1px solid var(--border); border-left-width: 3px; background: var(--surface-2);
+  border-radius: var(--radius-small); padding: 8px 10px; }
+.flow-step.done button { border-left-color: var(--success); }
+.flow-step.pending button { border-left-color: var(--warning); }
+.flow-step.failed button { border-left-color: var(--danger); }
+.flow-step.unknown button, .flow-step.skipped button { border-left-color: var(--neutral); }
+.badge.warning { background: var(--warning-light); color: var(--warning-text); }
+.badge.danger { background: var(--danger-light); color: var(--danger); }
+.badge.success { background: var(--success-light); color: var(--success); }
+.badge.running { background: var(--running-light); color: var(--running); }
+.badge.neutral { background: var(--surface-3); color: var(--text-secondary); }
+/* the monitor's current condition, first in the summary strip, and the risk track's signal label */
+.summary-strip .condition { font-weight: var(--weight-strong); padding: 2px 10px; border-radius: 999px; background: var(--surface-2); }
+.summary-strip .condition.intervention, .summary-strip .condition.anomaly { color: var(--danger); background: var(--danger-light); }
+.summary-strip .condition.elevated { color: var(--warning-text); background: var(--warning-light); }
+.summary-strip .condition.normal { color: var(--success); }
+.summary-strip .condition.unknown, .summary-strip .condition.unavailable { color: var(--text-secondary); }
+.track-labels .risk-label { display: flex; flex-direction: column; justify-content: center; line-height: 1.15; }
+.risk-label .risk-name { font-size: var(--size-small); }
+.risk-label .risk-now { font-size: var(--size-small); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.risk-label.high .risk-now { color: var(--danger); } .risk-label.elevated .risk-now { color: var(--warning-text); }
+.risk-label.low .risk-now { color: var(--success); }
+.risk-label .risk-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }

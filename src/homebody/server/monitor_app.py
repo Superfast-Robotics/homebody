@@ -147,8 +147,24 @@ class MonitorApp:
     # --- the dashboard's Servers list and scenarios ---
     def attach(self, dashboard):
         """DASHBOARD shows this app's servers and scenarios and runs its commands."""
-        dashboard.extras.update(servers=self.server_rows, scenarios=self.scenarios)
+        dashboard.extras.update(servers=self.server_rows, scenarios=self.scenarios, robot_link=self.robot_link)
         dashboard.handlers.update(run_scenario=self._run_command, refresh_config=self._refresh_command)
+
+    def robot_link(self) -> dict:
+        """The dashboard's Robot row: the harness in use and its own link to its simulation server."""
+        if self.client is None:
+            return {"state": "unknown", "detail": "No harness in use: run a scenario"}
+        if self.client.closed.is_set():
+            return {"state": "lost", "detail": f"Harness {self.harness}: the connection closed"}
+        status = self.statuses.get(("harness", self.harness))
+        if status is None or not status.connected:
+            return {"state": "unknown", "detail": f"Harness {self.harness}: no status yet"}
+        link = status.detail.get("sim")
+        if link is None:
+            return {"state": "connected", "detail": f"Harness {self.harness} (physics in the harness)"}
+        where = f"Harness {self.harness} on {link.get('endpoint', '?')}"
+        return {"state": "connected", "detail": where} if link.get("connected") else \
+            {"state": "lost", "detail": f"{where}: {link.get('error', 'the simulation server does not answer')}"}
 
     def server_rows(self) -> list[dict]:
         return server_rows(self.config, self.statuses, self.harness, self.sim.name if self.sim else None)

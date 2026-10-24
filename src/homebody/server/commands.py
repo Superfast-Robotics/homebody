@@ -181,6 +181,8 @@ def connect(args, settings, output) -> int:
     console = Dashboard(controls, host=args.host, port=args.port, scene_name="Harness",
                         monitor=settings.monitor if settings.monitor.enabled else None)
     console.extras["scenarios"] = lambda: client.presets
+    console.extras["robot_link"] = lambda: {"state": "lost" if client.closed.is_set() else "connected",
+                                            "detail": f"Harness at {args.url}"}
     console.handlers["run_scenario"] = lambda request: run_preset(controls, request)
     rollouts(console, settings, output)
     client.console = console

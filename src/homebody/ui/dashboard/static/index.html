@@ -152,6 +152,21 @@
     </section>
 
     <section class="card info-panel" id="info-panel" aria-label="Robot information">
+      <div class="intervention-card" id="intervention-card" role="alert" hidden>
+        <div class="intervention-head"><svg class="icon"><use href="#i-alert"/></svg>
+          <div><strong id="intervention-title"></strong><p id="intervention-source"></p></div>
+          <span class="intervention-age" id="intervention-age"></span></div>
+        <p class="intervention-state" id="intervention-state"></p>
+        <ol class="intervention-steps" id="intervention-steps" aria-label="Intervention steps"></ol>
+        <div class="controls wrap">
+          <button class="btn small" type="button" id="intervention-inspect">Inspect incident</button>
+          <button class="btn small" type="button" id="intervention-trace">View execution trace</button>
+        </div>
+      </div>
+      <div class="recovery-card" id="recovery-card" role="status" hidden>
+        <svg class="icon"><use href="#i-recovery"/></svg>
+        <div><strong id="recovery-title"></strong><p id="recovery-text"></p></div>
+      </div>
       <div class="critical-banner" id="critical-banner" role="alert" hidden>
         <svg class="icon"><use href="#i-alert"/></svg>
         <div><strong id="critical-title"></strong><p id="critical-reason"></p></div>
@@ -217,7 +232,7 @@
     <ol class="summary-strip" id="summary-strip" aria-label="What happened in this window"></ol>
     <div class="timeline" id="timeline">
       <ul class="track-labels" aria-hidden="true">
-        <li>Goal</li><li>Skill</li><li>Agent decisions</li><li>Monitor observations</li><li class="tall">Risk</li><li>Interventions</li><li class="axis-row"></li>
+        <li>Goal</li><li>Skill</li><li>Agent decisions</li><li>Monitor observations</li><li class="tall risk-label" id="risk-label"><span class="risk-name">Risk</span><span class="risk-now"></span></li><li>Interventions</li><li class="axis-row"></li>
       </ul>
       <div class="timeline-canvas"><canvas id="timeline-canvas" tabindex="0" role="img" aria-label="Monitoring timeline for the last 60 seconds. Click a moment to inspect it."></canvas></div>
     </div>

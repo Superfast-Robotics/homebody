@@ -1,6 +1,7 @@
 // The monitoring timeline: every track on one time axis, drawn on a canvas from the newest state. Readings are
 // drawn where they were made and stand only as long as their cadence allows; gaps are drawn as gaps.
 import { clock, duration, tokens } from "./dom.js";
+import { signalLabel, stateText } from "./interventions.js";
 import { interventionMarker, observationSegments, riskBuckets, riskSources, spans } from "./model.js";
 
 const ROWS = [["goal", 26], ["skill", 26], ["decisions", 26], ["readings", 26], ["risk", 30], ["interventions", 34], ["axis", 20]];
@@ -10,6 +11,11 @@ const FRAME_MS = 100;
 const STATUS_TEXT = { running: "Running", success: "Completed", failure: "Failed", ended: "Ended", cancelled: "Cancelled" };
 const RISK_TEXT = { low: "Low risk", elevated: "Elevated risk", high: "High risk (at or above threshold)", missing: "Missing" };
 const LEVEL_TEXT = { expected: "Expected", unknown: "Unknown or unclassified", elevated: "Elevated concern", anomaly: "Anomaly", missing: "No reading" };
+// an intervention's recorded stages on the interventions track: shape and tone
+const STAGE_MARK = { requested: ["triangle", "warning"], accepted: ["diamond", "running"], confirmed: ["square", "success"],
+  rejected: ["cross", "danger"], failed: ["cross", "danger"], cancelled: ["circle", "neutral"], timed_out: ["clock", "danger"] };
+const STAGE_TEXT = { requested: "Stop requested", accepted: "Executor acknowledged", confirmed: "Skill stopped (confirmed)",
+  rejected: "Request rejected", failed: "Did not stop", cancelled: "Request withdrawn", timed_out: "Acknowledgement timed out" };
 
 export class Timeline {
   /**
@@ -278,7 +284,21 @@ export class Timeline {
     const source = sources.includes(this.app.riskSource) ? this.app.riskSource : sources.at(-1);
     const colours = { low: c.success, elevated: c.warning, high: c.danger, missing: c.neutral };
     const top = row.y + (row.h - BLOCK) / 2;
-    for (const block of riskBuckets(state.readings, source, state.tasks || [], start, end)) {
+    const blocks = riskBuckets(state.readings, source, state.tasks || [], start, end);
+    blocks.forEach((block, index) => { // a tick where a known reading first reaches the threshold after a lower one
+      const before = blocks[index - 1];
+      if (block.state !== "high" || !before || before.state === "high" || before.state === "missing") return;
+      const x = this.clampX(block.start, view);
+      ctx.fillStyle = c.danger;
+      ctx.beginPath();
+      ctx.moveTo(x - 4, row.y);
+      ctx.lineTo(x + 4, row.y);
+      ctx.lineTo(x, row.y + 5);
+      ctx.closePath();
+      ctx.fill();
+      this.hits.push({ x0: x - 5, x1: x + 5, y0: row.y - 1, y1: row.y + 6, kind: "crossing", item: { block, before }, t: block.start });
+    });
+    for (const block of blocks) {
       const x0 = this.clampX(block.start, view), x1 = this.clampX(block.end, view);
       if (x1 - x0 < 1) continue;
       ctx.fillStyle = colours[block.state];
@@ -294,6 +314,7 @@ export class Timeline {
     const { ctx, c, end, start, width } = view;
     const row = view.rows.interventions;
     const mid = row.y + row.h / 2;
+    this.requests(view, state, row, mid);
     const shown = state.incidents.filter((i) => i.t >= start && i.t <= end && interventionMarker(i)).sort((a, b) => a.t - b.t);
     const xs = shown.map((i) => this.x(i.t, end, width));
     shown.forEach((incident, index) => {
@@ -309,6 +330,47 @@ export class Timeline {
       }
       this.hits.push({ x0: x - 8, x1: x + 8, y0: row.y, y1: row.y + row.h, kind: "incident", item: incident, t: incident.t });
     });
+  }
+
+  /** Each intervention's recorded stages, joined by a line from its request to its last stage. */
+  requests(view, state, row, mid) {
+    const { ctx, c, end, start, width } = view;
+    for (const r of state.interventions || []) {
+      const marks = r.stages.filter(([s, t]) => t !== null && STAGE_MARK[s]).map(([s, t]) => [s, t]);
+      const requested = marks.find(([s]) => s === "requested");
+      if (requested && (r.state === "timed_out" || marks.some(([s, t]) => s === "accepted" && t - requested[1] > r.ack_timeout))) {
+        marks.push(["timed_out", requested[1] + r.ack_timeout]);
+      }
+      const shown = marks.filter(([, t]) => t >= start && t <= end).sort((a, b) => a[1] - b[1]);
+      if (!shown.length) continue;
+      const xs = shown.map(([, t]) => this.x(t, end, width));
+      ctx.strokeStyle = c.border;
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash(r.state === "timed_out" || r.state === "requested" ? [3, 3] : []);
+      ctx.beginPath();
+      ctx.moveTo(xs[0], mid);
+      ctx.lineTo(r.state === "requested" || r.state === "timed_out" || r.state === "executing" ? this.x(end, end, width) : xs.at(-1), mid);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      shown.forEach(([stage, t], i) => {
+        const [shape, tone] = STAGE_MARK[stage];
+        this.mark(ctx, shape, xs[i], mid, c[tone] || c.neutral, c["app-bg"]);
+        this.hits.push({ x0: xs[i] - 7, x1: xs[i] + 7, y0: row.y, y1: row.y + row.h, kind: "intervention",
+          item: { ...r, stage, at: t }, t });
+      });
+    }
+  }
+
+  mark(ctx, shape, x, y, colour, ink) {
+    ctx.fillStyle = colour;
+    ctx.strokeStyle = colour;
+    ctx.beginPath();
+    if (shape === "triangle") { ctx.moveTo(x, y - 6); ctx.lineTo(x + 6, y + 5); ctx.lineTo(x - 6, y + 5); ctx.closePath(); ctx.fill(); }
+    else if (shape === "cross") { ctx.lineWidth = 2.5; ctx.moveTo(x - 5, y - 5); ctx.lineTo(x + 5, y + 5); ctx.moveTo(x + 5, y - 5); ctx.lineTo(x - 5, y + 5); ctx.stroke(); }
+    else if (shape === "clock") {
+      ctx.arc(x, y, 6, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = ink; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(x, y - 4); ctx.lineTo(x, y); ctx.lineTo(x + 3, y + 2); ctx.stroke();
+    } else this.glyph(ctx, shape, x, y, colour, ink);
   }
 
   glyph(ctx, shape, x, y, colour, ink) {
@@ -425,10 +487,25 @@ export class Timeline {
       const span = `${clock(item.start)}–${clock(item.end)}`;
       if (item.state === "missing") return `${span} · no risk sample in this second (missing, not low)`;
       const incident = state.incidents.find((i) => i.kind === "monitor" && i.t >= item.start && i.t < item.end);
+      const requests = (state.interventions || []).filter((r) => r.stages.some(([, t]) => t !== null && t >= item.start && t < item.end));
+      const peak = item.readings.reduce((top, r) => (r.risk > top.risk ? r : top));
+      const signals = [...new Set(item.readings.map((r) => signalLabel(r.signal)))];
       return [`${span} · ${RISK_TEXT[item.state]}`,
-        `Max risk ${item.max.toFixed(2)} of ${item.count} reading${item.count > 1 ? "s" : ""} (the second's maximum)`,
-        `${item.source} · threshold ${item.threshold === null ? "none" : item.threshold.toFixed(2)}${item.readings.some((r) => r.synthetic) ? " · synthetic" : ""}`,
-        incident ? `Incident: ${incident.title}` : ""].filter(Boolean).join("\n");
+        `${signalLabel(peak.signal)}: ${item.max.toFixed(2)} (the second's maximum of ${item.count} reading${item.count > 1 ? "s" : ""})`,
+        signals.length > 1 ? `Signals in this second: ${signals.join(", ")}` : "",
+        `Threshold ${item.threshold === null ? "none" : item.threshold.toFixed(2)} · ${item.source}${item.readings.some((r) => r.synthetic) ? " · synthetic" : ""}`,
+        incident ? `Incident: ${incident.title}` : "",
+        ...requests.map((r) => `Intervention ${r.id}: ${stateText(r.state)[1]}`)].filter(Boolean).join("\n");
+    }
+    if (kind === "crossing") {
+      const r = item.block.readings.reduce((top, x) => (x.risk > top.risk ? x : top));
+      return `Threshold crossed at ${clock(item.block.start)}\n${signalLabel(r.signal)} ${r.risk.toFixed(2)} ≥ ${r.threshold?.toFixed(2) ?? "?"} after ${item.before.max?.toFixed(2) ?? "?"}`;
+    }
+    if (kind === "intervention") {
+      const stage = item.stages.find(([s]) => s === item.stage);
+      return [`${STAGE_TEXT[item.stage]} · ${clock(item.at)}`, `${item.initiator} → ${item.target}`,
+        stage ? `${stage[2]}${stage[3] ? ` · ${stage[3]}` : ""}` : `No acknowledgement within ${item.ack_timeout} s of the request`,
+        `Now: ${stateText(item.state)[1]} · click to inspect`].join("\n");
     }
     return `${item.title}\n${item.severity} · ${item.state} · ${clock(item.t)}${item.outcome ? `\nThen: ${item.outcome}` : ""}`;
   }

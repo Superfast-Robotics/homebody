@@ -17,7 +17,11 @@ const ERRORS = {
   SURFACE_CHANGED: "The surface changed", RELEASE_NOT_VERIFIED: "Release not verified",
   OUTCOME_UNKNOWN: "Outcome unknown", PLACEMENT_NOT_VERIFIED: "Placement not verified",
   CHECK_FAILED: "The goal's check does not hold", RECOVERY_LIMIT: "Recovery limit reached", ERROR: "Skill error",
+  MONITOR_STOPPED: "Stopped by monitor", OPERATOR_STOPPED: "Stopped by operator",
 };
+// where a goal's sentence leaves its action for the details (where to, how, with what kept in place)
+const CLAUSE = [",", ";", " from ", " to the ", " into ", " inside ", " onto ", " on the ", " in the ", " with ", " while ",
+  " keeping ", " without ", " so that "];
 
 export function errorText(code) {
   return ERRORS[code] || code;
@@ -33,7 +37,17 @@ export function shortLabel(text, limit = 42) {
   return `${cut.slice(0, cut.lastIndexOf(" ") > 20 ? cut.lastIndexOf(" ") : limit).trimEnd()}…`;
 }
 
+/** A goal's concise label: its sentence up to the first clause after the action ("Pick one jam jar from the shelf
+ * with the right hand" → "Pick one jam jar"), when that leaves at least two words; the full text stays in details. */
+export function goalLabel(text, limit = 42) {
+  const clean = String(text || "").trim().replace(/\.$/, "");
+  const cuts = CLAUSE.map((c) => clean.toLowerCase().indexOf(c)).filter((i) => i > 0 && clean.slice(0, i).trim().split(/\s+/).length >= 2);
+  return shortLabel(cuts.length ? clean.slice(0, Math.min(...cuts)) : clean, limit);
+}
+
 const STATUS = { running: "Running", success: "Completed", failure: "Failed", pending: "Pending", skipped: "Ended" };
+const REQUEST = { requested: "stop requested by the {who}, awaiting the skill", executing: "stop accepted, the skill is ending",
+  timed_out: "stop requested by the {who}, no acknowledgement" };
 
 /** A tree node as an operator reads it: {label, meta}. The technical view keeps the raw fields. */
 export function operatorText(node, elapsed) {
@@ -47,19 +61,28 @@ export function operatorText(node, elapsed) {
     return { label: "Fallback", meta };
   }
   if (node.type === "goal") {
-    const label = `${d.recovers ? "Recovery: " : ""}${shortLabel(node.label, d.recovers ? 34 : 42)}`;
+    const label = `${d.recovers ? "Recovery: " : ""}${goalLabel(node.label, d.recovers ? 34 : 42)}`;
     const attempts = d.used > 1 ? ` · ${d.used} attempts` : "";
     if (node.status === "failure") return { label, meta: `Failed${attempts}${time}` };
     if (node.status === "success") return { label, meta: `Completed${time}` };
-    if (node.status === "running") return { label, meta: `Running${time}${attempts}` };
+    if (node.status === "running") return { label, meta: `Running · attempt ${d.used} of ${d.budget}${time}` };
     return { label, meta: STATUS[node.status] || node.status };
   }
+  if (node.type === "attempts") {
+    const reasons = [...new Set(d.codes.map(errorText))].join(", ");
+    return { label: `${d.count} earlier attempt${d.count > 1 ? "s" : ""}`,
+      meta: d.failed === d.count ? `All failed · ${reasons}` : `${d.failed} failed · ${reasons}` };
+  }
   const name = capital(node.label.replace(/_/g, " "));
-  const attempt = d.attempt > 1 ? ` · attempt ${d.attempt}` : "";
-  if (node.status === "failure") return { label: `${name} failed`, meta: `${errorText(d.code)}${attempt}` };
-  if (node.status === "success") return { label: `${name} succeeded`, meta: `${elapsed || "Done"}${attempt}` };
-  if (node.status === "running") return { label: name, meta: `Running${time}${attempt}` };
-  return { label: name, meta: `${STATUS[node.status] || node.status}${attempt}` };
+  const label = d.number > 1 || d.attempt > 1 ? `${name} · attempt ${d.number || d.attempt}` : name;
+  if (node.status === "failure") return { label, meta: `Failed · ${errorText(d.code)}` };
+  if (node.status === "success") return { label, meta: `Succeeded · ${elapsed || "done"}` };
+  if (node.status === "running") {
+    const open = (d.interventions || []).findLast((r) => REQUEST[r.state]);
+    const request = open ? ` · ${REQUEST[open.state].replace("{who}", open.initiator.toLowerCase())}` : "";
+    return { label, meta: `Running${time}${request}` };
+  }
+  return { label, meta: STATUS[node.status] || node.status };
 }
 
 const KIND = {
@@ -93,8 +116,10 @@ export function summarize(state, start, end, limit = 6) {
   const blocks = [];
   for (const incident of events) {
     const last = blocks.at(-1);
-    if (last && incident.kind === "skill" && last.kind === "failure" && last.incident.kind === "skill" &&
-        last.incident.skill === incident.skill && last.incident.node === incident.node) {
+    const sameFailure = incident.kind === "skill" && last?.kind === "failure" && last.incident.kind === "skill" &&
+      last.incident.skill === incident.skill && last.incident.node === incident.node;
+    const sameDetection = incident.kind === "monitor" && last?.incident?.kind === "monitor" && last.incident.title === incident.title;
+    if (last && (sameFailure || sameDetection)) {
       last.count += 1;
       last.ids.push(incident.id);
       last.end = incident.t;

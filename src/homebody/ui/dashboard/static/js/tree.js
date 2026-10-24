@@ -4,7 +4,7 @@ import { $, clock, duration, h, icon, setIcon, setText, storage, toggleClass } f
 import { operatorText } from "./story.js";
 
 const STATE_ICON = { success: "check", failure: "x", skipped: "skip", paused: "pause" };
-const KIND_ICON = { root: "tree", sequence: "sequence", fallback: "fallback" };
+const KIND_ICON = { root: "tree", sequence: "sequence", fallback: "fallback", attempts: "list" };
 const STATUS_TEXT = { running: "Running", success: "Completed", failure: "Failed", pending: "Pending", skipped: "Ended", paused: "Paused" };
 const MARK = { success: "✓", failure: "✗", running: "●", pending: "○", skipped: "–" };
 
@@ -148,6 +148,7 @@ export class TreeView {
   node(tree, id, depth, state, seen) {
     const node = tree.nodes[id];
     seen.add(id);
+    if (node.type === "attempts" && !this.rows.has(id)) this.collapsed.add(id); // earlier attempts start folded
     const view = this.rows.get(id) || this.create(id);
     const { wrap, row, children } = view;
     wrap.dataset.depth = depth;
@@ -289,6 +290,7 @@ export class TreeView {
     const d = node.detail;
     if (node.type === "root") return d.note || `Task · ${status}`;
     if (node.type === "sequence") return `Sequence · ${status}`;
+    if (node.type === "attempts") return `Earlier attempts (visual grouping) · ${d.codes.join(", ")}`;
     if (node.type === "fallback") {
       return d.selected === null ? "Fallback · every child failed"
         : d.selected > 0 ? `Fallback · recovering with child ${d.selected + 1} · ${status}` : `Fallback · child 1 · ${status}`;

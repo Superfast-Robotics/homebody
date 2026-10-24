@@ -2,12 +2,31 @@
 // account; once it has finished, its outcome, the unresolved alerts and a compact status. A critical alert and a
 // pause each get a fixed slot above; minor warnings never rearrange the panel. Nothing here is invented.
 import { $, ago, clock, duration, h, icon, setText, toggleClass } from "./dom.js";
+import { activeIntervention, alertGroups, flowText, signalLabel, stateText, steps } from "./interventions.js";
+import { monitorStatus } from "./model.js";
 
 const HANDS = { free: "Free", verified: "Holding (verified)", held: "Holding (unverified)" };
 const SEVERITY = { critical: ["alert", "Critical"], warning: ["alert", "Warning"], info: ["info", "Info"] };
 const STATE = { active: "Active", acknowledged: "Acknowledged", resolved: "Resolved" };
 const OUTCOME = { success: "success", success_with_recoveries: "success", partial: "partial", unverified: "unverified", failed: "failed" };
 const SKILLS = { navigate: "Navigate", pick: "Pick", place: "Place", call_coder: "Coding assistant" };
+const MARKS = { done: "✓", pending: "…", failed: "✗", unknown: "?", skipped: "–" };
+const CAMERA = { live: "success", stale: "warning", reconnecting: "warning", offline: "danger", unknown: "" };
+const CONTROLLER_QUIET_S = 15; // s without a report from the skill executor, while a skill runs, before it is said
+
+/** When the skill executor last reported (a stage, a result, a stop it took), from the recorded events only. */
+export function lastControllerReport(state) {
+  const times = [];
+  for (const tool of state.tools) {
+    times.push(tool.start);
+    for (const [t] of tool.stages) times.push(t);
+    if (tool.end !== null) times.push(tool.end);
+  }
+  for (const row of state.interventions || []) {
+    for (const [, t, source] of row.stages) if (t !== null && source.startsWith("Skill executor")) times.push(t);
+  }
+  return times.length ? Math.max(...times) : null;
+}
 
 /** A target in words, from the decision's own arguments: a click on the camera image or a map point, never a name. */
 export function targetText(target) {
@@ -35,6 +54,10 @@ export class Info {
     $("alerts-all").addEventListener("click", () => app.drawer.alerts());
     $("agent-history").addEventListener("click", () => app.drawer.decisions());
     $("critical-inspect").addEventListener("click", () => this.critical && app.openIncident(this.critical.id));
+    $("intervention-inspect").addEventListener("click", () => this.intervention && app.drawer.intervention(this.intervention.id));
+    $("intervention-trace").addEventListener("click", () => {
+      if (this.intervention?.tool) app.drawer.tool(this.intervention.tool);
+    });
     $("outcome-details").addEventListener("click", () => app.drawer.outcome());
   }
 
@@ -56,6 +79,8 @@ export class Info {
       $("agent-section").open = !finished;
     }
     this.renderOutcome(state);
+    this.renderIntervention(state);
+    this.renderRecovery(state);
     this.renderCritical(state);
     this.renderPause(state);
     this.renderStatus(state);
@@ -83,8 +108,50 @@ export class Info {
       h("p", { text: outcome.reason }));
   }
 
+  /** The critical intervention card: the request, and each stage a component reported, while it is open or went
+   * wrong; a step nobody reported says so. */
+  renderIntervention(state) {
+    const row = activeIntervention(state);
+    const shown = row !== null;
+    if (shown && this.intervention?.id !== row.id) $("agent-section").open = false; // the card leads; the agent's account waits
+    this.intervention = row;
+    const card = $("intervention-card");
+    card.hidden = !shown;
+    if (!shown) return;
+    const now = this.app.link.now();
+    const incident = state.incidents.find((i) => i.id === row.incident) || null;
+    const [, label] = stateText(row.state);
+    card.className = `intervention-card ${row.state}`;
+    setText($("intervention-title"), incident ? incident.title : `${row.initiator}: stop ${row.skill || "the running skill"}`);
+    const risk = incident?.evidence?.risk;
+    const signal = incident?.observation?.signal;
+    setText($("intervention-source"), [incident ? `Detected by ${incident.detection || "an unreported source"}` : `Requested by ${row.initiator}`,
+      risk !== undefined && risk !== null ? `Reported ${signalLabel(signal).toLowerCase()}: ${Number(risk).toFixed(2)}` : ""].filter(Boolean).join(" · "));
+    const since = row.stages.find(([, t]) => t !== null)?.[1] ?? row.t;
+    setText($("intervention-age"), ago(now - since));
+    setText($("intervention-state"), `Intervention status: ${label}`);
+    $("intervention-steps").replaceChildren(...steps(row).map((step) => h("li", { class: step.state },
+      h("span", { class: "mark", text: MARKS[step.state] || "?" }), h("span", { text: step.label }),
+      h("span", { class: "when", text: step.t !== null ? clock(step.t) : "" }),
+      h("span", { class: "note", text: [step.source && step.t !== null ? step.source : "", step.note].filter(Boolean).join(" · ") }))));
+    $("intervention-trace").disabled = !row.tool;
+  }
+
+  /** A recovery the plan is running: its goal, and who started it, from the recorded recovery event. */
+  renderRecovery(state) {
+    const span = state.intervals.findLast((i) => i.track === "goal" && i.end === null && i.detail.recovery) || null;
+    const card = $("recovery-card");
+    card.hidden = !span || !state.controls.busy;
+    if (card.hidden) return;
+    const started = state.incidents.findLast((i) => i.tag === "recovery_start" && i.node === span.detail.goal);
+    setText($("recovery-title"), `Recovery in progress: ${span.label}`);
+    setText($("recovery-text"), [started ? `Started by ${started.initiator || "an unrecorded source"}` : "Start not recorded",
+      started?.reason || "", `running ${duration(this.app.link.now() - span.start)}`].filter(Boolean).join(" · "));
+  }
+
   renderCritical(state) {
-    this.critical = state.incidents.findLast((i) => i.alert && i.severity === "critical" && i.state === "active") || null;
+    this.critical = state.incidents.findLast((i) => i.alert && i.severity === "critical" && i.state === "active" &&
+      i.id !== this.intervention?.incident) || null; // the intervention card already shows its own detection
     $("critical-banner").hidden = !this.critical;
     if (!this.critical) return;
     setText($("critical-title"), this.critical.title);
@@ -108,19 +175,40 @@ export class Info {
     $("pause-facts").replaceChildren(...rows.flatMap(([k, v]) => [h("dt", { text: k }), h("dd", { text: v })]));
   }
 
+  /** Robot, camera, monitor and controller, each from its own signal: a connected page is not a live camera. */
+  freshness(state, now) {
+    const link = state.robot_link;
+    const robot = !this.app.link.connected ? ["danger", "Disconnected"]
+      : link ? [{ connected: "success", lost: "danger" }[link.state] || "", { connected: "Connected", lost: "Lost", unknown: "Unknown" }[link.state] || link.state, link.detail]
+        : ["success", "Connected", "The session runs beside this dashboard"];
+    const cam = this.app.camera.freshness();
+    const camera = [CAMERA[cam.kind], { live: "Live", stale: "Stale", reconnecting: "Reconnecting", offline: "Offline", unknown: "Unknown" }[cam.kind]
+      + (cam.age !== null && cam.kind !== "unknown" ? ` · ${duration(cam.age)} old` : cam.kind === "unknown" ? " · no frames received" : "")];
+    const m = monitorStatus(state.readings, state.incidents, now, this.app.link.connected);
+    const observed = m.observationAge === null ? "no observation yet" : `last observation ${duration(m.observationAge)} ago`;
+    const monitor = { connected: ["success", `Connected · ${observed}`], stale: ["warning", `Stale · ${observed}`],
+      offline: ["danger", "Offline"], unknown: ["", "Not connected"] }[m.state];
+    const report = lastControllerReport(state);
+    const quiet = report === null ? null : Math.max(0, now - report);
+    const running = state.tools.some((t) => t.state === "running");
+    const controller = report === null ? ["", "Unknown · no report yet"]
+      : running && quiet > CONTROLLER_QUIET_S ? ["warning", `No report for ${duration(quiet)}`]
+        : ["success", `${running ? "Responsive" : "Idle"} · last report ${duration(quiet)} ago`];
+    return { robot, camera, monitor, controller, cam, m, report };
+  }
+
   renderStatus(state) {
     const now = this.app.link.now();
     const telemetry = this.app.telemetry;
-    const age = telemetry ? now - telemetry.t : null;
-    const connection = !this.app.link.connected ? ["danger", "Disconnected"]
-      : age === null ? ["", "Connected · no frames yet"]
-        : age > 2.5 ? ["warning", `Connected · frames stale (${duration(age)})`] : ["success", "Connected"];
+    const f = this.freshness(state, now);
     const tool = state.tools.findLast((t) => t.state === "running");
     const pose = telemetry?.pose;
     const hands = state.robot.hands;
     const row = (label, value, muted = false, title = "") => ({ label, value: [value].flat(), muted, title });
+    const dot = ([tone, text, title]) => row("", [h("span", { class: `status-dot ${tone}` }), text], false, title || "");
     const rows = [
-      row("Connection", [h("span", { class: `status-dot ${connection[0]}` }), connection[1]]),
+      { ...dot(f.robot), label: "Robot" }, { ...dot(f.camera), label: "Camera" },
+      { ...dot(f.monitor), label: "Monitor" }, { ...dot(f.controller), label: "Controller" },
       row("Current skill", tool ? `${SKILLS[tool.skill] || tool.skill}${tool.recovery ? " (recovery)" : ""} · ${duration(now - tool.start)}` : "None", !tool),
       row("Location", telemetry?.place || (pose ? "Coordinates only (see Details)" : "Unavailable"), !telemetry?.place,
         pose ? coordinates(pose, telemetry.frame) : ""),
@@ -135,28 +223,41 @@ export class Info {
       ["Target arguments", state.robot.target ? JSON.stringify(state.robot.target) : "None"],
       ["Simulation time", typeof telemetry?.sim === "number" ? `${telemetry.sim.toFixed(1)} s` : "Unavailable"],
       ["Frame", telemetry?.seq !== undefined ? `#${telemetry.seq} · epoch ${telemetry.epoch}` : "Unavailable"],
+      ["Last state from the session", state.now ? clock(state.now) : "Unavailable"],
+      ["Last camera frame", this.app.camera.frameAt ? clock(this.app.camera.frameAt) : "None received"],
+      ["Last monitor observation", f.m.observationAge === null ? "None" : clock(now - f.m.observationAge)],
+      ["Last executor report", f.report === null ? "None" : clock(f.report)],
+      ["Clock offset to the session", `${this.app.link.offset.toFixed(3)} s (times shown are the session's)`],
+      ["Transport", this.app.link.connected ? "WebSocket connected" : "WebSocket disconnected"],
     ];
     $("robot-details").replaceChildren(...details.flatMap(([k, v]) => [h("dt", { text: k }), h("dd", { text: v })]));
   }
 
   renderAlerts(state) {
     const open = state.incidents.filter((i) => i.alert && i.state !== "resolved");
-    const shown = open.slice(-2).reverse(); // the newest two; the rest are one click away in View all
+    const groups = alertGroups(state);
+    const shown = groups.slice(0, 2).map((g) => g.incident); // the newest two; the rest are one click away in View all
     const active = open.filter((i) => i.state === "active").length;
     const count = $("alert-count");
     count.hidden = open.length === 0;
     setText(count, String(open.length));
     count.title = `${active} active, ${open.length - active} acknowledged`;
     const now = this.app.link.now();
+    const task = state.task?.id ?? null;
     $("alerts").replaceChildren(...shown.map((incident) => {
       const [name, label] = SEVERITY[incident.severity] || SEVERITY.info;
+      const historical = incident.task !== null && incident.task !== task;
+      const requests = groups.find((g) => g.incident.id === incident.id).interventions;
+      const status = historical ? "Earlier task" : incident.state === "acknowledged" ? "Acknowledged" : "Inspect";
       return h("li", {}, h("button", {
-        class: `alert ${incident.severity} ${incident.state}`, type: "button",
-        "aria-label": `${label}, ${STATE[incident.state]}: ${incident.title}. Inspect the incident.`,
-        onclick: () => this.app.openIncident(incident.id),
+        class: `alert ${incident.severity} ${incident.state}${historical ? " historical" : ""}`, type: "button",
+        "aria-label": `${label}, ${historical ? "from an earlier task" : STATE[incident.state]}: ${incident.title}. Inspect the incident.`,
+        onclick: () => (requests.length ? this.app.drawer.intervention(requests.at(-1).id) : this.app.openIncident(incident.id)),
       }, icon(name), h("span", {}, h("span", { class: "alert-title", text: incident.title }),
         h("span", { class: "alert-reason", text: incident.reason || incident.action })),
-      h("span", { class: "alert-when" }, ago(now - incident.t), h("br"), incident.state === "acknowledged" ? "Acknowledged" : "Inspect")));
+      h("span", { class: "alert-when" }, ago(now - incident.t), h("br"), status),
+      requests.length ? h("ul", { class: "alert-steps" }, ...requests.map((r) => h("li", {
+        text: `${flowText(r, "Detected")} · ${stateText(r.state)[1]}` }))) : null));
     }));
     setText($("alerts-note"), shown.length ? (open.length > 2 ? `${open.length - 2} more in View all.` : "")
       : state.readings.length ? "No unresolved alerts from the session or the monitor."

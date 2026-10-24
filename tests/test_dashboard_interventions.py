@@ -137,3 +137,14 @@ def test_a_goal_with_several_attempts_groups_the_earlier_ones_and_keeps_the_newe
     assert group == "attempts:g1" and nodes[group]["detail"] == {"visual": True, "count": 2, "failed": 2,
                                                                   "codes": ["MONITOR_STOPPED", "NO_GRASP"]}
     assert nodes[newest]["status"] == "running" and nodes[newest]["detail"]["number"] == 3
+
+
+def test_anomalies_while_the_monitors_stop_is_open_stay_one_incident():
+    clock = Clock()
+    dashboard = running(clock)
+    dashboard.monitor(ABORT)
+    for _ in range(4):
+        clock.t += 5  # further apart than one episode's readings, but the stop the first asked for is still open
+        dashboard.monitor(ABORT)
+    incidents = [i for i in dashboard._snapshot()["incidents"] if i["kind"] == "monitor"]
+    assert len(incidents) == 1 and incidents[0]["evidence"]["readings"] == 5

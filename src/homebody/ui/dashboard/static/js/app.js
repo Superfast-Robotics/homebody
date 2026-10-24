@@ -6,6 +6,7 @@ import { $, clock, duration, h, setText, toggleClass } from "./dom.js";
 import { Drawer } from "./drawer.js";
 import { Header } from "./header.js";
 import { Info } from "./info.js";
+import { monitorCondition, signalLabel } from "./interventions.js";
 import { liveEnd, momentAt, monitorStatus, riskSources } from "./model.js";
 import { Rollouts } from "./rollouts.js";
 import { Scenarios } from "./scenarios.js";
@@ -115,6 +116,7 @@ class App {
     setText($("monitor-stats"), stats);
     this.renderMode(state, held);
     this.renderRiskSources(state);
+    this.renderRiskLabel(state, status);
     this.renderSummary(state, status);
   }
 
@@ -140,23 +142,27 @@ class App {
     }
   }
 
-  /** The window's milestones from recorded events; "→" only where one event records the other as its cause. */
+  /** The monitor's current condition first (an open intervention, an anomaly, elevated risk, unknown, normal), then
+   * the window's milestones from recorded events; "→" only where one event records the other as its cause. While
+   * inspecting history the condition is not current, so only the milestones show. */
   renderSummary(state, status) {
     const end = this.inspectEnd ?? this.timelineEnd().end;
     const { blocks, earlier } = summarize(state, end - 60, end);
-    const signature = `${blocks.map((b) => `${b.id}${b.count}${b.label}`).join("|")}:${earlier}:${status.state}`;
+    const live = this.inspectAt === null && !this.timelineEnd().held;
+    const condition = live ? monitorCondition(state, status, this.link.now(), end - 60) : null;
+    const signature = `${blocks.map((b) => `${b.id}${b.count}${b.label}`).join("|")}:${earlier}:${status.state}:${condition?.text}`;
     if (signature === this.summaryShown) return;
     this.summaryShown = signature;
     const strip = $("summary-strip");
+    const head = condition ? [h("li", { class: `condition ${condition.level}`, text: condition.text,
+      title: "The monitor's current condition (not its connectivity)" })] : [];
     if (!blocks.length) {
-      const text = status.state === "unknown" ? "Monitoring unavailable · no significant session events in this window"
-        : "Monitoring active · No significant events in this window";
-      strip.replaceChildren(h("li", { class: "empty-note", text }));
+      strip.replaceChildren(...head, condition ? null : h("li", { class: "empty-note", text: "No significant events in this window" }));
       return;
     }
-    const items = earlier ? [h("li", { class: "earlier", text: `+${earlier} earlier` })] : [];
+    const items = [...head, ...(earlier ? [h("li", { class: "earlier", text: `+${earlier} earlier` })] : [])];
     blocks.forEach((block, index) => {
-      if (index) {
+      if (index || head.length) {
         items.push(h("li", { class: `connector${block.linked ? " linked" : ""}`, text: block.linked ? "→" : "·",
           title: block.linked ? "Recorded as caused by the step before" : "Consecutive; no recorded causal link" }));
       }
@@ -170,6 +176,20 @@ class App {
     this.inspect(block.t);
     if (block.incident) this.drawer.incident(block.incident.id);
     else if (block.task) this.drawer.outcome();
+  }
+
+  /** The risk track's label: the signal the newest scored observation measured, and its current value. */
+  renderRiskLabel(state, status) {
+    const scored = state.readings.filter((r) => r.kind === "observation" && r.risk !== null);
+    const latest = scored.at(-1) || null;
+    const label = $("risk-label");
+    const fresh = latest && status.state === "connected" && status.observationAge !== null && status.observationAge <= Math.max(3, status.staleAfter);
+    setText(label.querySelector(".risk-name"), latest ? signalLabel(latest.signal) : "Risk");
+    const cls = !latest ? "" : latest.level === "anomaly" || (latest.threshold !== null && latest.risk >= latest.threshold) ? "High"
+      : latest.level === "elevated" ? "Elevated" : "Low";
+    setText(label.querySelector(".risk-now"), !latest ? "" : fresh ? `${latest.risk.toFixed(2)} · ${cls}` : `last ${latest.risk.toFixed(2)} (historical)`);
+    label.className = `tall risk-label ${fresh ? cls.toLowerCase() : "historical"}`;
+    label.title = latest ? `${signalLabel(latest.signal)} from ${latest.source} at ${clock(latest.t)}; threshold ${latest.threshold ?? "none"}.\nThe strongest of the monitor's signals at each reading.` : "";
   }
 
   renderRiskSources(state) {
@@ -219,6 +239,7 @@ class App {
     else if (kind === "skill" && item.detail.tool) this.drawer.tool(item.detail.tool);
     else if (kind === "observation") this.drawer.observation(item);
     else if (kind === "risk") this.drawer.risk(item);
+    else if (kind === "intervention") this.drawer.intervention(item.id);
   }
 
   openIncident(id) {

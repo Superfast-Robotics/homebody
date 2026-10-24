@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { cameraFor, errorText, operatorText, shortLabel, summarize } from "../../src/homebody/ui/dashboard/static/js/story.js";
+import { cameraFor, errorText, goalLabel, operatorText, shortLabel, summarize } from "../../src/homebody/ui/dashboard/static/js/story.js";
 
 const incident = (id, t, kind, extra = {}) => ({ id, t, kind, tag: "", title: kind, node: "g1", skill: null, caused_by: null,
   initiator: "", ...extra });
@@ -20,7 +20,22 @@ test("long goal text becomes a short label at a word boundary", () => {
 
 test("operator labels say what happened; raw codes stay in the detail", () => {
   const failed = { type: "action", label: "pick", status: "failure", detail: { code: "INVALID_ARGUMENT", attempt: 2 } };
-  assert.deepEqual(operatorText(failed), { label: "Pick failed", meta: "Invalid target or arguments · attempt 2" });
+  assert.deepEqual(operatorText(failed), { label: "Pick · attempt 2", meta: "Failed · Invalid target or arguments" });
+  const stopped = { type: "action", label: "pick", status: "failure", detail: { code: "MONITOR_STOPPED", number: 1 } };
+  assert.deepEqual(operatorText(stopped), { label: "Pick", meta: "Failed · Stopped by monitor" });
+  const pending = { type: "action", label: "pick", status: "running", detail: { number: 4,
+    interventions: [{ state: "requested", initiator: "Live monitor" }] } };
+  assert.deepEqual(operatorText(pending, "9.0s"), { label: "Pick · attempt 4",
+    meta: "Running · 9.0s · stop requested by the live monitor, awaiting the skill" }); // still running: the tree's own status
+  const earlier = { type: "attempts", label: "Earlier attempts", status: "failure",
+    detail: { count: 3, failed: 3, codes: ["MONITOR_STOPPED", "NO_GRASP", "STALE_OBSERVATION"] } };
+  assert.deepEqual(operatorText(earlier), { label: "3 earlier attempts",
+    meta: "All failed · Stopped by monitor, No grasp found, Its observation was too old" });
+  const running = { type: "goal", label: "Pick one accessible jam jar from the shelf with the right hand, keeping the rest.",
+    status: "running", detail: { used: 4, budget: 8 } };
+  assert.deepEqual(operatorText(running, "1m"), { label: "Pick one accessible jam jar", meta: "Running · attempt 4 of 8 · 1m" });
+  assert.equal(goalLabel("Carry the jam jar to the blue picking cart"), "Carry the jam jar");
+  assert.equal(goalLabel("Go to the kitchen"), "Go to the kitchen"); // a cut would leave one word: kept whole
   const recovery = { type: "goal", label: "reposition and look again", status: "success", detail: { recovers: "g2", used: 1 } };
   assert.deepEqual(operatorText(recovery, "8.1s"), { label: "Recovery: Reposition and look again", meta: "Completed · 8.1s" });
   const goal = { type: "goal", label: "pick a coffee bag", status: "failure", detail: { used: 2 } };
@@ -61,4 +76,12 @@ test("the Auto camera prefers the activity's views that exist", () => {
   const finished = { tools: [], task: { end: 5 }, controls: { busy: false } };
   assert.equal(cameraFor(finished, auto, ["robot", "scene3d"]), "scene3d");
   assert.equal(cameraFor({ tools: [], task: null, controls: { busy: false } }, auto, ["robot"]), "robot");
+});
+
+test("repeated identical monitor detections are one milestone with a count", () => {
+  const state = { tree: { nodes: {} }, tasks: [], incidents: [
+    incident("m1", 1, "monitor", { title: "abort skill: stall p=1.00" }), incident("m2", 6, "monitor", { title: "abort skill: stall p=1.00" })] };
+  const { blocks } = summarize(state, 0, 10);
+  assert.equal(blocks.length, 1);
+  assert.match(blocks[0].label, /×2$/);
 });
