@@ -1352,3 +1352,25 @@ def test_a_done_decided_while_the_operator_paused_and_gave_a_command_leaves_the_
     outcome = session.run_task("Look at the shelf.")
     assert outcome["status"] == "model_done" and outcome["model_claim"] == "turned to the cart"
     assert "turn to the cart" in provider.prompts[1]  # the agent read the command before it could close the task
+
+
+
+def test_a_command_given_while_the_robot_settles_after_done_reopens_the_task(build, monkeypatch):
+    from homebody.skills.contract import Result
+    decisions = [Decision("Looked.", "done", {"summary": "basil and jam"}), Decision("Turned.", "pick", {"hand": "right"}),
+                 Decision("Finished.", "done", {"summary": "turned to the cart"})]
+    controls = Controls()
+    provider = Provider(decisions)
+    session = build(provider, settings=Settings(agent=Agent(done_settle_seconds=0.2)), controls=controls)
+    monkeypatch.setattr(session.runner, "run", lambda skill, arguments, frame, **kw: Result(skill, "OK", "done"))
+    settle = session.settle
+
+    def operator_speaks_while_settling():  # the operator pauses and gives a command during the first settle
+        if len(provider.prompts) == 1:
+            controls.pause()
+            controls.tell("turn to the cart")
+            controls.unpause()
+        settle()
+    monkeypatch.setattr(session, "settle", operator_speaks_while_settling)
+    outcome = session.run_task("Look at the shelf.")
+    assert outcome["model_claim"] == "turned to the cart" and "turn to the cart" in provider.prompts[1]

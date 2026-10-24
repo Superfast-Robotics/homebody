@@ -599,8 +599,10 @@ class Session:
                 self.update("Executing", decision.text)
                 if self.ui is not None:
                     self.ui.select(decision, frame)
+                if decision.skill == "done":
+                    self.settle()  # the robot stands still before the final sample; the operator may pause meanwhile
                 if decision.skill == "done" and self.operator_pending():
-                    # the operator paused or spoke while the agent decided: the task stays open for them
+                    # the operator paused or spoke while the agent decided or the robot settled: the task stays open
                     result = {"skill": "done", "code": "OPERATOR_PENDING",
                               "message": "The operator paused or gave a command before the task closed; read it first"}
                     self.history.append({"base_pose": frame.base_pose.tolist(), "decision": asdict(decision),
@@ -751,15 +753,19 @@ class Session:
         self.update("Executing", auto.text)
         return self.act(auto, frame, step, rescued=stuck_key(decision.skill, decision.arguments))
 
+    def settle(self):
+        """Stand still for agent.done_settle_seconds after the agent's done, before its final physics sample."""
+        epoch, tick = self.backend.epoch, self.settings.motion.tick
+        self.backend.base_velocity(epoch, 0.0, 0.0, 0.0)
+        for _ in range(math.ceil(self.settings.agent.done_settle_seconds / tick)):
+            self.observed.advance(epoch, tick)
+
     def _halt(self, status):
         """Stop the robot after a task; a finished task keeps its arm targets."""
         if self.requires_reset:
             return
         if status == "model_done":
-            epoch, tick = self.backend.epoch, self.settings.motion.tick
-            self.backend.base_velocity(epoch, 0.0, 0.0, 0.0)
-            for _ in range(math.ceil(self.settings.agent.done_settle_seconds / tick)):
-                self.observed.advance(epoch, tick)
+            self.backend.base_velocity(self.backend.epoch, 0.0, 0.0, 0.0)  # settled before the task closed (settle)
         else:
             self.backend.stop(self.backend.epoch)
 
