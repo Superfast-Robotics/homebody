@@ -139,21 +139,24 @@ class ObservedBackend:
         finally:
             self.update_scene()
         if self._real_time:
-            self._pace()
+            self._pace(seconds)
         if self._capture is not None:
             self._capture()
         if self.time - self._last >= self._publish_period or self.time < self._last:
             self.snapshot()
 
 
-    def _pace(self):
+    def _pace(self, seconds):
+        """Hold the step of SECONDS to the wall clock. Behind by more than REAL_TIME_SLACK, or ahead by more than the
+        step itself could explain (the simulation's clock moved on its own, as a free-running server's does), the
+        pace restarts from now: a step never waits longer than its own length."""
         wall, sim = time.monotonic(), self.__backend.time
-        if self._anchor is None or wall - self._anchor[0] > sim - self._anchor[1] + REAL_TIME_SLACK:
+        ahead = None if self._anchor is None else (sim - self._anchor[1]) - (wall - self._anchor[0])
+        if ahead is None or ahead < -REAL_TIME_SLACK or ahead > seconds + REAL_TIME_SLACK:
             self._anchor = (wall, sim)
             return
-        ahead = (sim - self._anchor[1]) - (wall - self._anchor[0])
         if ahead > 0:
-            time.sleep(ahead)
+            time.sleep(min(ahead, seconds))
 
 
 class Session:

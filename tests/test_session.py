@@ -850,6 +850,29 @@ def test_a_watched_session_is_paced_to_the_wall_clock_and_restarts_when_behind(m
     assert sleeps == [0.1]
 
 
+def test_a_simulation_clock_that_jumps_ahead_restarts_the_pace_instead_of_sleeping_it_out(monkeypatch):
+    """A free-running server (warehouse-sim keeps its own real-time clock) can be minutes ahead of the pace's anchor;
+    sleeping that out froze a pick for 9 minutes per 0.04 s step (2026-10-24). A step waits at most its own length."""
+    from homebody.session import session as module
+    clock = {"wall": 0.0}
+    sleeps = []
+    monkeypatch.setattr(module.time, "monotonic", lambda: clock["wall"])
+    monkeypatch.setattr(module.time, "sleep", lambda seconds: sleeps.append(round(seconds, 6)))
+    backend = SimpleNamespace(time=0.0, epoch=1)
+
+    def advance(epoch, seconds):
+        backend.time += seconds
+    backend.advance = advance
+    observed = module.ObservedBackend(backend, lambda frame: None, 1e9, real_time=True)
+    observed._last = 0.0
+    observed.advance(1, 0.04)              # anchors the pace
+    backend.time += 535.0                  # the server's clock ran on by itself
+    observed.advance(1, 0.04)
+    assert sleeps == []                    # re-anchored, no 535 s sleep
+    observed.advance(1, 0.04)              # paced again from the new anchor
+    assert sleeps == [0.04]
+
+
 class BusyThenAnswers(Provider):
     """At capacity for the first BUSY requests, then answers."""
     def __init__(self, decisions, busy, error=None):
