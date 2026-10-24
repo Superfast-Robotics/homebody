@@ -71,8 +71,43 @@ grows with how overdue it is, with stale monitoring, and with an open stop on th
 
 **Camera frames** (`ui/dashboard/frames.py`) are checked as they arrive: blank, dimensionless or undecodable frames are
 invalid; a nearly uniform frame (`frame_uniform_std`) or the same image for `frame_repeat_s` of simulated time is
-suspected invalid. Each monitor reading records the frame quality when it arrived, so a verdict on unusable frames is
-marked. Transport, freshness and usability are shown apart.
+suspected invalid. The check keeps each state by simulation time, so a monitor reading carries the quality of the
+frames at its own observation (the simulation time of the newest frame it read, within 1 s), not the camera's quality
+when the reading arrived; a reading without a simulation time is checked at receipt and says so. Transport, freshness
+and usability are shown apart.
+
+**A monitor result and its evidence** are four separate properties, never one number (`static/js/assessment.js`): the
+monitor's output (its score and what the score is: the decision model's uncalibrated answer probability, which the
+rules average before acting), the model confidence (the top activity label's probability, labelled uncalibrated), the
+input quality (above), and the assessment's reliability (Unknown: nothing checks the monitor independently). A
+degraded input adds a warning beside the score; the score is never changed.
+
+| Reading field | Meaning (V8 name) |
+| --- | --- |
+| `id` | `observation_id`, set by the store |
+| `t`, `received`, `sim_time`, `lag_s` | `observation_timestamp` (dashboard clock), receipt, simulation time of the newest frame read, monitor lag |
+| `input_source` | what the monitor read (the robot cameras' newest frames) |
+| `frame_quality`, `quality_reason`, `quality_source` | `input_quality_status` and `quality_check_source` |
+| `risk`, `level`, `signal`, `semantics` | `monitor_output` and `monitor_score_semantics` |
+| `confidence`, `confidence_semantics`, `calibration` | `model_confidence`, `confidence_calibration_status` |
+| `reliability` | `assessment_reliability_status` (unknown) |
+| `scope`, `scope_goal` | what the reading is about (below) |
+
+**Risk scope** follows the monitor's own rules (`monitor_feed.scope`): a reading taken during a skill call watches that
+attempt (an abort stops only it), a standing-claim signal (`undone:<goal>`) and a reading during planning are about a
+goal, anything else is unknown. Attempt-scoped risk never carries into the next attempt (`execution.continuousRisk`); a
+goal's continues across its attempts, and task, robot or environment scope would continue too. The summary names the
+context ("Stall risk high for 9 s · Pick attempt 4"); a previous attempt's risk is said to be the previous attempt's,
+with the current one's assessment unknown. The risk tracks mark each attempt change with a boundary at the Skill
+track's times.
+
+**Inspection** (`static/js/selection.js`) is one selection every panel follows, resolved by identity: intervention →
+incident → attempt (its call) → plan node; the detecting observation (the incident's first, not the episode's newest);
+the recorded robot-camera frame within two storage periods of the moment, else "Camera evidence unavailable". An
+incident older than the live 60 s opens a recorded window around it. The tree highlights the attempt and unfolds its
+parents while the rows keep their runtime state; its banner says the attempt's state then and now. Return to live
+restores the live camera, the tree following execution and the rolling window; the inspector stays open, since what it
+describes stays true. Inspecting sends nothing to the robot.
 
 **Task impact of a degraded service** (`ui/servers.py`) comes from established links only: the harness the dashboard
 drives runs the task, and a simulation server is a critical dependency when that harness reports being attached to
@@ -111,7 +146,18 @@ What the dashboard cannot show yet, and shows as Unknown or Unverified instead:
   is lost; the client keeps the harness's number beside its own (`HarnessClient.calls`) but readings carry the client's.
 * **Controller on `homebody connect`.** The harness's controller status is not sent to a connect dashboard, so its
   Controller row is Unknown; the monitor app reads it from the simulation server.
-* **Frames the monitor itself read.** The frame check sees the frames the dashboard receives; on a local run the
-  monitor reads the session's own captures, which are the same camera but not provably the same frames.
+* **Frames the monitor itself read.** The frame check sees the frames the dashboard receives, matched to a reading by
+  simulation time; the monitor reads its own captures of the same camera, not provably the same frames. The inspector
+  labels the recorded frame as context, not detection input. A monitor that sent its frames' ids (or their quality)
+  would make the match exact.
+* **Assessment reliability and calibration.** No component validates the monitor's assessments or calibrates its
+  probabilities, so reliability is Unknown and scores and confidence are labelled uncalibrated.
+* **Task-, robot- and environment-scoped risk.** This monitor defines attempt and goal scope only; the page handles the
+  wider scopes when a monitor reports them.
+* **Observation time on the monitor's clock.** A reading's time is when the dashboard received it, beside the
+  simulation time of its newest frame; the monitor reports no wall-clock stamp of its own, so frame-level
+  synchronization across systems is not claimed.
+* **Historical controller and tree state.** The controller's report and the plan node's status are current only; the
+  inspector derives an attempt's state at a moment from its recorded start and end, and says so.
 * **Event sequence numbers.** Events are ordered by arrival and their recorded times; a sequence number from the
   harness would make out-of-order detection exact after a reconnect.

@@ -1,5 +1,6 @@
 // The monitoring timeline: every track on one time axis, drawn on a canvas from the newest state. Readings are
 // drawn where they were made and stand only as long as their cadence allows; gaps are drawn as gaps.
+import { inputWarning, scopeText } from "./assessment.js";
 import { clock, duration, tokens } from "./dom.js";
 import { MARKERS, attemptLabel, clusterMarkers, eventMarkers } from "./execution.js";
 import { signalLabel, stateText } from "./interventions.js";
@@ -9,6 +10,7 @@ const ROWS = [["goal", 26], ["skill", 26], ["decisions", 26], ["readings", 26], 
 const LEFT = 8, RIGHT = 8; // px margins of the plot
 const BLOCK = 22; // px height of a risk block
 const FRAME_MS = 100;
+const DIM = 0.38; // opacity of events unrelated to the inspected selection
 const STATUS_TEXT = { running: "Running", success: "Completed", failure: "Failed", ended: "Ended", cancelled: "Cancelled" };
 const RISK_TEXT = { low: "Low risk", elevated: "Elevated risk", high: "High risk (at or above threshold)", missing: "Missing" };
 const LEVEL_TEXT = { expected: "Expected", unknown: "Unknown or unclassified", elevated: "Elevated concern", anomaly: "Anomaly", missing: "No reading" };
@@ -99,7 +101,8 @@ export class Timeline {
     const end = this.end();
     const start = end - this.seconds;
     this.hatch ||= this.pattern(ctx, c.neutral);
-    const view = { ctx, c, end, start, width, rows: this.layout(), tasks: spans(state.tasks || [], start, end), hatch: this.hatch };
+    const view = { ctx, c, end, start, width, rows: this.layout(), tasks: spans(state.tasks || [], start, end), hatch: this.hatch,
+      sel: this.app.selection };
     this.hits = [];
     this.grid(view);
     this.attemptBand(view, state);
@@ -108,17 +111,19 @@ export class Timeline {
     this.decisions(view, state);
     this.observations(view, state);
     this.risk(view, state);
+    this.transitions(view, state);
     this.interventions(view, state);
     this.axis(view);
     this.cursors(view);
   }
 
-  /** The running attempt's interval, faintly across the tracks, so its readings and markers read as its own. */
-  attemptBand({ ctx, c, end, start, width, rows }, state) {
-    const tool = state.tools.findLast((t) => t.state === "running");
-    if (!tool || tool.start > end) return;
-    const x0 = this.clampX(Math.max(tool.start, start), { end, width }), x1 = this.clampX(end, { end, width });
-    ctx.fillStyle = c["running-light"];
+  /** The selected attempt's interval (else the running one's), faintly across the tracks, so its readings and markers
+   * read as its own. */
+  attemptBand({ ctx, c, end, start, width, rows, sel }, state) {
+    const tool = sel?.tool || state.tools.findLast((t) => t.state === "running");
+    if (!tool || tool.start > end || (tool.end !== null && tool.end < start)) return;
+    const x0 = this.clampX(Math.max(tool.start, start), { end, width }), x1 = this.clampX(tool.end ?? end, { end, width });
+    ctx.fillStyle = sel?.tool ? c["violet-bg"] : c["running-light"];
     ctx.globalAlpha = 0.5;
     ctx.fillRect(x0, 0, x1 - x0, rows.axis.y);
     ctx.globalAlpha = 1;
@@ -178,9 +183,11 @@ export class Timeline {
     };
     const shown = this.app.state.intervals.filter((s) => s.track === track && (s.end ?? end) >= start && s.start <= end);
     if (!shown.length && track === "goal") this.empty(view, row, view.tasks.length ? "No goal in this window" : "No task in this window");
+    const tool = view.sel?.tool;
     for (const span of shown) {
       const x0 = this.clampX(span.start, view), x1 = this.clampX(span.end ?? end, view);
       const recovery = span.detail.recovery;
+      ctx.globalAlpha = tool && (track === "skill" ? span.detail.tool !== tool.id : span.detail.goal !== tool.goal) ? DIM : 1;
       const [fill, stroke] = recovery && span.status !== "failure" && span.status !== "running"
         ? [c["violet-bg"], c.violet] : colours[span.status] || [c["surface-3"], c.border];
       ctx.fillStyle = fill;
@@ -194,6 +201,7 @@ export class Timeline {
       const label = `${recovery ? "↻ " : ""}${span.label}${span.detail.attempt > 1 ? ` #${span.detail.attempt}` : ""}`;
       const ink = span.status === "running" ? c.running : recovery ? c.violet : c["text-secondary"];
       this.label(ctx, label, x0 + 6, x1 - 6, row.y + row.h / 2, ink);
+      ctx.globalAlpha = 1;
       this.hits.push({ x0, x1, y0: row.y, y1: row.y + row.h, kind: track, item: span, t: span.start });
     }
   }
@@ -270,12 +278,14 @@ export class Timeline {
       if (incident.kind !== "monitor" || incident.t < start || incident.t > end) continue;
       const x = this.x(incident.t, end, view.width);
       ctx.fillStyle = c.danger;
+      ctx.globalAlpha = view.sel && view.sel.incident?.id !== incident.id ? DIM : 1;
       ctx.beginPath();
       ctx.moveTo(x - 5, row.y);
       ctx.lineTo(x + 5, row.y);
       ctx.lineTo(x, row.y + 7);
       ctx.closePath();
       ctx.fill();
+      ctx.globalAlpha = 1;
       this.hits.push({ x0: x - 6, x1: x + 6, y0: row.y - 2, y1: row.y + 9, kind: "incident", item: incident, t: incident.t });
     }
   }
@@ -308,18 +318,53 @@ export class Timeline {
       this.hits.push({ x0: x - 5, x1: x + 5, y0: row.y - 1, y1: row.y + 6, kind: "crossing", item: { block, before }, t: block.start });
     });
     const selected = this.app.inspectAt ?? this.hover;
+    const tool = view.sel?.tool;
+    const related = (block) => block.readings.some((r) => r.tool === tool.id && r.scope !== "goal"); // the attempt's own readings
+    let extent = null; // the selected attempt's risk interval, underlined
     for (const block of blocks) {
       const x0 = this.clampX(block.start, view), x1 = this.clampX(block.end, view);
       if (x1 - x0 < 1) continue;
+      const mine = tool && block.state !== "missing" && related(block);
+      if (mine) extent = [Math.min(extent?.[0] ?? x0, x0), Math.max(extent?.[1] ?? x1, x1)];
+      ctx.globalAlpha = tool && !mine ? DIM : 1;
       ctx.fillStyle = colours[block.state];
       this.rect(ctx, x0 + 0.75, top, x1 - x0 - 1.5, BLOCK, 2);
       ctx.fill();
+      ctx.globalAlpha = 1;
       if (selected !== null && selected !== undefined && selected >= block.start && selected < block.end) {
         ctx.strokeStyle = c["event-selected"];
         ctx.lineWidth = 2;
         ctx.stroke();
       }
       this.hits.push({ x0, x1, y0: row.y, y1: row.y + row.h, kind: "risk", item: block, t: block.start });
+    }
+    if (extent) {
+      ctx.fillStyle = c.violet;
+      ctx.fillRect(extent[0], top + BLOCK + 2, extent[1] - extent[0], 2);
+    }
+  }
+
+  /** Where the skill attempt changes: a subtle dashed boundary across the observation and risk tracks, at the Skill
+   * track's own times, so a risk reading reads as its attempt's. */
+  transitions(view, state) {
+    const { ctx, c, end, start, rows } = view;
+    const skills = state.intervals.filter((s) => s.track === "skill").sort((a, b) => a.start - b.start);
+    const y0 = rows.readings.y + 2, y1 = rows.risk.y + rows.risk.h - 2;
+    for (let i = 1; i < skills.length; i += 1) {
+      const t = skills[i].start;
+      if (t < start || t > end) continue;
+      const x = Math.round(this.x(t, end, view.width)) + 0.5;
+      ctx.strokeStyle = c["text-muted"];
+      ctx.globalAlpha = 0.6;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([2, 3]);
+      ctx.beginPath();
+      ctx.moveTo(x, y0);
+      ctx.lineTo(x, y1);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+      this.hits.push({ x0: x - 3, x1: x + 3, y0, y1, kind: "transition", item: { from: skills[i - 1], to: skills[i] }, t });
     }
   }
 
@@ -331,12 +376,25 @@ export class Timeline {
     const mid = row.y + row.h / 2;
     const markers = eventMarkers(state, start, end);
     if (!markers.length) return;
+    const sel = view.sel;
+    const related = (m) => !sel || (sel.intervention ? m.intervention === sel.intervention.id : false) ||
+      (sel.incident && m.incident === sel.incident.id) || (!sel.intervention && sel.tool && m.tool === sel.tool.id);
     for (const cluster of clusterMarkers(markers, (t) => this.x(t, end, width))) {
       const x = cluster.x;
+      const mine = cluster.items.some(related);
+      ctx.globalAlpha = mine ? 1 : DIM;
+      if (sel && mine) { // the selected incident's own events carry a ring
+        ctx.strokeStyle = c.violet;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(x, mid, cluster.items.length > 1 ? 12 : 10.5, 0, Math.PI * 2);
+        ctx.stroke();
+      }
       if (cluster.items.length === 1) {
         const [m] = cluster.items;
         const [shape, tone] = MARKERS[m.kind];
         this.symbol(ctx, shape, x, mid, c[tone] || c.neutral, c["app-bg"]);
+        ctx.globalAlpha = 1;
         this.hits.push({ x0: x - 8, x1: x + 8, y0: row.y, y1: row.y + row.h, kind: "event", item: m, t: m.t });
         continue;
       }
@@ -351,6 +409,7 @@ export class Timeline {
       ctx.textAlign = "center";
       ctx.fillText(String(cluster.items.length), x, mid + 0.5);
       ctx.textAlign = "left";
+      ctx.globalAlpha = 1;
       this.hits.push({ x0: x - 10, x1: x + 10, y0: row.y, y1: row.y + row.h, kind: "cluster", item: cluster.items, t: cluster.t });
     }
   }
@@ -494,6 +553,7 @@ export class Timeline {
       return [`${span} · ${RISK_TEXT[item.state]}`,
         `${signalLabel(peak.signal)}: ${item.max.toFixed(2)} · ${item.count} reading${item.count > 1 ? "s" : ""} · aggregation: the second's maximum`,
         `Attempt: ${tool ? `${attemptLabel(tool)} (${tool.execution})` : "Unknown (the reading named no skill call)"}`,
+        `Applies to: ${scopeText(peak, state)}`, inputWarning(peak) ? `${inputWarning(peak).text} at this observation` : "",
         signals.length > 1 ? `Signals in this second: ${signals.join(", ")}` : "",
         `Threshold ${item.threshold === null ? "none" : item.threshold.toFixed(2)} · ${item.source}${item.readings.some((r) => r.synthetic) ? " · synthetic" : ""}`,
         incident ? `Incident: ${incident.title}` : "",
@@ -509,6 +569,10 @@ export class Timeline {
       return [`${item.label} · ${clock(item.t)}`, item.detail || "", tool ? `Attempt: ${attemptLabel(tool)}` : "",
         "Click to inspect"].filter(Boolean).join("\n");
     }
+    if (kind === "transition") {
+      const name = (span) => attemptLabel({ skill: span.label, number: span.detail.number ?? span.detail.attempt });
+      return `${name(item.from)} → ${name(item.to)} · ${clock(item.to.start)}\nRisk before this line belongs to the earlier attempt`;
+    }
     if (kind === "cluster") {
       return [`${item.length} events · click to list them`, ...item.map((m) => `${clock(m.t)} ${m.label}`)].join("\n");
     }
@@ -518,16 +582,17 @@ export class Timeline {
   click(event) {
     const { x, hit, t } = this.at(event);
     if (x < LEFT) return;
-    if (hit && !hit.weak) this.app.open(hit.kind, hit.item);
-    this.app.inspect(hit && !hit.weak ? hit.t : t);
+    if (hit && !hit.weak && hit.kind !== "transition") {
+      if (!this.app.open(hit.kind, hit.item)) this.app.inspect(hit.t);
+    } else this.app.inspect(hit?.kind === "transition" ? hit.t : t);
   }
 
   keys(event) {
     const step = event.shiftKey ? 5 : 1;
     const at = this.app.inspectAt ?? this.app.timelineEnd().end;
-    if (event.key === "ArrowLeft") this.app.inspect(at - step);
-    else if (event.key === "ArrowRight") this.app.inspect(Math.min(this.app.timelineEnd().end, at + step));
-    else if (event.key === "Escape") this.app.inspect(null);
+    if (event.key === "ArrowLeft") this.app.selectMoment(at - step);
+    else if (event.key === "ArrowRight") this.app.selectMoment(Math.min(this.app.timelineEnd().end, at + step));
+    else if (event.key === "Escape" && this.app.inspectAt !== null) this.app.returnToLive(); // a frozen task end stays frozen
     else return;
     event.preventDefault();
   }

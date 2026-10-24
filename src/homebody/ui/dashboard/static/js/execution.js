@@ -80,8 +80,17 @@ const high = (r) => r.level === "anomaly" || (r.risk !== null && r.threshold !==
 const elevated = (r) => high(r) || r.level === "elevated";
 const scored = (readings) => readings.filter((r) => r.kind === "observation" && r.risk !== null).sort((a, b) => a.t - b.t);
 
-/** The newest uninterrupted run of elevated-or-high readings of one attempt: {seconds, high, tool, start, end};
- * a gap longer than GAP, a calmer reading or another attempt ends it. */
+/** Whether readings A and B judge the same context, by B's scope: an attempt's readings belong to that attempt (an
+ * unscoped one to its attempt too, never across), a goal's to that goal, a task's, robot's or environment's carry on. */
+export function sameContext(a, b) {
+  const scope = b.scope || "skill_attempt";
+  if (["task", "robot", "environment"].includes(scope)) return (a.scope || "skill_attempt") === scope;
+  if (scope === "goal") return a.scope === "goal" && a.scope_goal === b.scope_goal;
+  return a.tool === b.tool && (a.scope || "skill_attempt") !== "goal";
+}
+
+/** The newest uninterrupted run of elevated-or-high readings of one context (sameContext): {seconds, high, tool, start,
+ * end, signal, scope, scope_goal, latest}; a gap longer than GAP, a calmer reading or another context ends it. */
 export function continuousRisk(readings, gap) {
   const rs = scored(readings);
   const latest = rs.at(-1);
@@ -89,11 +98,12 @@ export function continuousRisk(readings, gap) {
   let start = latest;
   for (let i = rs.length - 2; i >= 0; i -= 1) {
     const r = rs[i];
-    if (r.tool !== latest.tool || !elevated(r) || start.t - r.t > gap) break;
+    if (!sameContext(r, latest) || !elevated(r) || start.t - r.t > gap) break;
     start = r;
   }
-  const run = rs.filter((r) => r.t >= start.t && r.tool === latest.tool);
-  return { seconds: latest.t - start.t, high: run.every(high), tool: latest.tool, start: start.t, end: latest.t, signal: latest.signal };
+  const run = rs.filter((r) => r.t >= start.t && sameContext(r, latest));
+  return { seconds: latest.t - start.t, high: run.every(high), tool: latest.tool, start: start.t, end: latest.t, signal: latest.signal,
+    scope: latest.scope || "skill_attempt", scope_goal: latest.scope_goal ?? null, latest };
 }
 
 /** Seconds of [start, end] (one-second buckets) with an elevated or high reading: not necessarily contiguous. */
@@ -211,7 +221,7 @@ const signalWord = (signal) => SIGNAL_NAMES[signal] || (signal?.startsWith("fail
 
 /**
  * The compact incident card's words for intervention ROW: {title, status, tone, attempt, outcome, severity}, e.g.
- * "Pick stall detected" · "Action pending" · "Pick · Attempt 4 · Stall probability 1.00" · "Abort requested · No
+ * "Pick stall detected" · "Action pending" · "Pick · Attempt 4 · Stall score 1.00" · "Abort requested · No
  * controller acknowledgement". Every phrase follows a recorded stage; nothing is claimed past the last one.
  */
 export function incidentCard(state, row) {
@@ -226,58 +236,72 @@ export function incidentCard(state, row) {
   const risk = incident?.evidence?.risk;
   const attempt = [skill, tool ? `Attempt ${tool.number}` : "Attempt unknown",
     risk !== undefined && risk !== null ? `${signalLabel(signal)} ${Number(risk).toFixed(2)}` : ""].filter(Boolean).join(" · ");
+  const observed = incident?.evidence?.first_observation || incident?.observation || null;
+  const quality = observed?.frame_quality;
+  const warning = quality === "invalid" || quality === "suspected_invalid" ? `Input warning: ${quality.replace("_", " ")} frames at detection` : "";
   const outcome = { requested: "Abort requested · Awaiting controller acknowledgement",
     timed_out: "Abort requested · No controller acknowledgement", executing: "Controller acknowledged · Skill not yet stopped",
     confirmed: row.stages.some(([s]) => s === "retry_started") ? "Skill stopped · Retry started" : "Skill stopped · Recovery pending",
     failed: "Stop acknowledged · The skill did not stop", rejected: "Abort rejected by the harness",
     cancelled: "Request withdrawn before it was taken" }[row.state] || stateText(row.state)[1];
-  return { title, status: status[1], tone: status[0], attempt, outcome, severity: incident?.severity || "warning", incident, tool };
+  return { title, status: status[1], tone: status[0], attempt, outcome, warning, severity: incident?.severity || "warning", incident, tool };
+}
+
+const riskWord = (signal) => (signal?.startsWith("failure:") ? `Failure (${signal.slice(8).replace(/_/g, " ")})`
+  : signalLabel(signal).replace(/ score$/, ""));
+const SCOPED = { task: "Task-level", robot: "Robot-level", environment: "Environment" };
+
+/** The context a reading judges, in words: its attempt, its goal, a wider scope, or "Attempt unknown". */
+export function contextLabel(state, reading) {
+  const scope = reading?.scope || "skill_attempt";
+  if (scope === "goal") return reading.scope_goal ? `Goal ${reading.scope_goal}` : "Goal unknown";
+  if (SCOPED[scope]) return SCOPED[scope];
+  const tool = toolById(state, reading?.tool);
+  return tool ? attemptLabel(tool) : "Attempt unknown";
 }
 
 /**
- * The monitoring panel's one summary, by priority: a pending or failed intervention, a completed one awaiting
- * recovery, a current critical anomaly, a confirmed execution inconsistency, elevated risk, a relevant system
- * degradation, then normal. A stale or disconnected monitor and unusable camera frames are said in any case.
- * Returns {level, text}.
+ * The monitoring panel's one summary: the current assessment and the context it applies to, e.g. "Stall risk high for
+ * 9 s · Pick attempt 4". An attempt-scoped risk of an attempt that is no longer running is said to be the previous
+ * attempt's, never a fresh assessment of the current one. A confirmed execution mismatch comes before elevated (not
+ * high) risk; then a required service, or normal. Open interventions are counted, not described again (the incident card says what they are); a stale monitor
+ * and unusable input frames (at the newest observation) are said in any case. Returns {level, text}.
  */
 export function contextSummary(state, status, now, windowStart, { gap = 3, system = null, check = null } = {}) {
+  void windowStart;
   const fresh = status.state === "connected" && status.observationAge !== null && status.observationAge <= Math.max(3, status.staleAfter || 3);
   const notes = [];
+  const task = state.task?.id;
+  const open = (state.interventions || []).filter((r) => r.task === task && (OPEN.includes(r.state) || r.state === "failed" || r.state === "rejected"));
+  if (open.length) notes.push(`${open.length} open intervention${open.length > 1 ? "s" : ""}`);
   if (state.readings.length && !fresh) {
     notes.push(status.state === "offline" ? "Monitor disconnected" : `Monitor stale (last observation ${Math.round(status.observationAge ?? 0)} s ago)`);
   }
-  const quality = state.frame_quality?.state;
-  if (quality === "invalid" || quality === "suspected_invalid") notes.push("Visual input degraded");
+  const newest = state.readings.findLast((r) => r.kind === "observation") || null;
+  const quality = newest?.frame_quality;
+  if (fresh && (quality === "invalid" || quality === "suspected_invalid")) notes.push(`Input warning: ${quality.replace("_", " ")} frames`);
   const said = (level, text) => ({ level, text: [text, ...notes].join(" · ") });
-  const task = state.task?.id;
-  const rows = (state.interventions || []).filter((r) => r.task === task);
-  const open = rows.findLast((r) => OPEN.includes(r.state) || r.state === "failed" || r.state === "rejected");
-  if (open) {
-    const card = incidentCard(state, open);
-    const short = { requested: "Abort requested · Awaiting controller" }[open.state] || card.outcome;
-    return said("intervention", `${card.title} · ${short}`);
-  }
-  const tool = runningAttempt(state);
-  const done = rows.findLast((r) => r.state === "confirmed" && !r.stages.some(([s]) => s === "retry_finished"));
-  if (done && (!tool || done.tool !== tool.id)) {
-    const card = incidentCard(state, done);
-    return said("intervention", `${card.title} · ${card.outcome}`);
-  }
   if (!state.readings.length && !check && !system?.required) {
     return said("unavailable", "No monitoring service connected: session, agent and skill events only");
   }
+  const tool = runningAttempt(state);
   const run = fresh ? continuousRisk(state.readings, gap) : null;
-  const where = (id) => { const t = toolById(state, id); return t ? ` · ${attemptLabel(t)}` : ""; };
-  if (run?.high) {
-    const lasting = run.seconds >= 1 ? ` · ${Math.round(run.seconds)} s continuously` : "";
-    return said("anomaly", `${signalLabel(run.signal).replace(" probability", "")} risk high${where(run.tool)}${lasting}`);
+  if (check && check.state === "confirmed" && !run?.high) return said("anomaly", `Execution state mismatch · ${check.rule}`);
+  if (run) {
+    const word = `${riskWord(run.signal)} risk ${run.high ? "high" : "elevated"}`;
+    const level = run.high ? "anomaly" : "elevated";
+    const previous = run.scope === "skill_attempt" && run.tool && tool && run.tool !== tool.id;
+    if (previous) {
+      return said(level, `Previous ${contextLabel(state, run.latest)}: ${word.toLowerCase()} · Current ${attemptLabel(tool)}: assessment unknown`);
+    }
+    const lasting = run.seconds >= 1 ? ` for ${Math.round(run.seconds)} s` : "";
+    return said(level, `${word}${lasting} · ${contextLabel(state, run.latest)}`);
   }
-  if (check && check.state === "confirmed") return said("anomaly", `Execution state mismatch · ${check.rule}`);
-  if (run) return said("elevated", `${signalLabel(run.signal).replace(" probability", "")} risk elevated${where(run.tool)}`);
   if (system?.required) return said("elevated", `Required service unavailable: ${system.names.join(", ")}`);
   if (!state.readings.length) return said("unavailable", "No monitoring service connected: session, agent and skill events only");
   if (!fresh) return said("unknown", "Current behaviour assessment unavailable");
-  return said("normal", "Monitoring active · No significant concerns");
+  const where = newest && newest.risk !== null ? ` · ${contextLabel(state, newest)}` : "";
+  return said("normal", `Monitoring active · No significant concerns${where}`);
 }
 
 // the interventions track's standard symbols: [shape, tone]

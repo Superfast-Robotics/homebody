@@ -114,6 +114,8 @@
       </div>
     </section>
 
+    <div class="splitter" id="splitter" role="separator" aria-orientation="vertical" aria-controls="camera" tabindex="0"
+      aria-label="Resize the camera and the behavior tree (arrow keys; double-click resets)" title="Drag to resize · double-click resets"></div>
     <section class="card tree-panel" id="tree-panel" aria-label="Behavior tree">
       <div class="panel-head">
         <svg class="icon muted"><use href="#i-tree"/></svg><h2>Behavior Tree</h2>
@@ -126,6 +128,10 @@
         <button role="tab" type="button" id="tab-plan" aria-controls="pane-plan" aria-selected="true"><svg class="icon"><use href="#i-tree"/></svg>Execution Plan</button>
         <button role="tab" type="button" id="tab-logs" aria-controls="pane-logs" aria-selected="false" tabindex="-1"><svg class="icon"><use href="#i-list"/></svg>Logs</button>
         <button role="tab" type="button" id="tab-tools" aria-controls="pane-tools" aria-selected="false" tabindex="-1"><svg class="icon"><use href="#i-tool"/></svg>Tools</button>
+      </div>
+      <div class="tree-inspect" id="tree-inspect" role="status" hidden>
+        <span id="tree-inspect-text"></span>
+        <button class="btn small" type="button" data-action="live">Return to live</button>
       </div>
       <div class="pane scroll" role="tabpanel" id="pane-plan" aria-labelledby="tab-plan">
         <div class="tree-state" id="tree-state" role="status">
@@ -237,7 +243,7 @@
         <li><span class="glyph">3</span>Overlapping events (click to list)</li>
       </ul>
       </div>
-      <span class="window-label"><svg class="icon"><use href="#i-clock"/></svg>Last 1 min</span>
+      <span class="window-label"><svg class="icon"><use href="#i-clock"/></svg><span id="window-text">Last 1 min</span></span>
       <button class="btn small" type="button" id="monitor-expand">View details</button>
     </div>
     <ol class="summary-strip" id="summary-strip" aria-label="What happened in this window"></ol>

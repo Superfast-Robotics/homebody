@@ -15,15 +15,23 @@ export function stateText(state) {
   return STATE[state] || ["neutral", state];
 }
 
-/** The monitor's signal names (monitor/decide.signals) as an operator reads them. */
+/** The monitor's signal names (monitor/decide.signals) as an operator reads them. They are scores (the decision
+ * model's uncalibrated answer probabilities), so they are never called calibrated probabilities. */
 export function signalLabel(signal) {
-  if (!signal) return "Monitor risk";
-  if (signal === "stall") return "Stall probability";
-  if (signal === "unsafe") return "Unsafe-situation probability";
-  if (signal === "human_needed") return "Needs-a-person probability";
-  if (signal.startsWith("failure:")) return `Failure probability: ${signal.slice(8).replace(/_/g, " ")}`;
-  if (signal.startsWith("undone:")) return `Goal ${signal.slice(7)} undone probability`;
-  return `${signal.replace(/_/g, " ")} probability`;
+  if (!signal) return "Monitor score";
+  if (signal === "stall") return "Stall score";
+  if (signal === "unsafe") return "Unsafe-situation score";
+  if (signal === "human_needed") return "Needs-a-person score";
+  if (signal.startsWith("failure:")) return `Failure score: ${signal.slice(8).replace(/_/g, " ")}`;
+  if (signal.startsWith("undone:")) return `Goal ${signal.slice(7)} undone score`;
+  return `${signal.replace(/_/g, " ")} score`;
+}
+
+const ORDER = ["detected", "decided", "requested", "accepted", "rejected", "confirmed", "failed", "cancelled", "retry_started", "retry_finished"];
+
+/** ROW's stages in lifecycle order, whatever order their events arrived in. */
+export function ordered(row) {
+  return [...row.stages].sort((a, b) => ORDER.indexOf(a[0]) - ORDER.indexOf(b[0]));
 }
 
 const stage = (row, name) => row.stages.find(([s]) => s === name) || null;
@@ -71,7 +79,7 @@ export function flowText(row, detectedLabel = "Anomaly detected") {
   const words = { detected: detectedLabel, requested: "Abort requested", accepted: "Executor accepted",
     confirmed: "Skill stopped", rejected: "Rejected", failed: "Did not stop", cancelled: "Withdrawn",
     retry_started: "Retry started", retry_finished: "Retry ended" };
-  const parts = row.stages.filter(([s, t], i) => s !== "decided" && (t !== null || i > 0)).map(([s]) => words[s] || s);
+  const parts = ordered(row).filter(([s, t], i) => s !== "decided" && (t !== null || i > 0)).map(([s]) => words[s] || s);
   if (row.state === "requested") parts.push("Awaiting executor");
   if (row.state === "timed_out") parts.push("Timed out");
   return parts.join(" → ");

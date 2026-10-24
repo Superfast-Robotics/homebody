@@ -1,7 +1,8 @@
 // The behavior tree, updated in place by node id, through its lifecycle: no task, planning, running, recovery,
 // replanning. Collapsing is the operator's; following the running node pauses while the operator looks around.
 import { $, clock, duration, h, icon, setIcon, setText, storage, toggleClass } from "./dom.js";
-import { retrySummary } from "./execution.js";
+import { attemptLabel, retrySummary } from "./execution.js";
+import { stateAt } from "./selection.js";
 import { goalLabel, operatorText } from "./story.js";
 
 const STATE_ICON = { success: "check", failure: "x", skipped: "skip", paused: "pause" };
@@ -52,6 +53,7 @@ export class TreeView {
     this.active = null;
     this.follow = true;
     this.inspected = new Set();
+    this.inspection = null; // {tool, t} while the dashboard inspects a recorded moment, for the banner
     this.selected = null; // the node open in the details drawer: a UI choice, styled apart from running
     this.technical = storage.get("tree-technical", false); // raw names, codes and counts instead of operator text
     const technical = $("tree-technical");
@@ -83,6 +85,7 @@ export class TreeView {
   render(state) {
     const tree = state.tree;
     this.renderState(state);
+    this.renderInspection(state);
     this.renderSuperseded(state);
     if (!tree) {
       this.container.replaceChildren();
@@ -230,32 +233,42 @@ export class TreeView {
     this.render(this.app.state);
   }
 
-  /** Highlight attempt TOOL_ID and its goal, unfolding the group that holds it, and bring it into view. */
-  highlightTool(toolId) {
+  /** The node ids from the root down to ID (its ancestors first), by the tree's own child lists. */
+  ancestors(tree, id) {
+    const parent = new Map();
+    for (const node of Object.values(tree.nodes)) for (const child of node.children) parent.set(child, node.id);
+    const path = [];
+    for (let at = parent.get(id); at; at = parent.get(at)) path.unshift(at);
+    return path;
+  }
+
+  /** Inspect selection SEL at moment T: highlight its attempt (and its goal), unfold every node above it and bring it
+   * into view. The rows keep their current runtime state; the banner says the attempt's state then and now. */
+  showSelection(sel, t) {
     const tree = this.app.state?.tree;
-    if (!tree) return;
-    const key = `tool:${toolId}`;
-    const holder = Object.values(tree.nodes).find((n) => n.children.includes(key));
-    if (!holder) return;
-    this.inspected = new Set([key]);
-    for (const n of Object.values(tree.nodes)) if (n.children.includes(holder.id)) this.inspected.add(n.id === "root" ? holder.id : n.id);
-    this.collapsed.delete(holder.id);
-    for (const n of Object.values(tree.nodes)) if (n.children.includes(holder.id)) this.collapsed.delete(n.id);
+    this.inspection = { tool: sel.tool, t, label: sel.label };
+    this.inspected = new Set([sel.node, sel.goal].filter(Boolean));
+    if (tree) for (const id of this.inspected) for (const above of this.ancestors(tree, id)) this.collapsed.delete(above);
     this.setFollow(false);
     this.render(this.app.state);
-    this.rows.get(key)?.row.scrollIntoView({ block: "nearest" });
+    const row = this.rows.get(sel.node || sel.goal);
+    row?.row.scrollIntoView({ block: "nearest" });
   }
 
   /** Mark the goal and the tool call that ran at moment T (null clears the marks). */
   highlightAt(t) {
     const state = this.app.state;
     this.inspected = new Set();
+    this.inspection = t === null ? null : { tool: null, t, label: "Inspecting" };
     if (t !== null && state) {
       const now = this.app.link.now();
       for (const span of state.intervals) {
         if (span.start > t || (span.end ?? now) < t) continue;
         if (span.track === "goal" && span.detail.goal) this.inspected.add(`goal:${span.detail.goal}`);
-        if (span.track === "skill" && span.detail.tool) this.inspected.add(`tool:${span.detail.tool}`);
+        if (span.track === "skill" && span.detail.tool) {
+          this.inspected.add(`tool:${span.detail.tool}`);
+          this.inspection.tool = state.tools.find((x) => x.id === span.detail.tool) || null;
+        }
       }
     }
     this.render(state);
@@ -264,6 +277,30 @@ export class TreeView {
       this.setFollow(false);
       first.row.scrollIntoView({ block: "nearest" });
     }
+  }
+
+  /** Back to live: no inspection marks, following the running node again. */
+  followLive() {
+    this.inspected = new Set();
+    this.inspection = null;
+    this.setFollow(true);
+    if (this.app.state) this.render(this.app.state);
+    this.reveal(this.active, true);
+  }
+
+  /** "Inspecting Pick attempt 4 · 12:29:52 · then Running · now Failed (MONITOR_STOPPED)": the recorded state at the
+   * moment beside the current one, so historical state never replaces the runtime state the rows show. */
+  renderInspection(state) {
+    const banner = $("tree-inspect");
+    const i = this.inspection;
+    banner.hidden = !i;
+    if (!i) return;
+    const tool = i.tool ? state.tools.find((t) => t.id === i.tool.id) || i.tool : null;
+    const parts = [tool ? `Inspecting ${attemptLabel(tool)}` : i.label || "Inspecting", clock(i.t)];
+    const lower = (text) => text.charAt(0).toLowerCase() + text.slice(1);
+    if (tool) parts.push(`then ${lower(stateAt(tool, i.t))}`, `now ${tool.end === null ? "running" : lower(stateAt(tool, Infinity))}`);
+    else parts.push("no attempt ran at that moment");
+    setText($("tree-inspect-text"), parts.join(" · "));
   }
 
   paintState(element, node) {
@@ -290,7 +327,7 @@ export class TreeView {
     if (node.type === "goal" && d.used > 0) { // the goal's attempts, from its recorded calls
       const tools = state.tools.filter((t) => t.goal === d.goal && state.task && t.start >= state.task.start);
       const [count, ...previous] = retrySummary(tools, d.budget).split(" · ");
-      if (d.used > 1 || node.status === "running") text.label = `${goalLabel(node.label, 24)} · ${count}`;
+      if (d.used > 1 || node.status === "running") text.label = `${goalLabel(node.label, 44)} · ${count}`;
       text.meta = [STATUS_TEXT[node.status] || node.status, ...previous, elapsed].filter(Boolean).join(" · ");
     }
     if (node.type === "goal" && d.recovers) {

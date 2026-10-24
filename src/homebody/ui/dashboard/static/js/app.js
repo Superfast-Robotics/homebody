@@ -6,11 +6,14 @@ import { $, clock, duration, h, setText, toggleClass } from "./dom.js";
 import { Drawer } from "./drawer.js";
 import { Header } from "./header.js";
 import { Info } from "./info.js";
-import { consistency, contextSummary, systemSummary } from "./execution.js";
+import { keepHeaderClear, setupSplitter } from "./layout.js";
+import { inputWarning } from "./assessment.js";
+import { consistency, contextLabel, contextSummary, systemSummary } from "./execution.js";
 import { signalLabel } from "./interventions.js";
 import { gapFor, liveEnd, momentAt, monitorStatus, riskSources } from "./model.js";
 import { Rollouts } from "./rollouts.js";
 import { Scenarios } from "./scenarios.js";
+import { resolveSelection } from "./selection.js";
 import { Link } from "./socket.js";
 import { Timeline } from "./timeline.js";
 import { TreeView, setupTabs } from "./tree.js";
@@ -26,6 +29,7 @@ class App {
     this.telemetry = null;
     this.inspectAt = null; // the inspected moment, or null while live
     this.inspectEnd = null; // the frozen end of the timeline window while inspecting
+    this.selection = null; // the inspected incident, intervention or attempt (selection.js), or null
     this.riskSource = null; // the risk series shown when several monitors report one
     this.thawed = null; // the task end after which the operator un-froze the timeline
     this.lastSeen = null;
@@ -47,6 +51,8 @@ class App {
     this.info = new Info(this);
     this.timeline = new Timeline(this, $("timeline-canvas"));
     setupTabs(document.querySelector(".tabs"));
+    setupSplitter();
+    keepHeaderClear();
     $("monitor-expand").addEventListener("click", () => this.drawer.monitor());
     const legend = $("legend"), toggle = $("legend-toggle");
     toggle.addEventListener("click", () => {
@@ -64,6 +70,9 @@ class App {
   update(state) {
     this.state = state;
     this.lastSeen = state.now;
+    if (this.selection) { // the same records by identity, with what they say now; the inspected moment stays
+      this.selection = { ref: this.selection.ref, ...resolveSelection(state, this.selection.ref, this.timelineEnd().end) };
+    }
     for (const part of [this.header, this.scenarios, this.controls, this.camera, this.tree, this.logs, this.tools, this.info]) {
       try {
         part.render(state);
@@ -126,7 +135,7 @@ class App {
   /** Live timeline, Task end · Frozen, or Inspecting history; the last two offer Return to live. */
   renderMode(state, held) {
     const inspecting = this.inspectAt !== null;
-    const mode = inspecting ? ["history", `Inspecting history · ${clock(this.inspectAt)}`]
+    const mode = inspecting ? ["history", this.selection ? "Inspecting history" : `Inspecting history · ${clock(this.inspectAt)}`]
       : held.held ? ["frozen", held.reason === "ended" ? `Task end · Frozen at ${clock(state.task.end)}` : `Session lost · Frozen at ${clock(this.lastSeen)}`]
         : ["live", "Live timeline"];
     const pill = $("timeline-mode");
@@ -134,7 +143,13 @@ class App {
     setText(pill.querySelector(".pill-text"), mode[1]);
     $("monitor-inspect").hidden = !inspecting && !(held.held && held.reason === "ended");
     toggleClass($("monitor"), "inspecting", inspecting);
-    if (inspecting) {
+    const end = this.inspectEnd ?? held.end;
+    setText($("window-text"), inspecting ? `${clock(end - 60)}–${clock(end)} · Recorded` : "Last 1 min");
+    if (inspecting && this.selection) {
+      const sel = this.selection;
+      setText($("monitor-inspect-text"), [`${sel.label} · ${clock(this.inspectAt)}`,
+        sel.observation ? `${sel.detecting ? "observation" : "newest observation"} ${sel.observation.id || "recorded"}` : "no monitor observation linked"].join(" · "));
+    } else if (inspecting) {
       const m = momentAt(state, this.inspectAt, this.link.now());
       const parts = [m.goal ? `goal ${m.goal.label}` : "no goal", m.skill ? `skill ${m.skill.label}` : "no skill",
         m.reading ? `observation ${m.reading.level}${m.reading.synthetic ? " (synthetic)" : ""}` : "no reading",
@@ -163,9 +178,9 @@ class App {
   }
 
   openMilestone(block) {
+    if (block.incident) return this.openIncident(block.incident.id);
     this.inspect(block.t);
-    if (block.incident) this.drawer.incident(block.incident.id);
-    else if (block.task) this.drawer.outcome();
+    if (block.task) this.drawer.outcome();
   }
 
   /** The risk track's label: the signal the newest scored observation measured, and its current value. */
@@ -177,9 +192,12 @@ class App {
     setText(label.querySelector(".risk-name"), latest ? signalLabel(latest.signal) : "Risk");
     const cls = !latest ? "" : latest.level === "anomaly" || (latest.threshold !== null && latest.risk >= latest.threshold) ? "High"
       : latest.level === "elevated" ? "Elevated" : "Low";
-    setText(label.querySelector(".risk-now"), !latest ? "" : fresh ? `${latest.risk.toFixed(2)} · ${cls}` : `last ${latest.risk.toFixed(2)} (historical)`);
+    const warning = latest ? inputWarning(latest) : null;
+    setText(label.querySelector(".risk-now"), !latest ? "" : `${fresh ? `${latest.risk.toFixed(2)} · ${cls}` : `last ${latest.risk.toFixed(2)} (historical)`}${warning ? " · ⚠ input" : ""}`);
     label.className = `tall risk-label ${fresh ? cls.toLowerCase() : "historical"}`;
-    label.title = latest ? `${signalLabel(latest.signal)} from ${latest.source} at ${clock(latest.t)}; threshold ${latest.threshold ?? "none"}.\nThe strongest of the monitor's signals at each reading.` : "";
+    label.title = latest ? [`${signalLabel(latest.signal)} from ${latest.source} at ${clock(latest.t)}; threshold ${latest.threshold ?? "none"}.`,
+      `Applies to: ${contextLabel(state, latest)}.`, latest.semantics || "", warning ? `${warning.text}: ${warning.reason}` : "",
+      "The strongest of the monitor's signals at each reading."].filter(Boolean).join("\n") : "";
   }
 
   renderRiskSources(state) {
@@ -197,60 +215,95 @@ class App {
     return liveEnd(this.state, this.link.now(), this.link.connected, this.lastSeen, this.thawed);
   }
 
-  /** Leave inspection, and un-freeze a task-end timeline so it follows the clock again. */
+  /** Leave inspection on every panel: the live camera, the tree following execution, the rolling 60-second window,
+   * no highlights; a task-end timeline follows the clock again. The inspector stays open (it describes a recorded
+   * incident, which stays true); its Show on dashboard selects it again. */
   returnToLive() {
     if (this.state?.task?.end) this.thawed = this.state.task.end;
+    this.selection = null;
     this.inspect(null);
+    this.tree.followLive();
   }
 
-  /** Inspect moment T on every panel (null returns to live). The robot is never paused or moved by this. */
-  inspect(t) {
+  /**
+   * Select REF ({intervention, incident, tool, t}) on every panel: its moment on the timeline (in a recorded window
+   * around it when it is older than the live one), its attempt in the tree, the recorded camera frame, and (OPEN) its
+   * details in the drawer. Identities come from the records (selection.js), never from labels. Read-only: the robot is
+   * never paused, resumed or moved by this.
+   */
+  select(ref, { open = true } = {}) {
+    if (!this.state) return;
+    const sel = resolveSelection(this.state, ref, this.timelineEnd().end);
+    this.inspect(sel.t, { window: sel.window });
+    this.selection = { ref, ...sel };
+    this.tree.showSelection(this.selection, sel.t);
+    this.renderMonitor(this.state);
+    if (!open) return;
+    if (ref.intervention) this.drawer.intervention(ref.intervention);
+    else if (ref.incident) this.drawer.incident(ref.incident);
+    else if (ref.tool) this.drawer.tool(ref.tool);
+  }
+
+  /** Move the inspected moment to T, keeping the selected incident (arrow keys); with REF (an inspector's own record),
+   * that record is selected at T, so the highlights always belong to what the inspector shows. */
+  selectMoment(t, ref = null) {
+    if (ref) return this.select({ ...ref, t }, { open: false });
+    this.inspect(t, { keep: true });
+  }
+
+  /** Inspect moment T on every panel (null returns to live). A new moment clears the selection unless KEEP; WINDOW
+   * (selection.windowFor) places a recorded window around a moment outside the live one. The robot is never paused
+   * or moved by this. */
+  inspect(t, { keep = false, window = null } = {}) {
+    if (!keep) this.selection = null;
     if (t === null) {
       this.inspectAt = this.inspectEnd = null;
     } else {
       const now = this.timelineEnd().end;
       this.inspectAt = Math.min(t, now);
-      this.inspectEnd ??= now; // freeze the window where it was
-      if (this.inspectAt > this.inspectEnd || this.inspectAt < this.inspectEnd - 60) {
-        this.inspectEnd = Math.min(now, this.inspectAt + 30); // bring an outside moment to the middle
+      if (window) {
+        this.inspectEnd = window.end;
+      } else {
+        this.inspectEnd ??= now; // freeze the window where it was
+        if (this.inspectAt > this.inspectEnd || this.inspectAt < this.inspectEnd - 60) {
+          this.inspectEnd = Math.min(now, this.inspectAt + 30); // bring an outside moment to the middle
+        }
       }
     }
-    this.camera.inspect(this.inspectAt, this.state?.history || []);
+    this.camera.inspect(this.inspectAt, this.state);
     this.logs.highlight(this.inspectAt);
     this.tools.highlight(this.inspectAt);
-    this.tree.highlightAt(this.inspectAt);
+    if (this.selection) this.tree.showSelection(this.selection, this.inspectAt);
+    else this.tree.highlightAt(this.inspectAt);
     if (this.state) this.renderMonitor(this.state);
   }
 
+  /** Open what the timeline hit names; returns whether it selected (and so inspected) something itself. */
   open(kind, item) {
-    if (kind === "incident") this.drawer.incident(item.id);
-    else if (kind === "decision") this.drawer.decision(item.id);
+    if (kind === "incident") return this.openIncident(item.id), true;
+    if (kind === "decision") this.drawer.decision(item.id);
     else if (kind === "goal") this.drawer.node(`goal:${item.detail.goal}`);
-    else if (kind === "skill" && item.detail.tool) this.drawer.tool(item.detail.tool);
+    else if (kind === "skill" && item.detail.tool) return this.select({ tool: item.detail.tool, t: item.start }), true;
     else if (kind === "observation") this.drawer.observation(item);
     else if (kind === "risk") {
       const toolId = item.readings.find((r) => r.tool)?.tool || null;
       const request = (this.state.interventions || []).findLast((r) => toolId && r.tool === toolId);
-      this.focusAttempt(toolId, item.start, () => (request ? this.drawer.intervention(request.id) : this.drawer.risk(item)));
-    }
-    else if (kind === "event") {
-      this.focusAttempt(item.tool, item.t, () => (item.intervention ? this.drawer.intervention(item.intervention)
-        : item.incident ? this.drawer.incident(item.incident) : null));
+      if (request) return this.select({ intervention: request.id, t: item.start }), true;
+      if (toolId) this.select({ tool: toolId, t: item.start }, { open: false });
+      this.drawer.risk(item);
+      return Boolean(toolId);
+    } else if (kind === "event") {
+      const ref = item.intervention ? { intervention: item.intervention, t: item.t } : item.incident ? { incident: item.incident, t: item.t }
+        : { tool: item.tool, t: item.t };
+      return this.select(ref), true;
     } else if (kind === "cluster") this.drawer.events(item);
+    return false;
   }
 
-  /** Select moment T, highlight attempt TOOL_ID in the tree (expanding its group), then OPEN its details. The
-   * robot is never paused or moved by this; Return to live leaves the selection. */
-  focusAttempt(toolId, t, open = null) {
-    if (t !== null && t !== undefined) this.inspect(t);
-    if (toolId) this.tree.highlightTool(toolId);
-    open?.();
-  }
-
+  /** An incident, through the intervention that acted on it when there is one (the fuller lifecycle). */
   openIncident(id) {
-    const incident = this.state.incidents.find((i) => i.id === id);
-    this.drawer.incident(id);
-    if (incident) this.inspect(incident.t);
+    const row = (this.state.interventions || []).findLast((r) => r.incident === id);
+    this.select(row ? { intervention: row.id } : { incident: id });
   }
 
   /** A short confirmation or rejection under the instruction input. */

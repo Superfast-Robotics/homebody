@@ -300,7 +300,7 @@ class Store(PlanTracking, InterventionTracking):
             # the attempt it watched, by its call number; a reading between skills or with no match names none
             tool = self._tool_for_call(call_number(value.get("call")))
             entry = reading(value, self.clock(), during_task=self.busy, node=tool.goal if tool else (self.plan or {}).get("active"),
-                            skill=tool and tool.skill, tool=tool and tool.id)
+                            skill=tool and tool.skill, tool=tool and tool.id, id=self._id("o"))
             self.readings.append(entry)
             if entry.level == "anomaly" and entry.kind == "observation" and not self._continues(entry):
                 title = entry.reason or "Anomaly detected"
@@ -310,7 +310,8 @@ class Store(PlanTracking, InterventionTracking):
                               detection=f"Monitoring model ({entry.source})",
                               observation=asdict(entry), evidence={key: value for key, value in (
                                   ("risk", entry.risk), ("threshold", entry.threshold),
-                                  ("confidence", entry.confidence), ("synthetic", entry.synthetic or None))
+                                  ("confidence", entry.confidence), ("synthetic", entry.synthetic or None),
+                                  ("observation_id", entry.id), ("first_observation", asdict(entry)))
                                   if value is not None})
                 self._anomalies[entry.source] = (next(reversed(self.incidents)), entry.t)
             request = value.get("request")
@@ -423,7 +424,7 @@ class Store(PlanTracking, InterventionTracking):
                 "tools": [asdict(t) for t in self.tools.values()],
                 "incidents": [asdict(i) for i in self.incidents.values()],
                 "interventions": interventions,
-                "timing": asdict(self.timing),
+                "timing": asdict(self.timing), "keep_s": KEEP_SECONDS,
                 "readings": [asdict(r) for r in self.readings],
                 "logs": [asdict(entry) for entry in self.logs.values()],
                 "instructions": [asdict(i) for i in self.instructions.values()],

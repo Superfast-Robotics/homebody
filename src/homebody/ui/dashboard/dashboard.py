@@ -10,7 +10,7 @@ from threading import Condition, Thread
 from homebody.session.settings import Topdown
 from homebody.skills import navigate, pick, place
 from homebody.ui.controls import capabilities
-from homebody.ui.dashboard.frames import FrameCheck
+from homebody.ui.dashboard.frames import MATCH_S, FrameCheck
 from homebody.ui.dashboard.server import Hub
 from homebody.ui.dashboard.session_state import session_state
 from homebody.ui.dashboard.store import PLANNER, Store
@@ -245,10 +245,31 @@ class Dashboard:
 
     def monitor(self, reading: dict):
         """The adapter a monitoring service feeds: one reading (t, level, kind observation or heartbeat, source,
-        risk, threshold, confidence, reason, synthetic). Raises ValueError for a malformed reading. The camera's
-        frame quality when it arrived goes with it, so a visual verdict on unusable frames can be told apart."""
-        self.store.monitor({**reading, "frame_quality": self.frames.quality.state})
+        risk, threshold, confidence, reason, synthetic). Raises ValueError for a malformed reading. The robot camera's
+        frame quality at the reading's own observation time goes with it (observed_quality), so a visual verdict on
+        unusable frames can be told apart, also later."""
+        self.store.monitor({**reading, **self.observed_quality(reading.get("sim_time"))})
         self.hub.changed()
+
+    def observed_quality(self, sim_time) -> dict:
+        """The robot camera's checked frame quality at simulation time SIM_TIME (the newest frame the monitor read),
+        and how that was established; without a time, the newest check when the reading arrived, said so."""
+        if isinstance(sim_time, (int, float)) and not isinstance(sim_time, bool):
+            found = self.frames.at(sim_time)
+            if found is None:
+                return {"frame_quality": "unknown", "quality_reason": "",
+                        "quality_source": f"No robot camera frame checked within {MATCH_S:g} s of sim {sim_time:.2f} s"}
+            where = {"covered": f"a run of checked robot camera frames covering sim {sim_time:.2f} s",
+                     "nearest": f"the nearest checked robot camera frame, at sim {found.sim_time:.2f} s",
+                     "undecodable": "an undecodable robot camera frame that arrived in the gap holding "
+                                    f"sim {sim_time:.2f} s"}[found.how]
+            return {"frame_quality": found.state, "quality_reason": found.reason,
+                    "quality_source": f"Dashboard check: {where} (the monitor's newest frame); "
+                                      "the monitor's own copy is not checked"}
+        quality = self.frames.quality
+        return {"frame_quality": quality.state, "quality_reason": quality.reason,
+                "quality_source": "Dashboard check of the newest robot camera frame at receipt (the reading gave no "
+                                  "simulation time)"}
 
     def monitor_update(self, view):
         """The live monitor's view changed (its on_update): its new reading, if any, joins the timeline."""
@@ -416,7 +437,8 @@ class Dashboard:
                  for name, (label, live) in VIEWS.items()}
         extras = {name: provide() for name, provide in self.extras.items()}
         extras["frame_quality"] = self.frames.snapshot()
-        return {**state, **extras, "views": views, "history": self.history.index(), "auto_cameras": AUTO_CAMERAS,
+        return {**state, **extras, "views": views, "history": self.history.index(), "history_period": self.history.period,
+                "auto_cameras": AUTO_CAMERAS,
                 "scene_port": self.scene_port if self._scene_server is not None else None}
 
     def close(self):

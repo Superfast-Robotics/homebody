@@ -62,9 +62,9 @@ test("the card shows an open request, or one that went wrong until its alert is 
 });
 
 test("signals are named, sustained risk is measured, and alerts group by their incident", () => {
-  assert.equal(signalLabel("stall"), "Stall probability");
-  assert.equal(signalLabel("failure:dropped_object"), "Failure probability: dropped object");
-  assert.equal(signalLabel(""), "Monitor risk");
+  assert.equal(signalLabel("stall"), "Stall score"); // an uncalibrated answer probability: a score, not a probability claim
+  assert.equal(signalLabel("failure:dropped_object"), "Failure score: dropped object");
+  assert.equal(signalLabel(""), "Monitor score");
   const state = { incidents: [{ id: "x1", alert: true, state: "active" }, { id: "x2", alert: true, state: "resolved" },
     { id: "x3", alert: true, state: "acknowledged" }], interventions: [row("requested", [requested]), row("confirmed", [requested], { id: "v2", incident: "x3" })] };
   const groups = alertGroups(state);

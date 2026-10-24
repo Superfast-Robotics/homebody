@@ -1,5 +1,6 @@
 // The camera panel: view choice, the JPEG stream, freshness, history frames for inspection, the 3D scene.
 import { $, clock, duration, h, setText, storage, toggleClass } from "./dom.js";
+import { recordedFrame } from "./selection.js";
 import { cameraFor } from "./story.js";
 
 const STALE = 2.5; // s without a frame of a live view before it is labelled stale
@@ -23,6 +24,7 @@ export class Camera {
     this.frameSim = null;
     this.rate = [];
     this.inspecting = null;
+    this.recorded = null; // the recorded frame shown while inspecting: {id, t, delta}, or null when none is near
     this.select.addEventListener("change", () => this.choose(this.select.value));
     $("camera-fullscreen").addEventListener("click", () => this.fullscreen());
     $("camera-snapshot").addEventListener("click", () => this.snapshot());
@@ -96,22 +98,24 @@ export class Camera {
     if (previous) setTimeout(() => URL.revokeObjectURL(previous), 1000);
   }
 
-  /** Show the stored frame nearest before T, or return to the live stream when T is null. */
-  inspect(t, history) {
+  /** Show the recorded robot-camera frame near T (within two storage periods), marked Recorded with its capture
+   * time, or say that no evidence exists for that moment; T null returns to the live stream. Never the live frame. */
+  inspect(t, state) {
     this.inspecting = t;
     if (t === null) {
+      this.recorded = null;
       $("inspect-banner").hidden = true;
       if (this.url) this.image.src = this.url;
       return this.render(this.app.state);
     }
-    const stored = [...history].reverse().find(([, at]) => at <= t) || history[0];
+    this.recorded = recordedFrame(state?.history || [], t, 2 * (state?.history_period || 1));
     $("inspect-banner").hidden = false;
-    if (!stored) {
-      setText($("inspect-text"), `Inspecting ${clock(t)} · no camera frame stored for that moment`);
+    if (!this.recorded) {
+      setText($("inspect-text"), `Inspecting ${clock(t)} · Camera evidence unavailable for this timestamp`);
       this.image.removeAttribute("src");
     } else {
-      setText($("inspect-text"), `Inspecting ${clock(t)} · robot camera at ${clock(stored[1])}`);
-      this.image.src = `history/${stored[0]}.jpg`;
+      setText($("inspect-text"), `Recorded robot camera · captured ${clock(this.recorded.t)} (${this.recorded.delta.toFixed(1)} s from ${clock(t)}) · not live`);
+      this.image.src = `history/${this.recorded.id}.jpg`;
     }
     this.render(this.app.state);
   }
@@ -156,7 +160,7 @@ export class Camera {
     let kind = "on";
     let text = "Live";
     if (!this.app.link.connected) [kind, text] = this.app.link.attempt > RECONNECTS ? ["off", "Camera offline"] : ["stale", "Reconnecting"];
-    else if (this.inspecting !== null) [kind, text] = ["inspect", "Inspecting"];
+    else if (this.inspecting !== null) [kind, text] = ["inspect", this.recorded ? `Recorded · ${clock(this.recorded.t)}` : "No recording"];
     else if (this.view === SCENE) [kind, text] = ["on", "Live 3D"];
     else if (!this.live()) [kind, text] = ["on", "Still"];
     else if (age === null) [kind, text] = ["stale", "No frames received"];
@@ -181,7 +185,8 @@ export class Camera {
     const state = this.app.state;
     let text = "";
     if (!this.app.link.connected) text = "Disconnected from the session. Reconnecting…";
-    else if (this.view === SCENE || this.inspecting !== null) text = "";
+    else if (this.inspecting !== null) text = this.recorded ? "" : "Camera evidence unavailable for this timestamp";
+    else if (this.view === SCENE) text = "";
     else if (!this.image.getAttribute("src")) {
       text = state?.views[this.view]?.available === false
         ? (this.view === "decision" ? "No decision click yet. It appears when the agent chooses a target."

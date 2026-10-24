@@ -51,22 +51,24 @@ test("continuous risk restarts per attempt and differs from cumulative risk", ()
 test("the summary gives one conclusion by priority and still says when the monitor or camera is degraded", () => {
   const tools = [tool("t1", "failed", { code: "MONITOR_STOPPED", end: 5 }), tool("t2", "running", { number: 2, start: 6 })];
   const readings = [r(10, "elevated", 0.85, "t2"), r(28, "anomaly", 0.97, "t2")];
-  assert.equal(contextSummary(base({ tools, readings }), live, 28.5, 0, { gap: 30 }).text, "Stall risk high · Pick attempt 2 · 18 s continuously");
+  assert.equal(contextSummary(base({ tools, readings }), live, 28.5, 0, { gap: 30 }).text, "Stall risk high for 18 s · Pick attempt 2");
   const incidents = [{ id: "x1", observation: { signal: "stall" }, evidence: { risk: 1 } }];
   const pending = { tools, readings, incidents, interventions: [{ id: "v1", tool: "t2", task: "k1", incident: "x1", initiator: "Live monitor", state: "requested", stages: [] }] };
-  assert.equal(contextSummary(base(pending), live, 28.5, 0).text, "Pick stall detected · Abort requested · Awaiting controller");
+  assert.equal(contextSummary(base(pending), live, 28.5, 0).text, "Stall risk high · Pick attempt 2 · 1 open intervention");
   const stopped = { tools, readings: [r(9, "expected", 0.1, "t2")], incidents,
     interventions: [{ id: "v1", tool: "t1", task: "k1", incident: "x1", initiator: "Live monitor", state: "confirmed", stages: [["retry_started", 6, "", ""]] }] };
-  assert.equal(contextSummary(base(stopped), live, 9.2, 0).text, "Pick stall detected · Skill stopped · Retry started");
-  assert.equal(contextSummary(base({ tools, readings: [r(9, "expected", 0.1, "t2")] }), live, 9.2, 0).text, "Monitoring active · No significant concerns");
+  assert.equal(contextSummary(base(stopped), live, 9.2, 0).text, "Monitoring active · No significant concerns · Pick attempt 2");
+  assert.equal(contextSummary(base({ tools, readings: [r(9, "expected", 0.1, "t2")] }), live, 9.2, 0).text, "Monitoring active · No significant concerns · Pick attempt 2");
   const stale = { state: "stale", observationAge: 30, staleAfter: 3 };
   assert.equal(contextSummary(base({ tools, readings: [r(1, "anomaly", 1, "t2")] }), stale, 31, 0).text,
     "Current behaviour assessment unavailable · Monitor stale (last observation 30 s ago)");
-  const camera = base({ tools, readings: [r(9, "expected", 0.1, "t2")], frame_quality: { state: "invalid" } });
-  assert.equal(contextSummary(camera, live, 9.2, 0).text, "Monitoring active · No significant concerns · Visual input degraded");
+  const camera = base({ tools, readings: [r(9, "expected", 0.1, "t2", { frame_quality: "invalid" })], frame_quality: { state: "valid" } });
+  assert.equal(contextSummary(camera, live, 9.2, 0).text, "Monitoring active · No significant concerns · Pick attempt 2 · Input warning: invalid frames");
   const mismatch = { state: "confirmed", rule: "Behavior Tree: Pick attempt 2 running · Controller: error" };
   assert.match(contextSummary(base({ tools, readings: [r(9, "elevated", 0.5, "t2")] }), live, 9.2, 0, { check: mismatch }).text, /^Execution state mismatch/);
   assert.equal(contextSummary(base({ tools, readings: [r(9, "anomaly", 0.9, "t2")] }), live, 9.2, 0).text, "Stall risk high · Pick attempt 2"); // one reading: no duration
+  const previous = base({ tools, readings: [r(4, "anomaly", 0.9, "t1")] });
+  assert.match(contextSummary(previous, live, 4.5, 0).text, /^Previous Pick attempt 1: stall risk high · Current Pick attempt 2: assessment unknown/);
 });
 
 test("execution certainty: confirmed, overdue (uncertain, never stopped), and confirmed stopped", () => {
@@ -86,7 +88,7 @@ test("the compact card says the attempt and the outcome the stages establish", (
   const state = base({ tools: [tool("t4", "running", { number: 4 })], incidents: [{ id: "x1", severity: "critical", observation: { signal: "stall" }, evidence: { risk: 1 } }] });
   const card = incidentCard(state, { tool: "t4", incident: "x1", initiator: "Live monitor", state: "timed_out", stages: [] });
   assert.deepEqual([card.title, card.status, card.attempt, card.outcome],
-    ["Pick stall detected", "Action pending", "Pick · Attempt 4 · Stall probability 1.00", "Abort requested · No controller acknowledgement"]);
+    ["Pick stall detected", "Action pending", "Pick · Attempt 4 · Stall score 1.00", "Abort requested · No controller acknowledgement"]);
   assert.equal(incidentCard(state, { tool: "t4", incident: "x1", initiator: "Live monitor", state: "executing", stages: [] }).outcome,
     "Controller acknowledged · Skill not yet stopped"); // acknowledgement is not a stop
   assert.equal(incidentCard(state, { tool: null, initiator: "Human operator", state: "requested", stages: [] }).attempt, "Skill · Attempt unknown");

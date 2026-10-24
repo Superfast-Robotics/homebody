@@ -43,10 +43,10 @@ export class Info {
     $("alerts-all").addEventListener("click", () => app.drawer.alerts());
     $("agent-history").addEventListener("click", () => app.drawer.decisions());
     $("critical-inspect").addEventListener("click", () => this.critical && app.openIncident(this.critical.id));
-    $("intervention-inspect").addEventListener("click", () => this.intervention && app.drawer.intervention(this.intervention.id));
+    $("intervention-inspect").addEventListener("click", () => this.intervention && app.select({ intervention: this.intervention.id }));
     $("execution-inspect").addEventListener("click", () => {
       const tool = this.certainty?.attempt;
-      if (tool) app.focusAttempt(tool.id, null, () => app.drawer.tool(tool.id));
+      if (tool) app.select({ tool: tool.id, t: app.link.now() });
     });
     $("execution-controller").addEventListener("click", () => app.drawer.controller());
     $("outcome-details").addEventListener("click", () => app.drawer.outcome());
@@ -138,19 +138,20 @@ export class Info {
     setText($("intervention-age"), ago(this.app.link.now() - since));
     setText($("intervention-attempt"), words.attempt);
     setText($("intervention-outcome"), words.outcome);
-    // the executor going quiet on this very attempt is distinct news, said here rather than as a second card
+    // execution uncertainty on this very attempt is the same problem: said here rather than as a second card; an input
+    // warning at the detecting observation too
     const c = this.certainty;
-    const quiet = c.attempt?.id === row.tool && c.state === "uncertain" ? c.reasons.find((r) => r.startsWith("Executor report overdue")) : null;
-    $("intervention-extra").hidden = !quiet;
-    setText($("intervention-extra"), quiet ? `${quiet} · physical stop unverified` : "");
+    const same = c.attempt?.id === row.tool && c.state === "uncertain";
+    const extra = [words.warning, same ? `${c.reasons.join(" · ")} · physical stop unverified` : ""].filter(Boolean).join(" · ");
+    $("intervention-extra").hidden = !extra;
+    setText($("intervention-extra"), extra);
   }
 
   /** Execution status uncertain (or a mismatch), above the robot's telemetry when it matters; a brief or minor one
    * stays in the Execution row. Never claims the robot moved or stopped. */
   renderExecution(state) {
     const c = this.certainty;
-    const folded = this.intervention && c.attempt?.id === this.intervention.tool &&
-      c.reasons.every((r) => r.startsWith("Executor report overdue")); // the incident card already says it
+    const folded = this.intervention && c.attempt?.id === this.intervention.tool; // the incident card already says it
     const card = $("execution-card");
     card.hidden = c.state !== "uncertain" || c.severity === "info" || folded;
     if (card.hidden) return;
@@ -297,16 +298,16 @@ export class Info {
       const attempt = `${attemptLabel(toolById(state, toolId))}${{ current: " · current", previous: " · previous attempt", unknown: "" }[relation]}`;
       const status = historical ? "Earlier task" : incident.state === "acknowledged" ? "Acknowledged" : relation === "previous" ? "Historical" : "Inspect";
       const count = groups.find((g) => g.incident.id === incident.id).incidents.length;
+      const onCard = this.intervention && requests.some((r) => r.id === this.intervention.id); // described on the card above
       return h("li", {}, h("button", {
         class: `alert ${incident.severity} ${incident.state}${historical ? " historical" : ""}`, type: "button",
         "aria-label": `${label}, ${historical ? "from an earlier task" : STATE[incident.state]}: ${incident.title}. Inspect the incident.`,
-        onclick: () => this.app.focusAttempt(toolId, incident.t,
-          () => (requests.length ? this.app.drawer.intervention(requests.at(-1).id) : this.app.drawer.incident(incident.id))),
+        onclick: () => this.app.select(requests.length ? { intervention: requests.at(-1).id } : { incident: incident.id }),
       }, icon(name), h("span", {}, h("span", { class: "alert-attempt", text: `${attempt}${count > 1 ? ` · ${count} alerts` : ""}` }),
         h("span", { class: "alert-title", text: incident.title }),
-        h("span", { class: "alert-reason", text: incident.reason || incident.action })),
-      h("span", { class: "alert-when" }, ago(now - incident.t), h("br"), status),
-      requests.length ? h("ul", { class: "alert-steps" }, ...requests.map((r) => h("li", {
+        onCard ? null : h("span", { class: "alert-reason", text: incident.reason || incident.action })),
+      h("span", { class: "alert-when" }, ago(now - incident.t), h("br"), onCard ? "On the card above" : status),
+      requests.length && !onCard ? h("ul", { class: "alert-steps" }, ...requests.map((r) => h("li", {
         text: `${flowText(r, "Detected")} · ${stateText(r.state)[1]}` }))) : null));
     }));
     setText($("alerts-note"), shown.length ? (open.length > 2 ? `${open.length - 2} more in View all.` : "")

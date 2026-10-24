@@ -1,6 +1,6 @@
 // The details drawer: incidents, tree nodes, decisions, tool calls, lists, diagnostics and the expanded timeline.
 import { $, ago, clock, duration, h, json } from "./dom.js";
-import { interventionView } from "./inspector.js";
+import { incidentView, interventionView } from "./inspector.js";
 import { attemptLabel, consistency } from "./execution.js";
 import { stateText } from "./interventions.js";
 import { errorText, summarize } from "./story.js";
@@ -35,6 +35,7 @@ export class Drawer {
     this.timeline = null;
     $("drawer-title").textContent = title;
     this.body.replaceChildren(...this.content(build));
+    this.body.scrollTop = 0; // a new view starts at its summary
     this.element.hidden = false;
     $("drawer-close").focus();
   }
@@ -67,76 +68,20 @@ export class Drawer {
     this.body.scrollTop = scroll;
   }
 
+  /** An incident without an intervention, in the inspector's order (inspector.js). */
   incident(id) {
-    this.open("Incident", "incident", id, () => {
-      const state = this.app.state;
-      const incident = state.incidents.find((i) => i.id === id);
-      if (!incident) return h("p", { class: "note", text: "This incident is no longer kept." });
-      const tool = state.tools.find((t) => t.id === incident.tool);
-      const node = incident.node && state.tree?.nodes[`goal:${incident.node}`];
-      const cause = incident.caused_by && state.incidents.find((i) => i.id === incident.caused_by);
-      const o = incident.observation;
-      const e = incident.evidence;
-      const number = (v) => (v === undefined || v === null ? null : Number(v).toFixed(2));
-      const recovery = incident.kind === "recovery";
-      const actions = [
-        incident.alert && incident.state === "active" ? h("button", { class: "btn", type: "button", onclick: () => this.alertAction("acknowledge", id) }, "Acknowledge") : null,
-        incident.alert && incident.state !== "resolved" ? h("button", { class: "btn", type: "button", onclick: () => this.alertAction("resolve", id) }, "Resolve") : null,
-        h("button", { class: "btn", type: "button", onclick: () => this.app.inspect(incident.t) }, "Inspect on timeline"),
-        node ? h("button", { class: "btn", type: "button", onclick: () => this.node(`goal:${incident.node}`) }, "Open node") : null,
-        tool ? h("button", { class: "btn", type: "button", onclick: () => this.tool(tool.id) }, "Open tool call") : null,
-      ];
-      return [
-        h("h3", { text: incident.title }),
-        facts([
-          ["Incident", `${incident.id} · ${clock(incident.t)} (${ago(this.app.link.now() - incident.t)})`],
-          ["Severity", `${incident.severity}${incident.alert ? " · alert" : " · history (not an alert)"}`],
-          ["Status", incident.alert ? incident.state : "Recorded"],
-          ["Task", incident.task], ["Goal", node ? `${node.label} (${incident.node})` : incident.node],
-          ["Related skill", incident.skill], ["Tool call", tool ? `${tool.skill}() · ${tool.code || tool.state}` : null],
-          ["Description", incident.reason || (o ? o.level : null)],
-          ["Detected by", incident.detection || "Unknown"],
-          ["Recovery initiator", incident.initiator || (recovery ? "Unknown" : "None recorded")],
-          ["Recovery executor", incident.executor || (recovery ? "Unknown" : "None recorded")],
-          ["Recovery action", recovery ? incident.action : null],
-          ["Caused by", cause ? h("button", { class: "link", type: "button", onclick: () => this.incident(cause.id) }, `${cause.title} (${cause.id})`) : null],
-          ["Monitor observation", o ? `${o.level} from ${o.source}${o.synthetic ? " (synthetic)" : ""} at ${clock(o.t)}` : null],
-          ["Risk", number(e.risk ?? o?.risk)], ["Threshold", number(e.threshold ?? o?.threshold)],
-          ["Confidence", number(e.confidence ?? o?.confidence)],
-          ["Action taken", recovery ? null : incident.action || "None reported"], ["Outcome", incident.outcome || "None recorded"],
-          ["Acknowledged", incident.acknowledged_at ? clock(incident.acknowledged_at) : null],
-        ]),
-        e.synthetic ? h("p", { class: "badge synthetic", text: "Synthetic data: not a real safety or execution outcome" }) : null,
-        this.evidence(incident, state, tool),
-        h("div", { class: "controls wrap" }, ...actions),
-      ].flat();
-    }, { signature: () => JSON.stringify(this.app.state.incidents.find((i) => i.id === id) || null) });
+    this.open("Incident", "incident", id, () => incidentView(this, id),
+      { signature: () => this.signatureOf({ incident: id }) });
   }
 
-  /** What was recorded around an incident: camera frames, the tool's input and output, the monitor's readings. */
-  evidence(incident, state, tool) {
-    const after = this.recoveryFrame(incident, state);
-    const frames = [[`At ${incident.kind === "recovery" ? "the event" : "detection"} (${clock(incident.t)})`, incident.frame],
-      after ? [`After recovery (${clock(after.t)})`, after.frame] : null].filter(Boolean);
-    const observations = state.readings.filter((r) => r.kind === "observation" && r.t >= incident.t - 3 && r.t <= incident.t + 1).slice(-8);
-    return [
-      h("h3", { text: "Camera evidence" }),
-      ...frames.map(([label, frame]) => (frame ? [h("p", { class: "note", text: label }), h("img", {
-        src: `history/${frame}.jpg`, alt: `Robot camera, ${label}`,
-        onerror: (event) => event.target.replaceWith(h("p", { class: "note", text: "No recorded camera evidence: that frame is no longer kept." })) })]
-        : h("p", { class: "note", text: `${label}: no recorded camera evidence.` }))).flat(),
-      tool ? [h("h3", { text: "Tool input and output" }), h("pre", { class: "json", text: json({ arguments: tool.arguments,
-        result: tool.code ? { code: tool.code, message: tool.message } : tool.state }) })] : null,
-      observations.length ? [h("h3", { text: "Monitor observations around it" }), h("ol", { class: "drawer-list" },
-        ...observations.map((r) => h("li", { text: `${clock(r.t)} · ${r.level} · ${r.source}${r.risk !== null ? ` · risk ${r.risk.toFixed(2)}` : ""}${r.synthetic ? " · synthetic" : ""}` })))] : null,
-    ].flat();
-  }
-
-  /** The frame recorded when the recovery this incident led to finished, following recorded causes only. */
-  recoveryFrame(incident, state) {
-    const started = state.incidents.find((i) => i.caused_by === incident.id && i.tag === "recovery_start") ||
-      (incident.tag === "recovery_start" ? incident : null);
-    return started ? state.incidents.find((i) => i.caused_by === started.id && i.tag === "recovery_ok" && i.frame) || null : null;
+  /** What an incident or intervention view shows: the record, its incident and its attempt, so it rebuilds when
+   * any of them changes and not on every state. */
+  signatureOf({ intervention = null, incident = null }) {
+    const s = this.app.state;
+    const row = intervention ? (s.interventions || []).find((r) => r.id === intervention) || null : null;
+    const found = s.incidents.find((i) => i.id === (incident ?? row?.incident)) || null;
+    const tool = s.tools.find((t) => t.id === (row?.tool ?? found?.tool)) || null;
+    return JSON.stringify([row, found, tool && [tool.state, tool.end, tool.code], s.controller?.state, Boolean(s.tree)]);
   }
 
   async alertAction(action, id) {
@@ -259,6 +204,8 @@ export class Drawer {
     if (!tool) return h("p", { class: "note", text: "This tool call is no longer kept." });
     return [
       h("h3", { text: `${attemptLabel(tool)} · ${tool.skill}()` }),
+      h("div", { class: "controls wrap" }, h("button", { class: "btn small", type: "button", onclick: () => this.app.select({ tool: tool.id }, { open: false }) },
+        "Show on dashboard")),
       facts([["State", tool.state], ["Goal", tool.goal], ["Attempt", `${tool.number} in its goal (${tool.attempt} of this skill)`],
         ["Execution id", tool.execution || "Unknown"], ["Skill call", tool.call ?? "Not reported"],
         ["Outcome", tool.code ? `${errorText(tool.code)} (${tool.code})` : tool.state], ["Recovery", tool.recovery ? "Yes" : null],
@@ -302,10 +249,10 @@ export class Drawer {
         h("br"), m.detail || "")))), { signature: () => items.map((m) => m.id).join("|") });
   }
 
-  /** The provenance inspector of an intervention (inspector.js). */
+  /** The incident inspector of an intervention (inspector.js). */
   intervention(id) {
     this.open("Incident", "intervention", id, () => interventionView(this, id),
-      { signature: () => JSON.stringify((this.app.state.interventions || []).find((r) => r.id === id) || null) });
+      { signature: () => this.signatureOf({ intervention: id }) });
   }
 
   toolList(tools) {

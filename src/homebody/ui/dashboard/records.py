@@ -107,7 +107,20 @@ class Reading:
     signal: str = ""  # what RISK measures, as the monitor names it (e.g. "stall", "unsafe", "failure:dropped")
     call: int | None = None  # the skill call of its task it watched (Phase.call), None between skills or unknown
     tool: str | None = None  # the attempt with that call, as the store matched it (None: no match, never guessed)
-    frame_quality: str = "unknown"  # the robot camera's frame quality when it arrived (ui/dashboard/frames.py)
+    frame_quality: str = "unknown"  # the robot camera's frame quality at the observation (ui/dashboard/frames.py)
+    id: str = ""  # the observation's identity on this dashboard, set by the store
+    sim_time: float | None = None  # simulation time of the newest frame the monitor read (None: not reported)
+    lag_s: float | None = None  # how far behind the newest frame the monitor read when it was taken
+    scope: str = "unknown"  # what it is about, by the monitor's rules: skill_attempt, goal, task, robot, unknown
+    scope_goal: str | None = None  # the goal of a goal-scoped (or attempt-scoped) reading
+    semantics: str = ""  # what RISK is, in the monitor's own terms ("" when it did not say)
+    confidence_semantics: str = ""  # what CONFIDENCE is
+    calibration: str = "unknown"  # whether the scores are calibrated probabilities: calibrated, uncalibrated, unknown
+    reliability: str = "unknown"  # an independent check of the assessment: reliable, unreliable, unknown
+    input_source: str = ""  # what the monitor read
+    phase: str = ""  # what the harness was doing, as the monitor saw it (idle, planning, tool_call)
+    quality_source: str = ""  # how FRAME_QUALITY was established (which frame, checked by what)
+    quality_reason: str = ""
 
 
 @dataclass(frozen=True)
@@ -157,6 +170,9 @@ class Log:
 
 LEVELS = ("expected", "unknown", "elevated", "anomaly")
 KINDS = ("observation", "heartbeat")
+SCOPES = ("skill_attempt", "goal", "task", "robot", "environment", "unknown")
+CALIBRATIONS = ("calibrated", "uncalibrated", "unknown")
+RELIABILITIES = ("reliable", "unreliable", "unknown")
 
 
 def clip(text, limit=TEXT_LIMIT) -> str:
@@ -211,7 +227,30 @@ def reading(value: dict, now: float, **context) -> Reading:
                    received=now, elevated_threshold=unit(value, "elevated_threshold"),
                    synthetic=bool(value.get("synthetic", False)), signal=clip(value.get("signal", ""), 80),
                    call=call_number(value.get("call")),
-                   frame_quality=clip(value.get("frame_quality", "unknown"), 24), **context)
+                   frame_quality=clip(value.get("frame_quality", "unknown"), 24),
+                   sim_time=number(value.get("sim_time")), lag_s=number(value.get("lag_s")),
+                   scope=choice(value, "scope", SCOPES), scope_goal=text(value.get("scope_goal"), 80),
+                   semantics=clip(value.get("semantics", ""), 300),
+                   confidence_semantics=clip(value.get("confidence_semantics", ""), 200),
+                   calibration=choice(value, "calibration", CALIBRATIONS),
+                   reliability=choice(value, "reliability", RELIABILITIES),
+                   input_source=clip(value.get("input_source", ""), 200), phase=clip(value.get("phase", ""), 24),
+                   quality_source=clip(value.get("quality_source", ""), 200),
+                   quality_reason=clip(value.get("quality_reason", ""), 200), **context)
+
+
+def number(value) -> float | None:
+    return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) else None
+
+
+def text(value, limit) -> str | None:
+    return None if value is None else clip(value, limit)
+
+
+def choice(value: dict, name: str, allowed: tuple) -> str:
+    """VALUE's NAME when it is one of ALLOWED, else "unknown" (an unrecognized claim is not passed on as fact)."""
+    found = value.get(name, "unknown")
+    return found if found in allowed else "unknown"
 
 
 def call_number(value) -> int | None:
